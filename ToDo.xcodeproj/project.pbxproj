@@ -28,7 +28,6 @@
 		61A0A0012F6A10000075F17B /* SnoozePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A0A0022F6A10000075F17B /* SnoozePreferences.swift */; };
 		61A0A0032F6A10000075F17B /* SnoozeOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A0A0042F6A10000075F17B /* SnoozeOptionsView.swift */; };
 		61B200012F6B00000075F17B /* PushNotificationAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61B200022F6B00000075F17B /* PushNotificationAppDelegate.swift */; };
-		61B200032F6B00000075F17B /* NotificationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61B200042F6B00000075F17B /* NotificationManager.swift */; };
 		61C100012F6C10000075F17B /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 61C100002F6C10000075F17B /* Supabase */; };
 		61C100042F6C10000075F17B /* SupabaseConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C100032F6C10000075F17B /* SupabaseConfig.swift */; };
 		61C100062F6C10000075F17B /* SupabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C100052F6C10000075F17B /* SupabaseService.swift */; };
@@ -38,6 +37,7 @@
 		61C1000E2F6C10000075F17B /* CloudKitConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C1000D2F6C10000075F17B /* CloudKitConfig.swift */; };
 		61D000012F6C10000075F17B /* PreviewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D000022F6C10000075F17B /* PreviewSupport.swift */; };
 		61D000042F6C10000075F17B /* AuthenticationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D000052F6C10000075F17B /* AuthenticationView.swift */; };
+		61D17B542FB0E9540078D531 /* NavigationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D17B522FB0E94C0078D531 /* NavigationCoordinator.swift */; };
 		62A100012F6D10000075F17B /* SyncMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100022F6D10000075F17B /* SyncMode.swift */; };
 		62A100032F6D10000075F17B /* ToDoSyncBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100042F6D10000075F17B /* ToDoSyncBackend.swift */; };
 		62A100052F6D10000075F17B /* MigrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100062F6D10000075F17B /* MigrationService.swift */; };
@@ -94,7 +94,6 @@
 		61A0A0022F6A10000075F17B /* SnoozePreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoozePreferences.swift; sourceTree = "<group>"; };
 		61A0A0042F6A10000075F17B /* SnoozeOptionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnoozeOptionsView.swift; sourceTree = "<group>"; };
 		61B200022F6B00000075F17B /* PushNotificationAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushNotificationAppDelegate.swift; sourceTree = "<group>"; };
-		61B200042F6B00000075F17B /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationManager.swift; sourceTree = "<group>"; };
 		61C100032F6C10000075F17B /* SupabaseConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseConfig.swift; sourceTree = "<group>"; };
 		61C100052F6C10000075F17B /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
 		61C100072F6C10000075F17B /* SupabaseAuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthStore.swift; sourceTree = "<group>"; };
@@ -103,6 +102,7 @@
 		61C1000D2F6C10000075F17B /* CloudKitConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudKitConfig.swift; sourceTree = "<group>"; };
 		61D000022F6C10000075F17B /* PreviewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewSupport.swift; sourceTree = "<group>"; };
 		61D000052F6C10000075F17B /* AuthenticationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationView.swift; sourceTree = "<group>"; };
+		61D17B522FB0E94C0078D531 /* NavigationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationCoordinator.swift; sourceTree = "<group>"; };
 		62A100022F6D10000075F17B /* SyncMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncMode.swift; sourceTree = "<group>"; };
 		62A100042F6D10000075F17B /* ToDoSyncBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDoSyncBackend.swift; sourceTree = "<group>"; };
 		62A100062F6D10000075F17B /* MigrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MigrationService.swift; sourceTree = "<group>"; };
@@ -128,6 +128,11 @@
 		616BF02A2F3A6D0A002F8D74 /* ToDoUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ToDoUITests;
+			sourceTree = "<group>";
+		};
+		61D17B452FB0D31A0078D531 /* Notifications */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Notifications;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -165,6 +170,7 @@
 				AA0000012F3A6D0A002F8D74 /* App */,
 				AA0000022F3A6D0A002F8D74 /* Features */,
 				AA0000032F3A6D0A002F8D74 /* Core */,
+				61D17B3E2FB0D30F0078D531 /* Services */,
 				AA0000052F3A6D0A002F8D74 /* Resources */,
 				AA0000062F3A6D0A002F8D74 /* Tests */,
 				616BF00D2F3A6D09002F8D74 /* Products */,
@@ -187,6 +193,15 @@
 				61D000022F6C10000075F17B /* PreviewSupport.swift */,
 			);
 			path = Preview;
+			sourceTree = "<group>";
+		};
+		61D17B3E2FB0D30F0078D531 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				61D17B452FB0D31A0078D531 /* Notifications */,
+				61D17B522FB0E94C0078D531 /* NavigationCoordinator.swift */,
+			);
+			path = Services;
 			sourceTree = "<group>";
 		};
 		62A1000D2F6D10000075F17B /* Sync */ = {
@@ -422,7 +437,6 @@
 			isa = PBXGroup;
 			children = (
 				61A09F042F6A20000075F17B /* LocationTimeZoneService.swift */,
-				61B200042F6B00000075F17B /* NotificationManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -461,6 +475,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				61437FB62F5C092500D63FE0 /* Fonts */,
+				61D17B452FB0D31A0078D531 /* Notifications */,
 			);
 			name = ToDo;
 			packageProductDependencies = (
@@ -599,7 +614,6 @@
 				61C1000A2F6C10000075F17B /* AccountView.swift in Sources */,
 				61D000042F6C10000075F17B /* AuthenticationView.swift in Sources */,
 				611776D02F4BFC890075F17B /* ArchivesView.swift in Sources */,
-				61B200032F6B00000075F17B /* NotificationManager.swift in Sources */,
 				61A09F012F6A20000075F17B /* AppTimePreferences.swift in Sources */,
 				611776BD2F4BFC890075F17B /* BulkTagPickerView.swift in Sources */,
 				61A09F032F6A20000075F17B /* LocationTimeZoneService.swift in Sources */,
@@ -608,6 +622,7 @@
 				611776BF2F4BFC890075F17B /* NanoDo.swift in Sources */,
 				611776C02F4BFC890075F17B /* NanoDoEditorView.swift in Sources */,
 				61B200012F6B00000075F17B /* PushNotificationAppDelegate.swift in Sources */,
+				61D17B542FB0E9540078D531 /* NavigationCoordinator.swift in Sources */,
 				611776C12F4BFC890075F17B /* SettingsView.swift in Sources */,
 				611776C22F4BFC890075F17B /* Tag.swift in Sources */,
 				611776CC2F4BFC890075F17B /* AppPreferences.swift in Sources */,

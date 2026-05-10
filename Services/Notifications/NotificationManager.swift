@@ -6,7 +6,7 @@ import UserNotifications
 @MainActor
 final class NotificationManager: NSObject, ObservableObject {
    static let shared = NotificationManager()
-
+   
    enum RemoteNotificationHandlingResult {
       case noData
       case newData
@@ -32,7 +32,7 @@ final class NotificationManager: NSObject, ObservableObject {
          }
       }
    }
-
+   
    var pushReadinessDetail: String {
       switch registrationState {
       case .idle:
@@ -96,12 +96,13 @@ final class NotificationManager: NSObject, ObservableObject {
    func requestAuthorizationFlow() async {
       registerNotificationCategories()
       
-        do {
-            let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
-            await refreshAuthorizationStatus()
+      do {
+         let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+         await refreshAuthorizationStatus()
          
          guard granted else { return }
          
+         registerNotificationCategories()
          registerForRemoteNotifications()
          await syncScheduledNotifications()
       } catch {
@@ -126,27 +127,27 @@ final class NotificationManager: NSObject, ObservableObject {
       registrationState = .registered(token: token)
       
       let previousToken = UserDefaults.standard.string(
-          forKey: AppPreferences.Keys.remotePushDeviceToken
+         forKey: AppPreferences.Keys.remotePushDeviceToken
       )
-
+      
       guard previousToken != token else {
-          registrationState = .registered(token: token)
-          currentAPNSToken = token
-          return
+         registrationState = .registered(token: token)
+         currentAPNSToken = token
+         return
       }
-
+      
       UserDefaults.standard.set(
-          token,
-          forKey: AppPreferences.Keys.remotePushDeviceToken
+         token,
+         forKey: AppPreferences.Keys.remotePushDeviceToken
       )
-
+      
       registrationState = .registered(token: token)
       currentAPNSToken = token
-
+      
       print("SYSLOG: APNs Token Updated:", token)
-
+      
       Task {
-          await SupabaseAuthStore.shared.syncCurrentDeviceTokenIfPossible()
+         await SupabaseAuthStore.shared.syncCurrentDeviceTokenIfPossible()
       }
    }
    
@@ -157,16 +158,16 @@ final class NotificationManager: NSObject, ObservableObject {
    func scheduleRefresh() {
       scheduleRefresh(delayNanoseconds: coalescedSyncDelayNanoseconds)
    }
-
+   
    private func scheduleRefresh(delayNanoseconds: UInt64) {
       scheduledSyncTask?.cancel()
       scheduledSyncTask = Task { [weak self] in
          guard let self else { return }
-
+         
          if delayNanoseconds > 0 {
             try? await Task.sleep(nanoseconds: delayNanoseconds)
          }
-
+         
          guard !Task.isCancelled else { return }
          await self.syncScheduledNotifications()
       }
@@ -177,12 +178,12 @@ final class NotificationManager: NSObject, ObservableObject {
          guard let userID = SupabaseAuthStore.shared.currentUserID else {
             return .noData
          }
-
+         
          await SyncCoordinator.shared.refreshFromRemote(userID: userID)
          await syncScheduledNotifications()
          return .newData
       }
-
+      
       guard let action = userInfo["todoAction"] as? String,
             let toDoIdentifier = userInfo["todoIdentifier"] as? String,
             let container = modelContainer else {
@@ -219,14 +220,14 @@ final class NotificationManager: NSObject, ObservableObject {
          return .failed
       }
    }
-
+   
    private func isRemoteSyncRefreshPayload(_ userInfo: [AnyHashable: Any]) -> Bool {
       let candidates = [
          userInfo["todoSync"] as? String,
          userInfo["todo_sync_event"] as? String,
          userInfo["syncEvent"] as? String
       ]
-
+      
       return candidates.contains { value in
          guard let normalized = value?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
                !normalized.isEmpty else {
@@ -356,16 +357,16 @@ final class NotificationManager: NSObject, ObservableObject {
    private func notificationIdentifier(for toDo: ToDo, occurrenceIndex: Int, fireDate: Date) -> String {
       notificationPrefix + persistentIdentifierString(for: toDo) + ".\(occurrenceIndex).\(Int(fireDate.timeIntervalSince1970))"
    }
-
+   
    private func notificationTitle(for toDo: ToDo, fireDate: Date) -> String {
       guard toDo.dueDate != nil else {
          return "ToDo: now"
       }
-
+      
       if fireDate < .now {
          return "ToDo: overdue"
       }
-
+      
       switch toDo.reminderIntent {
       case .soft:
          return "ToDo: now"
@@ -373,7 +374,7 @@ final class NotificationManager: NSObject, ObservableObject {
          return "ToDo: due"
       }
    }
-
+   
    private func interruptionLevel(for toDo: ToDo) -> UNNotificationInterruptionLevel {
       switch toDo.reminderIntent {
       case .soft:
@@ -381,10 +382,12 @@ final class NotificationManager: NSObject, ObservableObject {
       case .due:
          return .active
       case .timeSensitive:
-         return .timeSensitive
+         return timeSensitiveSetting == .enabled
+            ? .timeSensitive
+            : .active
       }
    }
-
+   
    private func notificationSound(for toDo: ToDo) -> UNNotificationSound? {
       switch toDo.reminderIntent {
       case .soft:
@@ -393,7 +396,7 @@ final class NotificationManager: NSObject, ObservableObject {
          return .default
       }
    }
-
+   
    private func relevanceScore(for toDo: ToDo) -> Double {
       switch toDo.reminderIntent {
       case .soft:
@@ -404,14 +407,14 @@ final class NotificationManager: NSObject, ObservableObject {
          return 1.0
       }
    }
-
+   
    private func persistentIdentifierString(for toDo: ToDo) -> String {
       String(describing: toDo.id)
    }
-
+   
    private func scheduledNotificationOccurrences(for toDo: ToDo, now: Date, limit: Int = 24) -> [(fireDate: Date, occurrenceIndex: Int)] {
       guard let dueDate = toDo.dueDate else { return [] }
-
+      
       guard toDo.isRecurring,
             let unit = toDo.recurrenceUnit,
             let interval = toDo.recurrenceInterval,
@@ -420,43 +423,43 @@ final class NotificationManager: NSObject, ObservableObject {
       else {
          return dueDate > now ? [(fireDate: dueDate, occurrenceIndex: 0)] : []
       }
-
+      
       let anchor = toDo.recurrenceAnchorDate ?? dueDate
       let totalOccurrences: Int? = mode == .finite ? max((toDo.recurrenceCount ?? 1) + 1, 1) : nil
       let startIndex = nextOccurrenceIndex(after: now, anchor: anchor, unit: unit, interval: interval)
-
+      
       var occurrences: [(fireDate: Date, occurrenceIndex: Int)] = []
       var index = startIndex
-
+      
       while occurrences.count < limit {
          if let totalOccurrences, index >= totalOccurrences {
             break
          }
-
+         
          guard let fireDate = recurrenceDate(anchor: anchor, unit: unit, interval: interval, occurrenceIndex: index) else {
             break
          }
-
+         
          if let endDate = toDo.recurrenceEndDate, fireDate > endDate {
             break
          }
-
+         
          if fireDate > now {
             occurrences.append((fireDate: fireDate, occurrenceIndex: index))
          }
-
+         
          index += 1
       }
-
+      
       return occurrences
    }
-
+   
    private func nextOccurrenceIndex(after date: Date, anchor: Date, unit: ToDoRecurrenceUnit, interval: Int) -> Int {
       guard date >= anchor else { return 0 }
-
+      
       let calendar = Calendar.current
       let baseEstimate: Int
-
+      
       switch unit {
       case .seconds:
          baseEstimate = Int((date.timeIntervalSince(anchor) / Double(interval)).rounded(.down)) + 1
@@ -473,23 +476,23 @@ final class NotificationManager: NSObject, ObservableObject {
       case .years:
          baseEstimate = max((calendar.dateComponents([.year], from: anchor, to: date).year ?? 0) / interval, 0)
       }
-
+      
       var index = max(baseEstimate, 0)
-
+      
       while index > 0,
             let priorDate = recurrenceDate(anchor: anchor, unit: unit, interval: interval, occurrenceIndex: index - 1),
             priorDate > date {
          index -= 1
       }
-
+      
       while let candidate = recurrenceDate(anchor: anchor, unit: unit, interval: interval, occurrenceIndex: index),
             candidate <= date {
          index += 1
       }
-
+      
       return index
    }
-
+   
    private func recurrenceDate(anchor: Date, unit: ToDoRecurrenceUnit, interval: Int, occurrenceIndex: Int) -> Date? {
       Calendar.current.date(
          byAdding: unit.calendarComponent,
@@ -497,7 +500,7 @@ final class NotificationManager: NSObject, ObservableObject {
          to: anchor
       )
    }
-
+   
    private struct ScheduledOccurrence {
       let toDo: ToDo
       let fireDate: Date
@@ -549,7 +552,7 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
       willPresent notification: UNNotification
    ) async -> UNNotificationPresentationOptions {
       let content = notification.request.content
-
+      
       switch content.interruptionLevel {
       case .passive:
          // Quiet reminders should remain in Notification Center only.

@@ -27,6 +27,9 @@ struct ToDosView: View {
    @State private var isShowingSyncReview = false
    @State private var isSelectionMode = false
    @State private var isShowingBulkTagPicker = false
+   @State private var selectedToDoID: UUID?
+   @State private var selectedCircleID: UUID?
+   @State private var showingSyncView = false
    @State private var selectedToDoIDs = Set<PersistentIdentifier>()
    @State private var editingToDo: ToDo?
    @State private var isFilterVisible = false
@@ -36,6 +39,8 @@ struct ToDosView: View {
    @State private var inlineEditingToDoID: PersistentIdentifier?
    @State private var composerDetent = PresentationDetent.large//.fraction(0.92)
    @FocusState private var isSearchFieldFocused: Bool
+   
+   @State private var navigationCoordinator = NavigationCoordinator.shared
 
    var body: some View {
       NavigationStack {
@@ -111,6 +116,10 @@ struct ToDosView: View {
       }
       .tint(AppColor.actionPrimary)
       .appBaseTypography()
+      .onChange(of: navigationCoordinator.notificationRoute
+      ) { _, route in
+         handleNotificationRoute(route)
+      }
    }
 
    private var listContent: some View {
@@ -469,6 +478,33 @@ struct ToDosView: View {
       case .archived:
          return "Archived"
       }
+   }
+   
+   private func handleNotificationRoute(
+      _ route: NotificationRoute
+   ) {
+      switch route {
+         
+      case .toDo(let id):
+         
+         selectedToDoID = id
+         
+      case .circle(let id):
+         
+         selectedCircleID = id
+         
+      case .sync:
+         
+         showingSyncView = true
+         
+      case .none:
+         
+         break
+         
+      }
+      
+      navigationCoordinator.notificationRoute = .none
+   }
    }
 
    private func regularPanelHeader<Accessory: View>(
