@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>google</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.364801019729-mhh0dbh0ivdol5fgulfvcj6rjb7hbqhv</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>todo</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>todo</string>
+			</array>
+		</dict>
+	</array>
+	<key>GIDClientID</key>
+	<string>364801019729-mhh0dbh0ivdol5fgulfvcj6rjb7hbqhv.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>364801019729-bp9di92ga9uahndkn72p1r028kpug873.apps.googleusercontent.com</string>
+	<key>SUPABASE_PUBLISHABLE_KEY</key>
+	<string>sb_publishable_CqPxCXnr8KBizWsYVQLOxQ_MHtJFgQy</string>
+	<key>SUPABASE_REDIRECT_URL</key>
+	<string>todo://auth-callback</string>
+	<key>SUPABASE_URL</key>
+	<string>https://kddeevmuyevhgoyvrdlc.supabase.co</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>carbonplus-light.otf</string>
+		<string>CalSans-Regular.ttf</string>
+		<string>Jura-Variable.ttf</string>
+		<string>nixieone-regular.ttf</string>
+		<string>bjorn-light.otf</string>
+		<string>bjorn-regular.otf</string>
+		<string>bebas-neue.ttf</string>
+		<string>carbonplus-regular.otf</string>
+		<string>carbonplus-bold.otf</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+		<string>processing</string>
+		<string>fetch</string>
+	</array>
+</dict>
+</plist>
