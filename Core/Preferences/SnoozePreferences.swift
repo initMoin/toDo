@@ -12,23 +12,23 @@ enum SnoozeUnit: String, CaseIterable, Identifiable, Codable {
 
     var title: String {
         switch self {
-        case .minutes: return "Minutes"
-        case .hours: return "Hours"
-        case .days: return "Days"
-        case .weeks: return "Weeks"
-        case .months: return "Months"
-        case .years: return "Years"
+        case .minutes: return String(localized: "Minutes")
+        case .hours: return String(localized: "Hours")
+        case .days: return String(localized: "Days")
+        case .weeks: return String(localized: "Weeks")
+        case .months: return String(localized: "Months")
+        case .years: return String(localized: "Years")
         }
     }
 
     var singularTitle: String {
         switch self {
-        case .minutes: return "Minute"
-        case .hours: return "Hour"
-        case .days: return "Day"
-        case .weeks: return "Week"
-        case .months: return "Month"
-        case .years: return "Year"
+        case .minutes: return String(localized: "Minute")
+        case .hours: return String(localized: "Hour")
+        case .days: return String(localized: "Day")
+        case .weeks: return String(localized: "Week")
+        case .months: return String(localized: "Month")
+        case .years: return String(localized: "Year")
         }
     }
 
@@ -55,8 +55,20 @@ enum SnoozeUnit: String, CaseIterable, Identifiable, Codable {
     }
 
     func displayLabel(for value: Int) -> String {
-        let unitLabel = value == 1 ? singularTitle.lowercased() : title.lowercased()
-        return "\(value) \(unitLabel)"
+        switch self {
+        case .minutes:
+            return AppLocalization.localizedCount(value, singularKey: "%@ minute", pluralKey: "%@ minutes")
+        case .hours:
+            return AppLocalization.localizedCount(value, singularKey: "%@ hour", pluralKey: "%@ hours")
+        case .days:
+            return AppLocalization.localizedCount(value, singularKey: "%@ day", pluralKey: "%@ days")
+        case .weeks:
+            return AppLocalization.localizedCount(value, singularKey: "%@ week", pluralKey: "%@ weeks")
+        case .months:
+            return AppLocalization.localizedCount(value, singularKey: "%@ month", pluralKey: "%@ months")
+        case .years:
+            return AppLocalization.localizedCount(value, singularKey: "%@ year", pluralKey: "%@ years")
+        }
     }
 }
 

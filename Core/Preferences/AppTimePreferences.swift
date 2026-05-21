@@ -1,5 +1,88 @@
 import Foundation
 
+enum AppLocalization {
+    nonisolated static var languageCode: String {
+        Bundle.main.preferredLocalizations.first
+            ?? Locale.current.language.languageCode?.identifier
+            ?? "en"
+    }
+
+    nonisolated static var isArabic: Bool {
+        languageCode == "ar"
+    }
+
+    nonisolated static var isUrdu: Bool {
+        languageCode == "ur"
+    }
+
+    nonisolated static var displayLocale: Locale {
+        Locale(identifier: languageCode)
+    }
+
+    nonisolated static var displayCalendar: Calendar {
+        var calendar = Calendar(identifier: isArabic ? .islamicUmmAlQura : .gregorian)
+        calendar.locale = displayLocale
+        calendar.timeZone = .current
+        return calendar
+    }
+
+    nonisolated static func dateTimeString(_ date: Date) -> String {
+        formatted(date, dateStyle: .medium, timeStyle: .short)
+    }
+
+    nonisolated static func dateString(_ date: Date) -> String {
+        formatted(date, dateStyle: .medium, timeStyle: .none)
+    }
+
+    nonisolated static func completeDateString(_ date: Date) -> String {
+        formatted(date, dateStyle: .full, timeStyle: .none)
+    }
+
+    nonisolated static func monthYearString(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = displayLocale
+        formatter.calendar = displayCalendar
+        formatter.setLocalizedDateFormatFromTemplate("yMMMM")
+        return formatter.string(from: date)
+    }
+
+    nonisolated static func dayNumberString(_ date: Date) -> String {
+        let number = displayCalendar.component(.day, from: date)
+        return numberString(number)
+    }
+
+    nonisolated static func numberString(_ number: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = displayLocale
+        formatter.numberStyle = .none
+        return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
+    }
+
+    nonisolated static func decimalString(_ number: Double, maximumFractionDigits: Int = 0) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = displayLocale
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = maximumFractionDigits
+        return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
+    }
+
+    nonisolated static func localizedCount(_ count: Int, singularKey: String, pluralKey: String) -> String {
+        String(
+            format: String(localized: String.LocalizationValue(count == 1 ? singularKey : pluralKey)),
+            numberString(count)
+        )
+    }
+
+    private nonisolated static func formatted(_ date: Date, dateStyle: DateFormatter.Style, timeStyle: DateFormatter.Style) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = displayLocale
+        formatter.calendar = displayCalendar
+        formatter.dateStyle = dateStyle
+        formatter.timeStyle = timeStyle
+        return formatter.string(from: date)
+    }
+}
+
 enum AppTimeSource: String, CaseIterable, Identifiable {
     case location
     case system
@@ -9,22 +92,22 @@ enum AppTimeSource: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .location:
-            return "Location"
+            return String(localized: "Location")
         case .system:
-            return "System"
+            return String(localized: "System")
         }
     }
 }
 
 enum AppTimePreferences {
-    static let appleParkTimeZoneIdentifier = "America/Los_Angeles"
-    static let appleParkLabel = "Apple Park"
+    nonisolated static let appleParkTimeZoneIdentifier = "America/Los_Angeles"
+    nonisolated static let appleParkLabel = "Apple Park"
 
-    static func resolvedTimeSource(from rawValue: String) -> AppTimeSource {
+    nonisolated static func resolvedTimeSource(from rawValue: String) -> AppTimeSource {
         AppTimeSource(rawValue: rawValue) ?? .location
     }
 
-    static func resolvedTimeZone(sourceRawValue: String, locationTimeZoneIdentifier: String) -> TimeZone {
+    nonisolated static func resolvedTimeZone(sourceRawValue: String, locationTimeZoneIdentifier: String) -> TimeZone {
         switch resolvedTimeSource(from: sourceRawValue) {
         case .system:
             return .current
@@ -35,9 +118,16 @@ enum AppTimePreferences {
         }
     }
 
-    static func dateString(now: Date = .now, sourceRawValue: String, locationTimeZoneIdentifier: String) -> String {
-        var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
-        style.timeZone = resolvedTimeZone(sourceRawValue: sourceRawValue, locationTimeZoneIdentifier: locationTimeZoneIdentifier)
-        return now.formatted(style)
+    nonisolated static func dateString(now: Date = .now, sourceRawValue: String, locationTimeZoneIdentifier: String) -> String {
+        var calendar = AppLocalization.displayCalendar
+        calendar.timeZone = resolvedTimeZone(sourceRawValue: sourceRawValue, locationTimeZoneIdentifier: locationTimeZoneIdentifier)
+
+        let formatter = DateFormatter()
+        formatter.locale = AppLocalization.displayLocale
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter.string(from: now)
     }
 }

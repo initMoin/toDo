@@ -38,6 +38,8 @@ struct AccountView: View {
         .tint(AppColor.actionPrimary)
         .appBaseTypography()
         .appNavigationChrome()
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden()
         .sheet(isPresented: $isShowingSyncSettings) {
             SyncSettingsView()
         }
@@ -65,18 +67,7 @@ struct AccountView: View {
     }
 
     private var pinnedTitleHeader: some View {
-        VStack(spacing: 0) {
-            Text("Account")
-                .font(.appTitle(34, relativeTo: .largeTitle))
-                .foregroundStyle(AppColor.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 14)
-                .background(AppColor.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        AppSettingsDetailHeader(title: "Account")
     }
 
     private var accountSummarySection: some View {
@@ -283,12 +274,26 @@ struct AccountView: View {
     }
 
     private var syncStatusTitle: String {
-        syncCoordinator.effectiveSyncMode.title
+        if let pendingMode = syncCoordinator.pendingRestartSyncMode {
+            return pendingMode.title
+        }
+
+        if syncCoordinator.preferredSyncMode == .syncEverywhere,
+           !authStore.isAuthenticated {
+            return syncCoordinator.preferredSyncMode.title
+        }
+
+        return syncCoordinator.effectiveSyncMode.title
     }
 
     private var syncStatusDetail: String {
         if let pendingMode = syncCoordinator.pendingRestartSyncMode {
             return "Close and reopen ToDo to finish switching to \(pendingMode.title)."
+        }
+
+        if syncCoordinator.preferredSyncMode == .syncEverywhere,
+           !authStore.isAuthenticated {
+            return "\(syncCoordinator.preferredSyncMode.title) is selected. Sign in to activate it; until then, ToDo stays on \(syncCoordinator.effectiveSyncMode.title)."
         }
 
         return syncCoordinator.effectiveSyncMode.subtitle
@@ -409,6 +414,8 @@ struct SyncSettingsView: View {
         .tint(AppColor.actionPrimary)
         .appBaseTypography()
         .appNavigationChrome()
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden()
         .confirmationDialog(syncModeConfirmationTitle, isPresented: $isShowingSyncModeConfirmation, titleVisibility: .visible) {
             Button("Continue") {
                 isShowingSyncModeFinalConfirmation = true
@@ -475,18 +482,10 @@ struct SyncSettingsView: View {
     }
 
     private var pinnedTitleHeader: some View {
-        VStack(spacing: 0) {
-            Text("Sync")
-                .font(.appTitle(34, relativeTo: .largeTitle))
-                .foregroundStyle(AppColor.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 14)
-                .background(AppColor.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        AppSettingsDetailHeader(
+            title: "Sync",
+            backAccessibilityLabel: "Go back to Account"
+        )
     }
 
     private var syncOverviewSection: some View {
@@ -587,7 +586,16 @@ struct SyncSettingsView: View {
     }
 
     private var syncStatusTitle: String {
-        syncCoordinator.effectiveSyncMode.title
+        if let pendingMode = syncCoordinator.pendingRestartSyncMode {
+            return pendingMode.title
+        }
+
+        if syncCoordinator.preferredSyncMode == .syncEverywhere,
+           !authStore.isAuthenticated {
+            return syncCoordinator.preferredSyncMode.title
+        }
+
+        return syncCoordinator.effectiveSyncMode.title
     }
 
     private var syncStatusDetail: String {
@@ -596,7 +604,7 @@ struct SyncSettingsView: View {
         }
 
         if syncCoordinator.preferredSyncMode == .syncEverywhere, !authStore.isAuthenticated {
-            return "\(syncCoordinator.preferredSyncMode.title) is selected. Sign in below to activate it."
+            return "\(syncCoordinator.preferredSyncMode.title) is selected. Sign in below to activate it; until then, ToDo stays on \(syncCoordinator.effectiveSyncMode.title)."
         }
 
         return syncCoordinator.effectiveSyncMode.subtitle
@@ -748,7 +756,7 @@ struct SyncSettingsView: View {
 
                 Text(authStore.accountStateTitle)
                     .font(.appBodyStrong(17, relativeTo: .body))
-                    .foregroundStyle(AppColor.textSecondary)
+                    .foregroundStyle(AppColor.textPrimary)
             }
 
             if let email = authStore.signedInEmail {

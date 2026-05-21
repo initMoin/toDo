@@ -9,7 +9,7 @@ import Foundation
 
 enum NotificationRoute: Equatable, Sendable {
 
-    case toDo(UUID)
+    case toDo(localIdentifier: String?, cloudID: UUID?)
 
     case circle(UUID)
 

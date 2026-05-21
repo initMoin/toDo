@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 
 enum CloudKitConfig {
-    static let containerIdentifier = "iCloud.dev.iamshift.ToDo-TaskManagement"
+    static let containerIdentifier = "iCloud.dev.iamshift.toDo"
     static let isAvailable = true
 
     static func database(for syncMode: SyncMode) -> ModelConfiguration.CloudKitDatabase {

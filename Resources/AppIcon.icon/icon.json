@@ -1,4 +1,5 @@
 {
+  "color-space-for-untagged-svg-colors" : "display-p3",
   "fill" : {
     "solid" : "srgb:0.00000,0.42353,0.90588,1.00000"
   },
@@ -16,7 +17,7 @@
             {
               "appearance" : "tinted",
               "value" : {
-                "solid" : "srgb:0.91373,0.65490,0.00000,1.00000"
+                "solid" : "gray:0.70721,1.00000"
               }
             }
           ],
@@ -44,9 +45,6 @@
     }
   ],
   "supported-platforms" : {
-    "circles" : [
-      "watchOS"
-    ],
     "squares" : "shared"
   }
 }

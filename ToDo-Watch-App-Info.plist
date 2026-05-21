@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>WKSupportsLiveActivityLaunchAttributesTypes</key>
+	<array/>
+	<key>SUPABASE_PUBLISHABLE_KEY</key>
+	<string>sb_publishable_CqPxCXnr8KBizWsYVQLOxQ_MHtJFgQy</string>
+	<key>SUPABASE_REDIRECT_URL</key>
+	<string>todo://auth-callback</string>
+	<key>SUPABASE_URL</key>
+	<string>https://kddeevmuyevhgoyvrdlc.supabase.co</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>carbonplus-light.otf</string>
+		<string>CalSans-Regular.ttf</string>
+		<string>Jura-Variable.ttf</string>
+		<string>nixieone-regular.ttf</string>
+		<string>bjorn-light.otf</string>
+		<string>bjorn-regular.otf</string>
+		<string>bebas-neue.ttf</string>
+		<string>carbonplus-regular.otf</string>
+		<string>carbonplus-bold.otf</string>
+		<string>Aleo-Bold.ttf</string>
+		<string>Aleo-BoldItalic.ttf</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+</dict>
+</plist>

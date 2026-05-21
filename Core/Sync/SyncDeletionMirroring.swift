@@ -35,7 +35,7 @@ enum SyncDeletionMirroring {
                 context.delete(counterpart)
             }
         } catch {
-            print("Failed to mirror ToDo Sync delete locally: \(error)")
+            AppLog.error("Failed to mirror ToDo Sync delete locally: \(error)", logger: AppLog.sync)
         }
     }
 }

@@ -27,7 +27,7 @@ You need these values from Apple Developer:
 - `APNS_PRODUCTION_TEAM_ID`: Apple Developer Team ID for the production key. Optional if it matches `APNS_TEAM_ID`.
 - `APNS_PRODUCTION_PRIVATE_KEY_BASE64`: base64-encoded contents of the production `.p8` file.
 - `APNS_TEAM_ID`: shared Apple Developer Team ID fallback.
-- `APNS_BUNDLE_ID`: `dev.iamshift.ToDo-TaskManagement` unless the bundle ID changes.
+- `APNS_BUNDLE_ID`: `dev.iamshift.toDo` unless the bundle ID changes.
 - `SUPABASE_SERVICE_ROLE_KEY`: Supabase service role key. Supabase provides this automatically inside Edge Functions; do not worry if the CLI skips it from local env files.
 
 ## App-Side Requirements
@@ -73,7 +73,7 @@ Create a local file that is never committed, for example `supabase/.env.todo-syn
 ```sh
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 APNS_TEAM_ID=your-apple-team-id
-APNS_BUNDLE_ID=dev.iamshift.ToDo-TaskManagement
+APNS_BUNDLE_ID=dev.iamshift.toDo
 APNS_SANDBOX_KEY_ID=your-sandbox-key-id
 APNS_SANDBOX_PRIVATE_KEY_BASE64=base64-encoded-sandbox-p8-file
 APNS_PRODUCTION_KEY_ID=your-production-key-id

@@ -8,11 +8,11 @@
 import Foundation
 import UserNotifications
 
-@MainActor
 final class NotificationRouter {
 
     static let shared = NotificationRouter()
 
+    @MainActor
     func route(notification: UNNotification) {
         let userInfo = notification.request.content.userInfo
         guard let payload = Self.payload(
@@ -24,11 +24,15 @@ final class NotificationRouter {
         route(payload: payload)
     }
 
+    @MainActor
     func route(payload: NotificationPayload) {
         switch payload.type {
         case .toDoDue, .toDoOverdue, .recurringToDo, .reminder:
-            guard let toDoID = payload.toDoID else { return }
-            NavigationCoordinator.shared.notificationRoute = .toDo(toDoID)
+            guard payload.toDoLocalIdentifier != nil || payload.toDoID != nil else { return }
+            NavigationCoordinator.shared.notificationRoute = .toDo(
+                localIdentifier: payload.toDoLocalIdentifier,
+                cloudID: payload.toDoID
+            )
 
         case .circleInvite, .circleUpdate:
             guard let circleID = payload.circleID else { return }
@@ -55,8 +59,9 @@ final class NotificationRouter {
             title: title,
             body: body,
             toDoID: uuidValue(
-                from: userInfo["todoCloudIdentifier"] ?? userInfo["todoIdentifier"]
+                from: userInfo["todoCloudIdentifier"]
             ),
+            toDoLocalIdentifier: stringValue(from: userInfo["todoIdentifier"]),
             circleID: uuidValue(from: userInfo["circleID"]),
             isRecurring: userInfo["isRecurring"] as? Bool ?? false,
             isTimeSensitive: userInfo["isTimeSensitive"] as? Bool ?? false
@@ -73,5 +78,18 @@ final class NotificationRouter {
         }
 
         return UUID(uuidString: string)
+    }
+
+    private nonisolated static func stringValue(from rawValue: Any?) -> String? {
+        if let uuid = rawValue as? UUID {
+            return uuid.uuidString
+        }
+
+        guard let string = rawValue as? String,
+              !string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+
+        return string
     }
 }

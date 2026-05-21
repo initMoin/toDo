@@ -1,7 +1,5 @@
 import UIKit
 
-// This bridge is the only UIKit/APNs boundary in the app. Notification state and routing
-// stay in SwiftUI-facing services; UIKit is used here only for APNs registration callbacks.
 final class PushNotificationAppDelegate: NSObject, UIApplicationDelegate {
    @MainActor
    static func registerForRemoteNotifications() {
@@ -47,19 +45,5 @@ final class PushNotificationAppDelegate: NSObject, UIApplicationDelegate {
       case .failed:
          return .failed
       }
-   }
-}
-
-extension PushNotificationAppDelegate:
-   UNUserNotificationCenterDelegate {
-   
-   func userNotificationCenter(
-      _ center: UNUserNotificationCenter,
-      didReceive response: UNNotificationResponse
-   ) async {
-      
-      NotificationRouter.shared.route(
-         notification: response.notification
-      )
    }
 }

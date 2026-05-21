@@ -66,33 +66,42 @@ struct SyncHealthStatusView: View {
     }
 
     private var statusTitle: String {
-        if syncCoordinator.effectiveSyncMode != .syncEverywhere {
-            return "Active"
+        if syncCoordinator.pendingRestartSyncMode != nil {
+            return String(localized: "Needs Relaunch")
         }
 
-        if !isAccountAuthenticated {
-            return "Needs Sign In"
+        if syncCoordinator.preferredSyncMode == .syncEverywhere,
+           !isAccountAuthenticated {
+            return String(localized: "Needs Sign In")
+        }
+
+        if syncCoordinator.preferredSyncMode != syncCoordinator.effectiveSyncMode {
+            return String(localized: "Activating")
+        }
+
+        if syncCoordinator.effectiveSyncMode != .syncEverywhere {
+            return String(localized: "Active")
         }
 
         if unresolvedConflictCount > 0 {
-            return "Needs Review"
+            return String(localized: "Needs Review")
         }
 
         switch syncCoordinator.syncActivityState {
         case .idle:
-            return "Active"
+            return String(localized: "Active")
         case .activating:
             return syncCoordinator.currentSyncPhase == .queuedLocalChanges
-                ? "Waiting to Sync"
-                : "Activating"
+                ? String(localized: "Waiting to Sync")
+                : String(localized: "Activating")
         case .syncing:
             return syncCoordinator.currentSyncPhase == .queuedLocalChanges
-                ? "Waiting to Sync"
-                : syncCoordinator.currentSyncPhase?.title ?? "Syncing"
+                ? String(localized: "Waiting to Sync")
+                : syncCoordinator.currentSyncPhase?.title ?? String(localized: "Syncing")
         case .synced:
-            return "Active"
+            return String(localized: "Active")
         case .failed:
-            return "Sync Failed"
+            return String(localized: "Sync Failed")
         }
     }
 
@@ -105,42 +114,65 @@ struct SyncHealthStatusView: View {
     }
 
     private var statusDetail: String {
-        if syncCoordinator.effectiveSyncMode != .syncEverywhere {
-            return "ToDo is currently using \(syncCoordinator.effectiveSyncMode.title)."
+        if let pendingMode = syncCoordinator.pendingRestartSyncMode {
+            return String(format: String(localized: "%@ is saved. Close and reopen ToDo when you are ready to activate it."), pendingMode.title)
         }
 
-        if !isAccountAuthenticated {
-            return "Sign in to activate ToDo Sync."
+        if syncCoordinator.preferredSyncMode == .syncEverywhere,
+           !isAccountAuthenticated {
+            return String(format: String(localized: "ToDo Sync is selected, but this device is still using %@ until you sign in."), syncCoordinator.effectiveSyncMode.title)
+        }
+
+        if syncCoordinator.preferredSyncMode != syncCoordinator.effectiveSyncMode {
+            return String(format: String(localized: "%@ is selected. ToDo is still using %@ until setup completes."), syncCoordinator.preferredSyncMode.title, syncCoordinator.effectiveSyncMode.title)
+        }
+
+        if syncCoordinator.effectiveSyncMode != .syncEverywhere {
+            return String(format: String(localized: "ToDo is currently using %@."), syncCoordinator.effectiveSyncMode.title)
         }
 
         if unresolvedConflictCount > 0 {
             return unresolvedConflictCount == 1
-                ? "1 ToDo changed in two places. Review it before ToDo overwrites either version."
-                : "\(unresolvedConflictCount) ToDos changed in two places. Review them before ToDo overwrites either version."
+                ? String(localized: "1 ToDo changed in two places. Review it before ToDo overwrites either version.")
+                : String(format: String(localized: "%@ ToDos changed in two places. Review them before ToDo overwrites either version."), AppLocalization.numberString(unresolvedConflictCount))
         }
 
         switch syncCoordinator.syncActivityState {
         case .idle:
             return syncCoordinator.lastSuccessfulSyncAt.map(lastSyncMessage)
-                ?? "ToDo Sync is active and waiting for changes."
+                ?? String(localized: "ToDo Sync is active and waiting for changes.")
         case .activating:
             return syncCoordinator.currentSyncPhase?.detail
-                ?? "Preparing local ToDos and connecting this device to your account."
+                ?? String(localized: "Preparing local ToDos and connecting this device to your account.")
         case .syncing:
             return syncCoordinator.currentSyncPhase?.detail
-                ?? "Sending recent changes and checking for updates."
+                ?? String(localized: "Sending recent changes and checking for updates.")
         case .synced:
             return syncCoordinator.lastSuccessfulSyncAt.map(lastSyncMessage)
-                ?? "ToDo Sync is active and up to date."
+                ?? String(localized: "ToDo Sync is active and up to date.")
         case .failed:
             let phasePrefix = syncCoordinator.lastFailedSyncPhase.map { "\($0.title): " } ?? ""
-            return syncCoordinator.lastSyncErrorMessage.map { "Last attempt failed. \(phasePrefix)\($0)" }
-                ?? "The last sync attempt failed. Tap refresh to try again."
+            return syncCoordinator.lastSyncErrorMessage.map {
+                String(format: String(localized: "Last attempt failed. %@%@"), phasePrefix, $0)
+            } ?? String(localized: "The last sync attempt failed. Tap refresh to try again.")
         }
     }
 
     private var statusColor: Color {
-        if syncCoordinator.effectiveSyncMode != .syncEverywhere || !isAccountAuthenticated {
+        if syncCoordinator.pendingRestartSyncMode != nil {
+            return AppColor.secondary
+        }
+
+        if syncCoordinator.preferredSyncMode == .syncEverywhere,
+           !isAccountAuthenticated {
+            return AppColor.secondary
+        }
+
+        if syncCoordinator.preferredSyncMode != syncCoordinator.effectiveSyncMode {
+            return AppColor.actionPrimary
+        }
+
+        if syncCoordinator.effectiveSyncMode != .syncEverywhere {
             return AppColor.textSecondary
         }
 
@@ -163,12 +195,21 @@ struct SyncHealthStatusView: View {
     }
 
     private var statusSystemName: String {
-        if syncCoordinator.effectiveSyncMode != .syncEverywhere {
-            return "iphone"
+        if syncCoordinator.pendingRestartSyncMode != nil {
+            return "arrow.clockwise.circle.fill"
         }
 
-        if !isAccountAuthenticated {
+        if syncCoordinator.preferredSyncMode == .syncEverywhere,
+           !isAccountAuthenticated {
             return "person.crop.circle.badge.exclamationmark"
+        }
+
+        if syncCoordinator.preferredSyncMode != syncCoordinator.effectiveSyncMode {
+            return "arrow.triangle.2.circlepath"
+        }
+
+        if syncCoordinator.effectiveSyncMode != .syncEverywhere {
+            return "iphone"
         }
 
         if unresolvedConflictCount > 0 {

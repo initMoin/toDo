@@ -57,7 +57,7 @@ struct SnoozeOptionsView: View {
                   .frame(height: 24)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 62)
+            .padding(.top, 86)
             .padding(.bottom, 24)
          }
 
@@ -68,6 +68,8 @@ struct SnoozeOptionsView: View {
       .tint(AppColor.actionPrimary)
       .appBaseTypography()
       .appNavigationChrome()
+      .toolbar(.hidden, for: .navigationBar)
+      .navigationBarBackButtonHidden()
       .sheet(item: $editorContext) { context in
          SnoozeValueEditorSheet(
             unit: context.unit,
@@ -86,18 +88,7 @@ struct SnoozeOptionsView: View {
    }
 
    private var pinnedTitleHeader: some View {
-      VStack(spacing: 0) {
-         Text("Snooze Options")
-            .font(.appTitle(34, relativeTo: .largeTitle))
-            .foregroundStyle(AppColor.white)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
-            .padding(.horizontal, 16)
-            .padding(.top, -4)
-            .padding(.bottom, 2)
-            .background(AppColor.secondary)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      AppSettingsDetailHeader(title: "Snooze Options")
    }
 
    private func snoozeSection(for unit: SnoozeUnit) -> some View {
@@ -107,7 +98,7 @@ struct SnoozeOptionsView: View {
             .foregroundStyle(AppColor.textPrimary)
 
          VStack(alignment: .leading, spacing: 10) {
-            ForEach(options.values(for: unit), id: \.self) { value in
+            ForEach(Array(options.values(for: unit).enumerated()), id: \.offset) { _, value in
                HStack(spacing: 12) {
                   Text(unit.displayLabel(for: value))
                      .font(.appBodyStrong(15, relativeTo: .subheadline))

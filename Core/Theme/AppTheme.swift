@@ -31,16 +31,13 @@ enum AppActionIntent {
 }
 
 enum AppColor {
-    // Raw brand anchors. These remain stable so brand marks and legacy assets do not
-    // invert unexpectedly when the system appearance changes.
-    static let main = Color("appBrandMain")                    // #E9A700 / #FFCC36
-    static let secondary = Color("appBrandSecondary")          // #006CE7 / #67A9FF
-    static let white = Color("brandWhitish")                   // #EBEBEB
-    static let black = Color("brandDarkish")                   // #393939
-    static let tertiary = Color("appBrandTertiary")            // #62C400 / #8FE35B
-    static let destructive = Color("appBrandDestructive")      // #D40000 / #FF6B6B
+    static let main = Color("appBrandMain")
+    static let secondary = Color("appBrandSecondary")
+    static let white = Color("brandWhitish")
+    static let black = Color("brandDarkish")
+    static let tertiary = Color("appBrandTertiary")
+    static let destructive = Color("appBrandDestructive")
 
-    // Semantic app colors. Views should prefer these over raw palette colors.
     static let actionPrimary = Color("appActionPrimary")
     static let actionSecondary = secondary
     static let actionSuccess = tertiary
@@ -161,6 +158,86 @@ struct AppLargeScreenTitle: View {
             .padding(.top, 0)
             .padding(.bottom, 4)
             .accessibilityAddTraits(.isHeader)
+    }
+}
+
+struct AppSettingsDetailHeader<Trailing: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+    let title: String
+    let backAccessibilityLabel: String
+    let background: Color
+    private let trailing: Trailing
+
+    init(
+        title: String,
+        backAccessibilityLabel: String = "Go back to Settings",
+        background: Color = AppColor.main,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.title = title
+        self.backAccessibilityLabel = backAccessibilityLabel
+        self.background = background
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 14) {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(AppColor.main)
+                        .frame(width: 36, height: 36)
+                        .background(headerButtonBackground, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(backAccessibilityLabel)
+
+                Text(title)
+                    .font(.appTitle(28, relativeTo: .title))
+                    .foregroundStyle(headerForeground)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .accessibilityAddTraits(.isHeader)
+
+                Spacer(minLength: 0)
+
+                trailing
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 14)
+            .background(background)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var headerForeground: Color {
+        colorScheme == .dark ? AppColor.black : AppColor.white
+    }
+
+    private var headerButtonBackground: Color {
+        colorScheme == .dark ? AppColor.black : AppColor.white
+    }
+}
+
+extension AppSettingsDetailHeader where Trailing == EmptyView {
+    init(
+        title: String,
+        backAccessibilityLabel: String = "Go back to Settings",
+        background: Color = AppColor.main
+    ) {
+        self.init(
+            title: title,
+            backAccessibilityLabel: backAccessibilityLabel,
+            background: background
+        ) {
+            EmptyView()
+        }
     }
 }
 

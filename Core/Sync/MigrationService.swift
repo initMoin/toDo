@@ -82,7 +82,7 @@ final class MigrationService {
             let data = try JSONEncoder().encode(payload)
             userDefaults.set(data, forKey: AppPreferences.Keys.pendingStoreMigration)
         } catch {
-            print("Failed to stage pending store migration: \(error)")
+            AppLog.error("Failed to stage pending store migration: \(error)", logger: AppLog.sync)
         }
     }
 
@@ -110,6 +110,7 @@ final class MigrationService {
                 return
             }
 
+            SharedStoreLocation.migrateLegacyStoresIfNeeded()
             let sourceURL = Self.storeURL(for: sourceMode)
             guard FileManager.default.fileExists(atPath: sourceURL.path) else {
                 clearPendingStoreMigration(userDefaults: userDefaults)
@@ -139,24 +140,24 @@ final class MigrationService {
 
             clearPendingStoreMigration(userDefaults: userDefaults)
         } catch {
-            print("Pending store migration failed: \(error)")
+            AppLog.error("Pending store migration failed: \(error)", logger: AppLog.sync)
         }
     }
 
     private func summary(for direction: SyncMigrationDirection) -> String {
         switch direction {
         case .deviceOnlyToICloud:
-            return "Move local ToDos into iCloud sync for Apple devices."
+            return String(localized: "Move local ToDos into iCloud sync for Apple devices.")
         case .deviceOnlyToSyncEverywhere:
-            return "Adopt local ToDos into ToDo Sync for cross-platform access."
+            return String(localized: "Adopt local ToDos into ToDo Sync for cross-platform access.")
         case .iCloudToSyncEverywhere:
-            return "Copy your iCloud-backed ToDos into ToDo Sync for Android and web access."
+            return String(localized: "Copy your iCloud-backed ToDos into ToDo Sync for Android and web access.")
         case .iCloudToDeviceOnly:
-            return "Stop syncing with iCloud and keep your ToDos on this device."
+            return String(localized: "Stop syncing with iCloud and keep your ToDos on this device.")
         case .syncEverywhereToDeviceOnly:
-            return "Copy your latest synced ToDos into device-only storage and step away from account sync."
+            return String(localized: "Copy your latest synced ToDos into device-only storage and step away from account sync.")
         case .syncEverywhereToICloud:
-            return "Move your ToDo Sync data into iCloud sync for Apple-only use."
+            return String(localized: "Move your ToDo Sync data into iCloud sync for Apple-only use.")
         }
     }
 
@@ -418,28 +419,6 @@ final class MigrationService {
     }
 
     private static func storeURL(for syncMode: SyncMode) -> URL {
-        let fileManager = FileManager.default
-        let applicationSupport: URL
-
-        do {
-            applicationSupport = try fileManager.url(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask,
-                appropriateFor: nil,
-                create: true
-            )
-        } catch {
-            applicationSupport = URL.applicationSupportDirectory
-        }
-
-        let fileName: String
-        switch syncMode {
-        case .deviceOnly, .syncEverywhere:
-            fileName = "default.store"
-        case .iCloud:
-            fileName = "icloud.store"
-        }
-
-        return applicationSupport.appending(path: fileName)
+        SharedStoreLocation.storeURL(for: syncMode)
     }
 }

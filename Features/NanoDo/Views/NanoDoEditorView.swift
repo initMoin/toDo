@@ -126,7 +126,7 @@ struct NanoDoEditorView: View {
             NotificationManager.shared.scheduleRefresh()
             SyncCoordinator.shared.scheduleLocalSync()
         } catch {
-            print("Failed to save nanoDo: \(error)")
+            AppLog.error("Failed to save nanoDo: \(error)", logger: AppLog.app)
             return
         }
 

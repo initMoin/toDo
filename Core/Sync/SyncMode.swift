@@ -10,22 +10,22 @@ enum SyncMode: String, CaseIterable, Codable, Identifiable {
     var title: String {
         switch self {
         case .deviceOnly:
-            return "This Device Only"
+            return String(localized: "This Device Only")
         case .iCloud:
-            return "Sync with iCloud"
+            return String(localized: "Sync with iCloud")
         case .syncEverywhere:
-            return "ToDo Sync"
+            return String(localized: "ToDo Sync")
         }
     }
 
     var subtitle: String {
         switch self {
         case .deviceOnly:
-            return "Highest privacy. Your data stays on this device."
+            return String(localized: "Highest privacy. Your data stays on this device.")
         case .iCloud:
-            return "Best for Apple devices. Uses your private iCloud storage."
+            return String(localized: "Best for Apple devices. Uses your private iCloud storage.")
         case .syncEverywhere:
-            return "Best for iPhone, Android, and web. Uses your ToDo account."
+            return String(localized: "Best for iPhone, Android, and web. Uses your ToDo account.")
         }
     }
 

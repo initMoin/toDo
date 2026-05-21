@@ -18,7 +18,7 @@
                BlueprintIdentifier = "616BF00B2F3A6D09002F8D74"
                BuildableName = "ToDo.app"
                BlueprintName = "ToDo"
-               ReferencedContainer = "container:ToDo.xcodeproj">
+               ReferencedContainer = "container:toDo.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -38,7 +38,7 @@
                BlueprintIdentifier = "616BF01C2F3A6D0A002F8D74"
                BuildableName = "ToDoTests.xctest"
                BlueprintName = "ToDoTests"
-               ReferencedContainer = "container:ToDo.xcodeproj">
+               ReferencedContainer = "container:toDo.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -49,7 +49,7 @@
                BlueprintIdentifier = "616BF0262F3A6D0A002F8D74"
                BuildableName = "ToDoUITests.xctest"
                BlueprintName = "ToDoUITests"
-               ReferencedContainer = "container:ToDo.xcodeproj">
+               ReferencedContainer = "container:toDo.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -73,7 +73,7 @@
             BlueprintIdentifier = "616BF00B2F3A6D09002F8D74"
             BuildableName = "ToDo.app"
             BlueprintName = "ToDo"
-            ReferencedContainer = "container:ToDo.xcodeproj">
+            ReferencedContainer = "container:toDo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -90,7 +90,7 @@
             BlueprintIdentifier = "616BF00B2F3A6D09002F8D74"
             BuildableName = "ToDo.app"
             BlueprintName = "ToDo"
-            ReferencedContainer = "container:ToDo.xcodeproj">
+            ReferencedContainer = "container:toDo.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

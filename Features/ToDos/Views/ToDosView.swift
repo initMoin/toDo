@@ -1,10 +1,20 @@
 import SwiftUI
 import SwiftData
+import Combine
 
 struct ToDosView: View {
+   private enum SystemListFilter: Equatable {
+      case today
+      case overdue
+      case due
+      case timeSensitive
+   }
+
    @Environment(\.modelContext) private var context
    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+   @Environment(\.colorScheme) private var colorScheme
    @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
+   @ObservedObject private var syncCoordinator = SyncCoordinator.shared
    @Query private var toDos: [ToDo]
    @Query private var tags: [Tag]
    @Query private var syncConflicts: [SyncConflict]
@@ -12,35 +22,40 @@ struct ToDosView: View {
    @AppStorage(AppPreferences.Keys.tagSortOption) private var tagSortOption = TagSortOption.name.rawValue
    @AppStorage(AppPreferences.Keys.toDoListSortOption) private var toDoListSortOption = AppPreferences.ToDoListSortOption.dueDate.rawValue
    @AppStorage(AppPreferences.Keys.toDoListSortReversed) private var isToDoListSortReversed = false
-   @AppStorage(AppPreferences.Keys.doneSwipePrimaryAction) private var doneSwipePrimaryActionRaw = AppPreferences.DoneSwipePrimaryAction.archive.rawValue
+   @AppStorage(AppPreferences.Keys.doneSwipePrimaryAction) private var doneSwipePrimaryActionRaw = AppPreferences.DoneSwipePrimaryAction.delete.rawValue
    @AppStorage(AppPreferences.Keys.snoozeOptions) private var snoozeOptionsStorage = SnoozePreferences.defaultEncodedString
    @AppStorage(AppPreferences.Keys.appTimeSource) private var appTimeSourceRaw = AppTimeSource.location.rawValue
    @AppStorage(AppPreferences.Keys.locationTimeZoneIdentifier) private var locationTimeZoneIdentifier = AppTimePreferences.appleParkTimeZoneIdentifier
+   @AppStorage(AppPreferences.Keys.toDoFocusFilterMode) private var toDoFocusFilterModeRaw = "all"
    @AppStorage("todo.defaultTagSeedVersion") private var defaultTagSeedVersion = 0
 
    @State private var selectedTagID: PersistentIdentifier?
    @State private var searchText = ""
    @State private var isSearchVisible = false
    @State private var isShowingNewToDo = false
-   @State private var isShowingAccount = false
    @State private var isShowingSettings = false
    @State private var isShowingSyncReview = false
    @State private var isSelectionMode = false
    @State private var isShowingBulkTagPicker = false
-   @State private var selectedToDoID: UUID?
    @State private var selectedCircleID: UUID?
    @State private var showingSyncView = false
+   @State private var pendingNotificationToDoRoute: PendingNotificationToDoRoute?
+   @State private var pendingNotificationResolutionTask: Task<Void, Never>?
+   @State private var isShowingMissingNotificationToDoAlert = false
    @State private var selectedToDoIDs = Set<PersistentIdentifier>()
    @State private var editingToDo: ToDo?
+   @State private var viewingToDo: ToDo?
    @State private var isFilterVisible = false
    @State private var isUtilityTrayPresented = false
-   @State private var isDoneDrawerExpanded = false
    @State private var expandedToDoID: PersistentIdentifier?
    @State private var inlineEditingToDoID: PersistentIdentifier?
    @State private var composerDetent = PresentationDetent.large//.fraction(0.92)
+   @State private var systemListFilter: SystemListFilter?
+   @State private var didApplyScreenshotPresentation = false
    @FocusState private var isSearchFieldFocused: Bool
 
    @State private var navigationCoordinator = NavigationCoordinator.shared
+   @StateObject private var onboardingManager = GuidedOnboardingManager.shared
 
    var body: some View {
       NavigationStack {
@@ -52,12 +67,8 @@ struct ToDosView: View {
                .blur(radius: isInlineEditingDetail ? 5 : 0)
                .animation(AppAnimation.snappySection, value: isInlineEditingDetail)
 
-            if filteredWorkingToDos.isEmpty && filteredDoneToDos.isEmpty {
+            if filteredWorkingToDos.isEmpty {
                emptyStateOverlay
-            }
-
-            if !isBulkEditing && !filteredDoneToDos.isEmpty {
-               doneDrawer
             }
 
             if !usesRegularWidthLayout {
@@ -75,8 +86,24 @@ struct ToDosView: View {
             }
 
             inlineDetailEditorOverlay
+
+            if let feedback = syncCoordinator.syncFeedback {
+               SyncFeedbackOverlay(feedback: feedback)
+                  .transition(.move(edge: .top).combined(with: .opacity))
+                  .zIndex(1000)
+            }
+
          }
+         .ignoresSafeArea(.keyboard, edges: .bottom)
          .navigationBarHidden(true)
+         .overlayPreferenceValue(OnboardingSpotlightPreferenceKey.self) { anchors in
+            if onboardingManager.blocksToDosChrome {
+               GuidedOnboardingOverlay(manager: onboardingManager, anchors: anchors) { step in
+                  handleOnboardingPrimaryAction(step)
+               }
+               .zIndex(1200)
+            }
+         }
          .sheet(isPresented: $isShowingBulkTagPicker) {
             BulkTagPickerView(
                selectedTagID: selectedTagID,
@@ -94,9 +121,6 @@ struct ToDosView: View {
                   composerDetent = .large
                }
          }
-         .sheet(isPresented: $isShowingAccount) {
-            accountSheetContent
-         }
          .sheet(isPresented: $isShowingSyncReview) {
             NavigationStack {
                SyncConflictReviewView(
@@ -105,25 +129,49 @@ struct ToDosView: View {
                )
             }
          }
-         .overlay {
-            settingsOverlay
+         .sheet(isPresented: $isShowingSettings) {
+            NavigationStack {
+               SettingsView(onClose: closeSettingsPanel)
+            }
+            .presentationCornerRadius(34)
+            .presentationBackground(AppColor.surface)
+            .presentationDragIndicator(.hidden)
          }
          .onAppear {
+            onboardingManager.startIfNeeded()
+            resumeGuidedOnboardingIfNeeded()
             if defaultTagSeedVersion < 1 {
                seedIfNeeded()
             }
+            if NavigationCoordinator.shared.shouldOpenSettings {
+               NavigationCoordinator.shared.shouldOpenSettings = false
+               DispatchQueue.main.async {
+                  openSettingsPanel()
+               }
+            }
+            WidgetSnapshotService.shared.writeSnapshot(from: context)
+            LiveActivityService.shared.refresh(from: context)
+            applyScreenshotPresentationIfNeeded()
          }
-//         .task {
-//            guard defaultTagSeedVersion < 1 else { return }
-//            try? await Task.sleep(nanoseconds: 600_000_000)
-//            seedIfNeeded()
-//         }
       }
       .tint(AppColor.actionPrimary)
       .appBaseTypography()
       .onChange(of: navigationCoordinator.notificationRoute
       ) { _, route in
          handleNotificationRoute(route)
+      }
+      .onChange(of: navigationCoordinator.shouldOpenSettings) { _, shouldOpen in
+         guard shouldOpen else { return }
+         navigationCoordinator.shouldOpenSettings = false
+         openSettingsPanel()
+      }
+      .onChange(of: navigationCoordinator.listRoute) { _, route in
+         handleListRoute(route)
+      }
+      .alert("Couldn’t Find ToDo", isPresented: $isShowingMissingNotificationToDoAlert) {
+         Button("OK", role: .cancel) {}
+      } message: {
+         Text("That ToDo may have been deleted or has not synced to this device yet.")
       }
    }
 
@@ -311,7 +359,7 @@ struct ToDosView: View {
                toDoDetailInfoRow(
                   systemName: "calendar",
                   title: "Due",
-                  value: dueDate.formatted(date: .abbreviated, time: .shortened)
+                  value: AppLocalization.dateTimeString(dueDate)
                )
             }
 
@@ -332,7 +380,7 @@ struct ToDosView: View {
             toDoDetailInfoRow(
                systemName: "clock",
                title: "Updated",
-               value: toDo.syncUpdatedAt.formatted(date: .abbreviated, time: .shortened)
+               value: AppLocalization.dateTimeString(toDo.syncUpdatedAt)
             )
          }
 
@@ -423,7 +471,7 @@ struct ToDosView: View {
             .frame(width: 18)
 
          VStack(alignment: .leading, spacing: 2) {
-            Text(title)
+            Text(LocalizedStringKey(title))
                .font(.appBodyStrong(11, relativeTo: .caption))
                .foregroundStyle(AppColor.textSecondary)
 
@@ -444,7 +492,7 @@ struct ToDosView: View {
       @ViewBuilder content: () -> Content
    ) -> some View {
       VStack(alignment: .leading, spacing: 10) {
-         Label(title, systemImage: systemName)
+         Label(LocalizedStringKey(title), systemImage: systemName)
             .font(.appBodyStrong(13, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
 
@@ -482,6 +530,8 @@ struct ToDosView: View {
          return "Done"
       case .archived:
          return "Archived"
+      case .trashed:
+         return "Trashed"
       }
    }
 
@@ -490,9 +540,12 @@ struct ToDosView: View {
    ) {
       switch route {
 
-      case .toDo(let id):
+      case .toDo(let localIdentifier, let cloudID):
 
-         selectedToDoID = id
+         openNotificationToDo(
+            localIdentifier: localIdentifier,
+            cloudID: cloudID
+         )
 
       case .circle(let id):
 
@@ -508,10 +561,39 @@ struct ToDosView: View {
 
       }
 
-	      navigationCoordinator.notificationRoute = .none
-	   }
+      navigationCoordinator.notificationRoute = .none
+   }
 
-	   private func regularPanelHeader<Accessory: View>(
+   private func handleListRoute(_ route: NavigationCoordinator.ListRoute?) {
+      guard let route else { return }
+
+      withAnimation(AppAnimation.snappySection) {
+         selectedTagID = nil
+         searchText = ""
+         isSearchVisible = false
+         isFilterVisible = false
+         isSearchFieldFocused = false
+         toDoListSortOption = AppPreferences.ToDoListSortOption.dueDate.rawValue
+         isToDoListSortReversed = false
+
+         switch route {
+         case .all:
+            systemListFilter = nil
+         case .today:
+            systemListFilter = .today
+         case .overdue:
+            systemListFilter = .overdue
+         case .due:
+            systemListFilter = .due
+         case .timeSensitive:
+            systemListFilter = .timeSensitive
+         }
+      }
+
+      navigationCoordinator.listRoute = nil
+   }
+
+   private func regularPanelHeader<Accessory: View>(
       title: String,
       count: Int,
       subtitle: String,
@@ -524,7 +606,7 @@ struct ToDosView: View {
                   .font(.appHeadline(22, relativeTo: .title3))
                   .foregroundStyle(AppColor.textPrimary)
 
-               Text("\(count)")
+               Text(AppLocalization.numberString(count))
                   .font(.appBodyStrong(12, relativeTo: .caption))
                   .foregroundStyle(AppColor.textPrimary)
                   .padding(.horizontal, 8)
@@ -566,29 +648,33 @@ struct ToDosView: View {
             .listRowBackground(Color.clear)
       }
       .animation(AppAnimation.snappySection, value: filteredWorkingToDos.map(\.id))
-      .animation(AppAnimation.snappySection, value: filteredDoneToDos.map(\.id))
       .animation(AppAnimation.snappySection, value: expandedToDoID)
       .animation(AppAnimation.snappySection, value: workingListAnimationKey)
       .listStyle(.plain)
       .scrollContentBackground(.hidden)
       .background(Color.clear)
+      .refreshable {
+         await refreshToDos()
+      }
    }
 
    private var regularNewToDoButton: some View {
       Button {
+         if onboardingManager.currentStep == .highlightAddButton {
+            onboardingManager.advance(to: .openAddView)
+         }
          openNewToDoComposer()
       } label: {
-         Label("New ToDo", systemImage: "plus")
-            .font(.appBodyStrong(14, relativeTo: .subheadline))
-            .labelStyle(.titleAndIcon)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+         Image(systemName: "plus")
+            .font(.system(size: 20, weight: .bold))
             .foregroundStyle(AppColor.onAction)
-            .background(AppColor.actionPrimary, in: Capsule())
+            .frame(width: 42, height: 42)
+            .background(AppColor.actionPrimary, in: Circle())
       }
       .buttonStyle(.plain)
       .disabled(isComposeButtonSuppressed)
       .opacity(isComposeButtonSuppressed ? 0.42 : 1)
+      .onboardingSpotlightAnchor(.addButton)
    }
 
    private var primaryListContent: some View {
@@ -601,12 +687,14 @@ struct ToDosView: View {
             .listRowBackground(Color.clear)
       }
       .animation(AppAnimation.snappySection, value: filteredWorkingToDos.map(\.id))
-      .animation(AppAnimation.snappySection, value: filteredDoneToDos.map(\.id))
       .animation(AppAnimation.snappySection, value: expandedToDoID)
       .animation(AppAnimation.snappySection, value: workingListAnimationKey)
       .listStyle(.plain)
       .scrollContentBackground(.hidden)
       .background(AppColor.surface)
+      .refreshable {
+         await refreshToDos()
+      }
       .safeAreaInset(edge: .top, spacing: 0) {
          headerSurface
       }
@@ -630,9 +718,11 @@ struct ToDosView: View {
       }
       .id(workingListIdentity)
       .animation(AppAnimation.snappySection, value: filteredWorkingToDos.map(\.id))
-      .animation(AppAnimation.snappySection, value: filteredDoneToDos.map(\.id))
       .animation(AppAnimation.snappySection, value: expandedToDoID)
       .background(AppColor.surface)
+      .refreshable {
+         await refreshToDos()
+      }
       .safeAreaInset(edge: .top, spacing: 0) {
          headerSurface
       }
@@ -760,15 +850,15 @@ struct ToDosView: View {
    }
 
    private func interactiveToDoRow(_ toDo: ToDo, allowsOpen: Bool, allowsStateActions: Bool, showsContextMenu: Bool = true) -> some View {
-         ToDoRowView(
-            toDo: toDo,
-            allowsCompletionToggle: allowsStateActions,
-            isSelectionMode: isSelectionMode,
-            isSelected: selectedToDoIDs.contains(toDo.id),
-            isDetailSelected: usesRegularWidthLayout && !isSelectionMode && selectedDetailToDo?.id == toDo.id,
-            hasSyncConflict: hasSyncConflict(for: toDo),
-            showsCompletedState: toDo.isDoneState,
-            isExpanded: !usesRegularWidthLayout && expandedToDoID == toDo.id,
+      ToDoRowView(
+         toDo: toDo,
+         allowsCompletionToggle: allowsStateActions,
+         isSelectionMode: isSelectionMode,
+         isSelected: selectedToDoIDs.contains(toDo.id),
+         isDetailSelected: usesRegularWidthLayout && !isSelectionMode && selectedDetailToDo?.id == toDo.id,
+         hasSyncConflict: hasSyncConflict(for: toDo),
+         showsCompletedState: toDo.isDoneState,
+         isExpanded: !usesRegularWidthLayout && expandedToDoID == toDo.id,
          onToggleDone: { isDone in
             updateCompletionState(for: toDo, isDone: isDone)
          },
@@ -806,9 +896,10 @@ struct ToDosView: View {
       .swipeActions(edge: .trailing, allowsFullSwipe: !isSelectionMode) {
          trailingSwipeActions(for: toDo, isEnabled: allowsStateActions)
       }
-      .modifier(RowContextMenuModifier(isEnabled: showsContextMenu && allowsStateActions) {
-         rowContextMenu(for: toDo, isEnabled: allowsStateActions)
-      })
+         .modifier(RowContextMenuModifier(isEnabled: showsContextMenu && allowsStateActions) {
+            rowContextMenu(for: toDo, isEnabled: allowsStateActions)
+         })
+      .modifier(OnboardingCreatedRowAnchorModifier(isHighlighted: onboardingManager.highlightedToDoID == toDo.id))
       .onLongPressGesture {
          toDoListSortOption = AppPreferences.ToDoListSortOption.creationDate.rawValue
          setSelectionMode(active: true)
@@ -827,6 +918,9 @@ struct ToDosView: View {
    private func composeButton(containerWidth: CGFloat) -> some View {
       Button {
          if !isComposerPresented {
+            if onboardingManager.currentStep == .highlightAddButton {
+               onboardingManager.advance(to: .openAddView)
+            }
             openNewToDoComposer()
          }
       } label: {
@@ -846,6 +940,7 @@ struct ToDosView: View {
       .animation(AppAnimation.snappySection, value: isComposeButtonSuppressed)
       .padding(.trailing, composeButtonTrailingPadding(containerWidth: containerWidth))
       .padding(.bottom, composeButtonBottomPadding)
+      .onboardingSpotlightAnchor(.addButton)
    }
 
    @ViewBuilder
@@ -857,22 +952,21 @@ struct ToDosView: View {
                closeComposer(savedToDo: savedToDo)
             }
          )
+      } else if let viewingToDo {
+         ToDoView(
+            mode: .view(viewingToDo, context: .sheet),
+            onFinish: { _ in
+               closeComposer()
+            }
+         )
       } else {
          ToDoView(
             mode: .create(preselectedTagID: selectedTagID),
             onFinish: { savedToDo in
                closeComposer(savedToDo: savedToDo)
-            }
+            },
+            onboardingManager: onboardingManager
          )
-      }
-   }
-
-   @ViewBuilder
-   private var accountSheetContent: some View {
-      if supabaseAuthStore.isAuthenticated {
-         AccountView()
-      } else {
-         AuthenticationScreenView()
       }
    }
 
@@ -881,7 +975,7 @@ struct ToDosView: View {
    }
 
    private var isComposeButtonSuppressed: Bool {
-      isSelectionMode || isDoneDrawerExpanded
+      isSelectionMode
    }
 
    private var composeButtonBottomPadding: CGFloat {
@@ -918,8 +1012,7 @@ struct ToDosView: View {
    }
 
    private var regularDashboardBottomPadding: CGFloat {
-      guard !isBulkEditing else { return 0 }
-      return filteredDoneToDos.isEmpty ? 24 : 94
+      isBulkEditing ? 0 : 24
    }
 
    private var regularPanelSpacing: CGFloat {
@@ -974,24 +1067,16 @@ struct ToDosView: View {
       "Tap a ToDo to inspect what belongs to it."
    }
 
-   private var accountToolbarSymbol: String {
-      supabaseAuthStore.isAuthenticated ? "person.crop.circle.fill" : "person.badge.key"
-   }
-
-   private var accountToolbarLabel: String {
-      supabaseAuthStore.isAuthenticated ? "Open account" : "Open sign in"
-   }
-
    private var listBottomSpacerHeight: CGFloat {
-      if isBulkEditing {
-         return 88
-      }
-
-      if !filteredDoneToDos.isEmpty {
-         return 104
-      }
-
       return 88
+   }
+
+   private var doneDrawerCollapsedHeaderHeight: CGFloat {
+      usesRegularWidthLayout ? 58 : 44
+   }
+
+   private var doneDrawerFadeHeight: CGFloat {
+      usesRegularWidthLayout ? 0 : 42
    }
 
    private var selectedTag: Tag? {
@@ -1039,12 +1124,21 @@ struct ToDosView: View {
       ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
    }
 
-   private var workingListIdentity: String {
-      "working:\(sortOption.rawValue):\(isToDoListSortReversed):\(String(describing: selectedTagID))"
+   private var isRunningInScreenshotMode: Bool {
+      ProcessInfo.processInfo.arguments.contains("-UITestScreenshotMode")
    }
 
-   private var doneListIdentity: String {
-      "done:\(sortOption.rawValue):\(isToDoListSortReversed)"
+   private var requestedScreenshotScreen: String? {
+      let arguments = ProcessInfo.processInfo.arguments
+      guard let index = arguments.firstIndex(of: "-ScreenshotScreen"),
+            arguments.indices.contains(arguments.index(after: index)) else {
+         return nil
+      }
+      return arguments[arguments.index(after: index)].lowercased()
+   }
+
+   private var workingListIdentity: String {
+      "working:\(sortOption.rawValue):\(isToDoListSortReversed):\(String(describing: selectedTagID))"
    }
 
    private var workingListAnimationKey: String {
@@ -1066,31 +1160,27 @@ struct ToDosView: View {
             sourceRawValue: appTimeSourceRaw,
             locationTimeZoneIdentifier: locationTimeZoneIdentifier
          ))
-            .font(.appAccent(15, relativeTo: .caption))
-            .foregroundStyle(AppColor.textSecondary)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity, alignment: .center)
+         .font(.appAccent(15, relativeTo: .caption))
+         .foregroundStyle(AppColor.textSecondary)
+         .multilineTextAlignment(.center)
+         .frame(maxWidth: .infinity, alignment: .center)
 
          ZStack {
-            Text("ToD\(Text("ō").foregroundStyle(AppColor.main))")
-            .font(.appDisplay(headerTitleFontSize, relativeTo: .largeTitle))
-            .foregroundStyle(AppColor.textPrimary)
-            .lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .center)
+            Text("toD\(Text("ō").foregroundStyle(AppColor.main))")
+               .font(.appDisplay(headerTitleFontSize, relativeTo: .largeTitle))
+               .foregroundStyle(AppColor.textPrimary)
+               .lineLimit(1)
+               .frame(maxWidth: .infinity, alignment: .center)
 
             HStack {
                HStack(spacing: 10) {
-                  toolbarButton(
-                     systemName: accountToolbarSymbol,
-                     label: accountToolbarLabel,
-                     isToggled: false
-                  ) {
-                     openAccountSheet()
-                  }
-
-                  toolbarButton(systemName: "gearshape", label: "Open settings", isToggled: false) {
+                  toolbarButton(systemName: "gearshape.fill", label: "Open settings", tint: AppColor.main, isToggled: false) {
+                     if onboardingManager.currentStep == .highlightSettings {
+                        onboardingManager.advance(to: .signInAndSync)
+                     }
                      openSettingsPanel()
                   }
+                  .onboardingSpotlightAnchor(.settingsButton)
                }
 
                Spacer(minLength: 12)
@@ -1098,6 +1188,7 @@ struct ToDosView: View {
                toolbarButton(
                   systemName: "slider.horizontal.3",
                   label: isUtilityTrayVisible ? "Hide utilities" : "Show utilities",
+                  tint: AppColor.secondary,
                   isToggled: isUtilityTrayVisible
                ) {
                   toggleUtilityTray()
@@ -1111,21 +1202,27 @@ struct ToDosView: View {
                toolbarButton(
                   systemName: "magnifyingglass",
                   label: isSearchVisible ? "Hide search" : "Show search",
-                  isToggled: isSearchVisible
+                  tint: AppColor.secondary,
+                  isToggled: isSearchVisible,
+                  usesUtilityPalette: true
                ) {
                   toggleSearchPanel()
                }
                toolbarButton(
                   systemName: "line.3.horizontal.decrease.circle",
                   label: isFilterVisible ? "Hide filters" : "Show filters",
-                  isToggled: isFilterVisible
+                  tint: AppColor.secondary,
+                  isToggled: isFilterVisible,
+                  usesUtilityPalette: true
                ) {
                   toggleFilterPanel()
                }
                toolbarButton(
                   systemName: isBulkEditing ? "checkmark.circle.fill" : "checkmark.circle",
                   label: isBulkEditing ? "Done selecting" : "Select items",
-                  isToggled: isBulkEditing
+                  tint: AppColor.secondary,
+                  isToggled: isBulkEditing,
+                  usesUtilityPalette: true
                ) {
                   setSelectionMode(active: !isBulkEditing)
                }
@@ -1136,7 +1233,6 @@ struct ToDosView: View {
 
          if isSearchVisible {
             searchField
-               .transition(headerPanelTransition)
          }
 
          if isFilterVisible {
@@ -1154,7 +1250,18 @@ struct ToDosView: View {
       .padding(.horizontal, headerHorizontalInset)
       .padding(.top, 2)
       .padding(.bottom, 6)
-      .background(AppColor.surface)
+      .background {
+         if usesRegularWidthLayout {
+            AppColor.surface
+         } else {
+            LiquidGlassPanelBackground(
+               tint: AppColor.surface,
+               cornerRadius: 0,
+               fallbackMaterial: .ultraThin
+            )
+            .ignoresSafeArea(edges: .top)
+         }
+      }
    }
 
    private var syncNeedsReviewBanner: some View {
@@ -1169,9 +1276,9 @@ struct ToDosView: View {
             Text(unresolvedSyncConflicts.count == 1
                  ? "Sync needs review: 1 ToDo changed in two places."
                  : "Sync needs review: \(unresolvedSyncConflicts.count) ToDos changed in two places.")
-               .font(.appBodyStrong(12, relativeTo: .caption))
-               .foregroundStyle(AppColor.textPrimary)
-               .lineLimit(2)
+            .font(.appBodyStrong(12, relativeTo: .caption))
+            .foregroundStyle(AppColor.textPrimary)
+            .lineLimit(2)
 
             Spacer(minLength: 8)
 
@@ -1220,162 +1327,6 @@ struct ToDosView: View {
       }
    }
 
-   private var doneDrawer: some View {
-      GeometryReader { proxy in
-         let bottomInset = proxy.safeAreaInsets.bottom
-         let expandedHeight = min(max(proxy.size.height * 0.33, 240), 340)
-         let fullHeight = expandedHeight + max(bottomInset, 10)
-         let collapsedVisibleHeight = 58 + bottomInset
-         let closedOffset = max(fullHeight - collapsedVisibleHeight, 0)
-         let drawerWidth = doneDrawerWidth(for: proxy.size.width)
-
-         VStack(spacing: 0) {
-            Spacer(minLength: 0)
-
-            VStack(spacing: 0) {
-               doneDrawerHeader(bottomInset: bottomInset)
-                  .gesture(doneDrawerHeaderDragGesture)
-
-               ScrollView {
-                  LazyVStack(alignment: .leading, spacing: 0) {
-                     doneDrawerSections(doneSections)
-
-                     Color.clear
-                        .frame(height: max(bottomInset, 12))
-                  }
-                  .frame(maxWidth: contentMaxWidth, alignment: .center)
-                  .frame(maxWidth: .infinity, alignment: .center)
-                  .padding(.horizontal, listHorizontalInset)
-                  .padding(.top, 4)
-               }
-               .id(doneListIdentity)
-               .scrollIndicators(.hidden)
-               .opacity(isDoneDrawerExpanded ? 1 : 0)
-               .allowsHitTesting(isDoneDrawerExpanded)
-            }
-            .frame(width: drawerWidth)
-            .frame(height: fullHeight, alignment: .top)
-            .background {
-               if usesRegularWidthLayout {
-                  AppColor.surfaceElevated
-               } else {
-                  Rectangle().fill(.ultraThinMaterial)
-               }
-            }
-            .clipShape(
-               UnevenRoundedRectangle(
-                  cornerRadii: .init(
-                     topLeading: 30,
-                     bottomLeading: usesRegularWidthLayout ? 30 : 0,
-                     bottomTrailing: usesRegularWidthLayout ? 30 : 0,
-                     topTrailing: 30
-                  ),
-                  style: .continuous
-               )
-            )
-            .offset(y: isDoneDrawerExpanded ? 0 : closedOffset)
-         }
-         .frame(maxWidth: .infinity, alignment: .center)
-         .ignoresSafeArea(edges: usesRegularWidthLayout ? [] : .bottom)
-      }
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-      .transition(.move(edge: .bottom).combined(with: .opacity))
-      .animation(AppAnimation.snappySection, value: isDoneDrawerExpanded)
-   }
-
-   private var doneDrawerHeaderDragGesture: some Gesture {
-      DragGesture(minimumDistance: 12)
-         .onEnded { value in
-            let verticalMovement = value.translation.height
-            let horizontalMovement = abs(value.translation.width)
-            guard abs(verticalMovement) > horizontalMovement,
-                  abs(verticalMovement) > 18 else { return }
-
-            withAnimation(AppAnimation.snappySection) {
-               if verticalMovement < 0 {
-                  isDoneDrawerExpanded = true
-               } else {
-                  isDoneDrawerExpanded = false
-               }
-            }
-         }
-   }
-
-   private func doneDrawerWidth(for containerWidth: CGFloat) -> CGFloat {
-      guard usesRegularWidthLayout else { return containerWidth }
-      return min(containerWidth - regularDashboardHorizontalPadding * 2, regularDashboardMaxWidth)
-   }
-
-   @ViewBuilder
-   private func doneDrawerSections(_ sections: [ToDoListSection]) -> some View {
-      ForEach(Array(sections.enumerated()), id: \.element.id) { index, section in
-         if sortOption.usesSections {
-            sectionHeader(section.title, isFirst: index == 0)
-               .frame(maxWidth: contentMaxWidth, alignment: .center)
-               .frame(maxWidth: .infinity, alignment: .center)
-         }
-
-         doneDrawerRows(section.toDos)
-      }
-   }
-
-   @ViewBuilder
-   private func doneDrawerRows(_ toDos: [ToDo]) -> some View {
-      ForEach(toDos) { toDo in
-         DoneDrawerRowView(
-            toDo: toDo,
-            hasSyncConflict: hasSyncConflict(for: toDo),
-            onOpen: {
-               if usesRegularWidthLayout {
-                  selectToDoForDetail(toDo)
-               } else {
-                  openToDo(toDo)
-               }
-            },
-            onReopen: {
-               updateCompletionState(for: toDo, isDone: false)
-            }
-         )
-         .padding(.horizontal, 0)
-         .padding(.vertical, 3)
-      }
-   }
-
-   private func doneDrawerHeader(bottomInset: CGFloat) -> some View {
-      VStack(spacing: 3) {
-         HStack(spacing: 10) {
-            Text("Done")
-               .font(.appHeadline(20, relativeTo: .title3))
-               .foregroundStyle(AppColor.textPrimary)
-
-            Text("\(filteredDoneToDos.count)")
-               .font(.appBodyStrong(13, relativeTo: .caption)).bold()
-               .foregroundStyle(AppColor.textPrimary)
-               .padding(.horizontal, 7.5)
-               .padding(.vertical, 4.2)
-               .background(
-                  Group {
-                     if !usesRegularWidthLayout {
-                        Capsule()
-                           .fill(AppColor.surfaceMuted)
-                     }
-                  }
-               )
-         }
-
-         Image(systemName: "chevron.up")
-            .font(.appBodyStrong(11, relativeTo: .caption))
-            .foregroundStyle(AppColor.textSecondary)
-            .rotationEffect(.degrees(isDoneDrawerExpanded ? 180 : 0))
-            .animation(AppAnimation.snappyStandard, value: isDoneDrawerExpanded)
-      }
-      .frame(maxWidth: .infinity, alignment: .center)
-      .contentShape(Rectangle())
-      .padding(.horizontal, 24)
-      .padding(.top, 8)
-      .padding(.bottom, 8)
-   }
-
    private var emptyStateOverlay: some View {
       VStack(spacing: 10) {
          Text(emptyStateTitle)
@@ -1388,8 +1339,10 @@ struct ToDosView: View {
             .foregroundStyle(AppColor.textSecondary)
             .multilineTextAlignment(.center)
 
-         Button(emptyStateActionTitle) {
+         Button {
             openNewToDoComposer()
+         } label: {
+            Text(emptyStateActionTitle)
          }
          .font(.appBodyStrong(15, relativeTo: .body))
          .foregroundStyle(AppColor.secondary)
@@ -1399,19 +1352,19 @@ struct ToDosView: View {
       .padding(.horizontal, 20)
       .padding(.vertical, 28)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-      .padding(.bottom, filteredDoneToDos.isEmpty ? 0 : 48)
+      .padding(.bottom, 0)
       .allowsHitTesting(true)
    }
 
-   private var emptyStateTitle: String {
+   private var emptyStateTitle: LocalizedStringKey {
       hasActiveFilters ? "No toDōs match this view." : "What’s worth doing today?"
    }
 
-   private var emptyStateSubtitle: String {
+   private var emptyStateSubtitle: LocalizedStringKey {
       hasActiveFilters ? "Shift the filters or begin a fresh one." : "Start with your first ToDo."
    }
 
-   private var emptyStateActionTitle: String {
+   private var emptyStateActionTitle: LocalizedStringKey {
       "Add ToDo"
    }
 
@@ -1439,38 +1392,15 @@ struct ToDosView: View {
    @ViewBuilder
    private func trailingSwipeActions(for toDo: ToDo, isEnabled: Bool) -> some View {
       if isEnabled {
-         if toDo.isDoneState {
-            switch doneSwipePrimaryAction {
-            case .archive:
-               Button {
-                  archiveToDo(toDo)
-               } label: {
-                  Image(systemName: "archivebox")
-               }
-               .tint(AppColor.actionSecondary)
-
-               Button(role: .destructive) {
-                  deleteToDo(toDo)
-               } label: {
-                  Image(systemName: "trash")
-               }
-               .tint(.red)
-            case .delete:
-               Button(role: .destructive) {
-                  deleteToDo(toDo)
-               } label: {
-                  Image(systemName: "trash")
-               }
-               .tint(.red)
-
-               Button {
-                  archiveToDo(toDo)
-               } label: {
-                  Image(systemName: "archivebox")
-               }
-               .tint(AppColor.actionSecondary)
+         switch doneSwipePrimaryAction {
+         case .archive:
+            Button {
+               archiveToDo(toDo)
+            } label: {
+               Image(systemName: "archivebox")
             }
-         } else {
+            .tint(AppColor.actionSecondary)
+         case .delete:
             Button(role: .destructive) {
                deleteToDo(toDo)
             } label: {
@@ -1520,6 +1450,12 @@ struct ToDosView: View {
                updateCompletionState(for: toDo, isDone: true)
             } label: {
                Label("Mark Done", systemImage: "checkmark.circle")
+            }
+
+            Button {
+               archiveToDo(toDo)
+            } label: {
+               Label("Archive", systemImage: "archivebox")
             }
 
             Button(role: .destructive) {
@@ -1576,14 +1512,57 @@ struct ToDosView: View {
       .padding(.bottom, 2)
    }
 
-   private func toolbarButton(systemName: String, label: String, isToggled: Bool, action: @escaping () -> Void) -> some View {
-      Button(action: action) {
+   private func toolbarButton(
+      systemName: String,
+      label: String,
+      tint: Color,
+      isToggled: Bool,
+      usesUtilityPalette: Bool = false,
+      action: @escaping () -> Void
+   ) -> some View {
+      let foreground: Color
+      let backgroundTint: Color
+
+      if usesUtilityPalette {
+         foreground = isToggled ? AppColor.black : AppColor.white
+         backgroundTint = isToggled ? AppColor.white : AppColor.black
+      } else {
+         foreground = isToggled ? tint : (colorScheme == .dark ? AppColor.black : AppColor.white)
+         backgroundTint = isToggled ? AppColor.white : tint
+      }
+
+      return Button(action: action) {
          Image(systemName: systemName)
             .font(.appDisplay(16, relativeTo: .subheadline))
             .contentTransition(.symbolEffect(.replace))
             .animation(AppAnimation.easeStandard, value: systemName)
       }
-      .buttonStyle(AppToolbarToggleButtonStyle(isToggled: isToggled, size: 34))
+      .buttonStyle(.plain)
+      .foregroundStyle(foreground)
+      .frame(width: 34, height: 34)
+      .background {
+         if usesRegularWidthLayout {
+            Circle()
+               .fill(backgroundTint)
+         } else {
+            LiquidGlassPanelBackground(
+               tint: backgroundTint,
+               cornerRadius: 17,
+               fallbackMaterial: .ultraThin
+            )
+            .overlay {
+               Circle()
+                  .fill(backgroundTint.opacity(usesUtilityPalette ? (isToggled ? 0.86 : 0.72) : (isToggled ? 0.74 : 0.62)))
+            }
+            .overlay {
+               Circle()
+                  .stroke(.white.opacity(0.28), lineWidth: 1)
+            }
+         }
+      }
+      .clipShape(Circle())
+      .scaleEffect(isToggled ? 1.02 : 1)
+      .animation(AppAnimation.easeFast, value: isToggled)
       .accessibilityLabel(label)
    }
 
@@ -1602,7 +1581,7 @@ struct ToDosView: View {
          .buttonStyle(AppCircleActionButtonStyle(intent: intent, size: 34))
          .interactionDisabled(disabled)
 
-         Text(label)
+         Text(LocalizedStringKey(label))
             .font(.appDisplay(11, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
       }
@@ -1669,7 +1648,7 @@ struct ToDosView: View {
       options: [AppPreferences.ToDoListSortOption]
    ) -> some View {
       HStack(alignment: .center, spacing: 10) {
-         Text(title)
+         Text(LocalizedStringKey(title))
             .font(.appDisplay(12, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
             .frame(width: 42, alignment: .leading)
@@ -1694,7 +1673,7 @@ struct ToDosView: View {
    private func filterChip(title: String, isSelected: Bool, direction: String? = nil, action: @escaping () -> Void) -> some View {
       Button(action: action) {
          HStack(spacing: 6) {
-            Text(title)
+            Text(LocalizedStringKey(title))
                .font(.appDisplay(13, relativeTo: .subheadline))
 
             if let direction {
@@ -1775,28 +1754,12 @@ struct ToDosView: View {
       }
    }
 
-//   private func linkedCount(for tag: Tag) -> Int {
-//      let toDoCount = scopedToDos.filter { toDo in
-//         toDo.effectiveTags.contains(where: { $0.id == tag.id })
-//      }.count
-//      let nanoDoCount = tag.allNanoDos.count
-//      return toDoCount + nanoDoCount
-//   }
-
    private var filteredWorkingToDos: [ToDo] {
       visibleToDos(in: [.active])
    }
 
-   private var filteredDoneToDos: [ToDo] {
-      visibleToDos(in: [.done])
-   }
-
    private var workingSections: [ToDoListSection] {
       groupedVisibleToDos(in: [.active])
-   }
-
-   private var doneSections: [ToDoListSection] {
-      groupedVisibleToDos(in: [.done])
    }
 
    private func visibleToDos(in states: Set<ToDoState>) -> [ToDo] {
@@ -1804,14 +1767,28 @@ struct ToDosView: View {
    }
 
    private func groupedVisibleToDos(in states: Set<ToDoState>) -> [ToDoListSection] {
+      let searchTerm = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
       let searchFiltered = scopedToDos.filter { toDo in
          guard !toDo.isArchived, states.contains(toDo.lifecycleState) else { return false }
-         guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
-         let term = searchText.lowercased()
-         return toDo.task.lowercased().contains(term)
-         || toDo.notes.lowercased().contains(term)
-         || toDo.effectiveTags.contains(where: { $0.name.lowercased().contains(term) })
-         || toDo.nanoDos.contains(where: { $0.task.lowercased().contains(term) })
+         guard toDo.matchesFocusFilter(modeRawValue: toDoFocusFilterModeRaw) else { return false }
+         if let systemListFilter {
+            switch systemListFilter {
+            case .today:
+               guard let dueDate = toDo.dueDate,
+                     Calendar.current.isDateInToday(dueDate) else { return false }
+            case .overdue:
+               guard toDo.isLate else { return false }
+            case .due:
+               guard toDo.dueDate != nil else { return false }
+            case .timeSensitive:
+               guard toDo.reminderIntent == .timeSensitive else { return false }
+            }
+         }
+         guard !searchTerm.isEmpty else { return true }
+         return toDo.task.lowercased().contains(searchTerm)
+         || toDo.notes.lowercased().contains(searchTerm)
+         || toDo.effectiveTags.contains(where: { $0.name.lowercased().contains(searchTerm) })
+         || toDo.nanoDos.contains(where: { $0.task.lowercased().contains(searchTerm) })
       }
 
       let tagFiltered: [ToDo]
@@ -1826,7 +1803,7 @@ struct ToDosView: View {
       switch sortOption {
       case .dueDate:
          return [
-           ToDoListSection(
+            ToDoListSection(
                key: "flat:\(AppPreferences.ToDoListSortOption.dueDate.rawValue)",
                title: "",
                toDos: applySortDirection(to: tagFiltered.sorted { lhs, rhs in
@@ -1844,7 +1821,7 @@ struct ToDosView: View {
          ]
       case .creationDate:
          return [
-           ToDoListSection(
+            ToDoListSection(
                key: "flat:\(AppPreferences.ToDoListSortOption.creationDate.rawValue)",
                title: "",
                toDos: applySortDirection(to: tagFiltered.sorted {
@@ -1856,17 +1833,12 @@ struct ToDosView: View {
             )
          ]
       case .tag:
-         if let selectedTag {
+         if selectedTag != nil {
             return [
                ToDoListSection(
                   key: "flat:\(AppPreferences.ToDoListSortOption.tag.rawValue):selected",
                   title: "",
                   toDos: applySortDirection(to: tagFiltered.sorted { lhs, rhs in
-                     let leftHasTag = lhs.effectiveTags.contains(where: { $0.id == selectedTag.id })
-                     let rightHasTag = rhs.effectiveTags.contains(where: { $0.id == selectedTag.id })
-                     if leftHasTag != rightHasTag {
-                        return leftHasTag
-                     }
                      let leftDate = lhs.dueDate ?? .distantFuture
                      let rightDate = rhs.dueDate ?? .distantFuture
                      return leftDate < rightDate
@@ -1902,7 +1874,7 @@ struct ToDosView: View {
    }
 
    private func dueMonthSections(for toDos: [ToDo]) -> [ToDoListSection] {
-      let calendar = Calendar.current
+      let calendar = AppLocalization.displayCalendar
       let grouped = Dictionary(grouping: toDos) { toDo -> Date? in
          guard let dueDate = toDo.dueDate else { return nil }
          return calendar.date(from: calendar.dateComponents([.year, .month], from: dueDate))
@@ -1911,9 +1883,9 @@ struct ToDosView: View {
       var sections = grouped.compactMap { key, value -> ToDoListSection? in
          let title: String
          if let key {
-            title = key.formatted(.dateTime.year().month(.wide))
+            title = AppLocalization.monthYearString(key)
          } else {
-            title = "No Due Date"
+            title = String(localized: "No Due Date")
          }
 
          return ToDoListSection(
@@ -1961,7 +1933,7 @@ struct ToDosView: View {
 
       let sections = grouped
          .map { count, value in
-           ToDoListSection(
+            ToDoListSection(
                key: "count:\(count)",
                title: count == 0 ? "No nanoDos" : count == 1 ? "1 nanoDo" : "\(count) nanoDos",
                sortCount: count,
@@ -1997,7 +1969,7 @@ struct ToDosView: View {
 
    private func applySectionDirection(to sections: [ToDoListSection]) -> [ToDoListSection] {
       let normalized = sections.map { section in
-        ToDoListSection(
+         ToDoListSection(
             key: section.key,
             title: section.title,
             sortDate: section.sortDate,
@@ -2011,20 +1983,26 @@ struct ToDosView: View {
    }
 
    private func applyBulkCompletion(_ isDone: Bool) {
-      selectedToDoIDs.forEach { id in
-         if let toDo = scopedToDos.first(where: { $0.id == id }) {
-            updateCompletionState(for: toDo, isDone: isDone)
-         }
+      guard !selectedToDoIDs.isEmpty else { return }
+      HapticFeedbackService.play(isDone ? .taskCompleted : .taskReopened)
+      for toDo in selectedToDos() {
+         updateCompletionState(for: toDo, isDone: isDone, emitHaptic: false)
       }
       selectedToDoIDs.removeAll()
    }
 
-   private func updateCompletionState(for toDo: ToDo, isDone: Bool) {
+   private func updateCompletionState(for toDo: ToDo, isDone: Bool, emitHaptic: Bool = true) {
+      if emitHaptic {
+         HapticFeedbackService.play(isDone ? .taskCompleted : .taskReopened)
+      }
+
       if isDone {
          withAnimation(AppAnimation.snappySection) {
             expandedToDoID = nil
             toDo.transition(to: .done)
          }
+         removeCalendarMirrorIfPresent(for: toDo)
+         LiveActivityService.shared.endActivity(for: toDo)
       } else {
          withAnimation(AppAnimation.snappyStandard) {
             expandedToDoID = nil
@@ -2033,13 +2011,17 @@ struct ToDosView: View {
       }
 
       persistChanges("Failed to update ToDo completion state")
+
+      if !isDone {
+         syncCalendarMirrorIfNeeded(for: toDo)
+      }
    }
 
    private func deleteSelected() {
-      selectedToDoIDs.forEach { id in
-         if let toDo = scopedToDos.first(where: { $0.id == id }) {
-            deleteToDo(toDo)
-         }
+      guard !selectedToDoIDs.isEmpty else { return }
+      HapticFeedbackService.play(.destructive)
+      for toDo in selectedToDos() {
+         deleteToDo(toDo, emitHaptic: false)
       }
       selectedToDoIDs.removeAll()
    }
@@ -2049,24 +2031,35 @@ struct ToDosView: View {
    }
 
    private func archiveToDo(_ toDo: ToDo) {
+      HapticFeedbackService.play(.warning)
       withAnimation(AppAnimation.easeStandard) {
          if expandedToDoID == toDo.id {
             expandedToDoID = nil
          }
          toDo.transition(to: .archived)
       }
+      removeCalendarMirrorIfPresent(for: toDo)
+      LiveActivityService.shared.endActivity(for: toDo)
       persistChanges("Failed to archive ToDo")
    }
 
-   private func deleteToDo(_ toDo: ToDo) {
+   private func deleteToDo(_ toDo: ToDo, emitHaptic: Bool = true) {
+      if emitHaptic {
+         HapticFeedbackService.play(.destructive)
+      }
       withAnimation(AppAnimation.easeFast) {
          if expandedToDoID == toDo.id {
             expandedToDoID = nil
          }
+
+         toDo.trashedAt = Date()
+         toDo.transition(to: .trashed)
+
          SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: toDo, in: context)
-         context.delete(toDo)
       }
-      persistChanges("Failed to delete ToDo")
+      removeCalendarMirrorIfPresent(for: toDo)
+      LiveActivityService.shared.endActivity(for: toDo)
+      persistChanges("Failed to move ToDo to trash")
    }
 
    private func snoozeMenu(for toDo: ToDo) -> some View {
@@ -2075,7 +2068,7 @@ struct ToDosView: View {
             let values = snoozeOptions.values(for: unit)
             if !values.isEmpty {
                Menu(unit.title) {
-                  ForEach(values, id: \.self) { value in
+                  ForEach(Array(values.enumerated()), id: \.offset) { _, value in
                      Button(unit.displayLabel(for: value)) {
                         snoozeToDo(toDo, unit: unit, value: value)
                      }
@@ -2096,41 +2089,44 @@ struct ToDosView: View {
          toDo.markUpdated()
       }
       persistChanges("Failed to snooze ToDo")
+      syncCalendarMirrorIfNeeded(for: toDo)
    }
 
    private func applyBulkTag(_ tag: Tag) {
-      selectedToDoIDs.forEach { id in
-         if let toDo = scopedToDos.first(where: { $0.id == id }) {
-            if toDo.effectiveTags.contains(where: { $0.id == tag.id }) { return }
-            var updatedTags = toDo.effectiveTags
-            guard updatedTags.count < ToDo.maxTagSelection else { return }
-            updatedTags.append(tag)
-            toDo.setSelectedTags(updatedTags)
-         }
+      for toDo in selectedToDos() {
+         if toDo.effectiveTags.contains(where: { $0.id == tag.id }) { continue }
+         var updatedTags = toDo.effectiveTags
+         guard updatedTags.count < ToDo.maxTagSelection else { continue }
+         updatedTags.append(tag)
+         toDo.setSelectedTags(updatedTags)
       }
       selectedToDoIDs.removeAll()
       persistChanges("Failed to apply bulk tag changes")
    }
 
    private func clearBulkTags() {
-      selectedToDoIDs.forEach { id in
-         if let toDo = scopedToDos.first(where: { $0.id == id }) {
-            toDo.setSelectedTags([])
-         }
+      for toDo in selectedToDos() {
+         toDo.setSelectedTags([])
       }
       selectedToDoIDs.removeAll()
       persistChanges("Failed to clear bulk tag changes")
    }
 
+   private func selectedToDos() -> [ToDo] {
+      let toDosByID = Dictionary(uniqueKeysWithValues: scopedToDos.map { ($0.id, $0) })
+      return selectedToDoIDs.compactMap { toDosByID[$0] }
+   }
+
    private var hasActiveFilters: Bool {
       let hasSearch = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      return selectedTagID != nil || hasSearch || sortOption != .dueDate
+      return selectedTagID != nil || hasSearch || sortOption != .dueDate || systemListFilter != nil
    }
 
    private func clearFilters() {
       withAnimation(AppAnimation.snappySection) {
          selectedTagID = nil
          searchText = ""
+         systemListFilter = nil
          toDoListSortOption = AppPreferences.ToDoListSortOption.dueDate.rawValue
          isToDoListSortReversed = false
       }
@@ -2140,9 +2136,52 @@ struct ToDosView: View {
       withAnimation(AppAnimation.easeStandard) {
          isShowingNewToDo = false
          editingToDo = nil
-         if usesRegularWidthLayout, let savedToDo {
+         viewingToDo = nil
+         if let savedToDo {
             expandedToDoID = savedToDo.id
          }
+      }
+
+      if let savedToDo, onboardingManager.isActive {
+         onboardingManager.recordCreatedToDo(savedToDo)
+      }
+   }
+
+   private func handleOnboardingPrimaryAction(_ step: GuidedOnboardingStep) {
+      switch step {
+      case .welcome:
+         onboardingManager.advance(to: .highlightAddButton)
+      case .creationSuccess:
+         onboardingManager.advance(to: .highlightSettings)
+      case .highlightAddButton:
+         onboardingManager.advance(to: .openAddView)
+         openNewToDoComposer()
+      case .highlightSettings:
+         onboardingManager.advance(to: .signInAndSync)
+         openSettingsPanel()
+      default:
+         break
+      }
+   }
+
+   private func resumeGuidedOnboardingIfNeeded() {
+      guard onboardingManager.isActive else { return }
+
+      switch onboardingManager.currentStep {
+      case .openAddView, .enterToDoText, .saveToDo:
+         if !isComposerPresented {
+            DispatchQueue.main.async {
+               openNewToDoComposer()
+            }
+         }
+      case .signInAndSync, .notificationPermission, .archiveVsDelete, .completion:
+         if !isShowingSettings {
+            DispatchQueue.main.async {
+               openSettingsPanel()
+            }
+         }
+      default:
+         break
       }
    }
 
@@ -2151,12 +2190,99 @@ struct ToDosView: View {
          expandedToDoID = usesRegularWidthLayout ? toDo.id : nil
          inlineEditingToDoID = nil
          isShowingNewToDo = false
+         viewingToDo = nil
          editingToDo = toDo
       }
    }
 
+   private func viewToDo(_ toDo: ToDo) {
+      withAnimation(AppAnimation.easeStandard) {
+         expandedToDoID = usesRegularWidthLayout ? toDo.id : nil
+         inlineEditingToDoID = nil
+         isShowingNewToDo = false
+         editingToDo = nil
+         viewingToDo = toDo
+      }
+   }
+
+   private func openNotificationToDo(
+      localIdentifier: String?,
+      cloudID: UUID?
+   ) {
+      let route = PendingNotificationToDoRoute(
+         localIdentifier: localIdentifier,
+         cloudID: cloudID
+      )
+
+      guard let toDo = toDoForNotificationRoute(route) else {
+         pendingNotificationToDoRoute = route
+         schedulePendingNotificationRouteResolution()
+         return
+      }
+
+      pendingNotificationResolutionTask?.cancel()
+      pendingNotificationResolutionTask = nil
+      pendingNotificationToDoRoute = nil
+      isSelectionMode = false
+      selectedToDoIDs.removeAll()
+      isShowingSettings = false
+      isShowingSyncReview = false
+      viewToDo(toDo)
+   }
+
+   private func schedulePendingNotificationRouteResolution() {
+      pendingNotificationResolutionTask?.cancel()
+      pendingNotificationResolutionTask = Task { @MainActor in
+         await SyncCoordinator.shared.refreshFromRemote(userID: supabaseAuthStore.currentUserID)
+
+         for _ in 0..<8 {
+            guard !Task.isCancelled,
+                  let pendingNotificationToDoRoute else {
+               return
+            }
+
+            if toDoForNotificationRoute(pendingNotificationToDoRoute) != nil {
+               openNotificationToDo(
+                  localIdentifier: pendingNotificationToDoRoute.localIdentifier,
+                  cloudID: pendingNotificationToDoRoute.cloudID
+               )
+               return
+            }
+
+            try? await Task.sleep(nanoseconds: 350_000_000)
+         }
+
+         guard !Task.isCancelled,
+               pendingNotificationToDoRoute != nil else {
+            return
+         }
+
+         pendingNotificationToDoRoute = nil
+         pendingNotificationResolutionTask = nil
+         isShowingMissingNotificationToDoAlert = true
+      }
+   }
+
+   private func toDoForNotificationRoute(
+      _ route: PendingNotificationToDoRoute
+   ) -> ToDo? {
+      if let cloudID = route.cloudID,
+         let toDo = scopedToDos.first(where: { $0.cloudID == cloudID }) {
+         return toDo
+      }
+
+      if let localIdentifier = route.localIdentifier {
+         return scopedToDos.first {
+            String(describing: $0.id) == localIdentifier
+         }
+      }
+
+      return nil
+   }
+
    private func openNewToDoComposer() {
       editingToDo = nil
+      viewingToDo = nil
       withAnimation(AppAnimation.easeStandard) {
          isShowingNewToDo = true
       }
@@ -2216,7 +2342,7 @@ struct ToDosView: View {
    }
 
    private var isComposerPresented: Bool {
-      isShowingNewToDo || editingToDo != nil
+      isShowingNewToDo || editingToDo != nil || viewingToDo != nil
    }
 
    private var composerSheetIsPresented: Binding<Bool> {
@@ -2226,6 +2352,7 @@ struct ToDosView: View {
             guard !shouldPresent else { return }
             isShowingNewToDo = false
             editingToDo = nil
+            viewingToDo = nil
          }
       )
    }
@@ -2247,6 +2374,7 @@ struct ToDosView: View {
    }
 
    private func toggleSelection(for id: PersistentIdentifier) {
+      HapticFeedbackService.play(.selection)
       if selectedToDoIDs.contains(id) {
          selectedToDoIDs.remove(id)
       } else {
@@ -2262,65 +2390,50 @@ struct ToDosView: View {
       isSearchFieldFocused = false
    }
 
-   private func openAccountSheet() {
-      isShowingAccount = true
-   }
-
    private func closeSettingsPanel() {
       isShowingSettings = false
    }
 
-   private var settingsOverlay: some View {
-      GeometryReader { proxy in
-         let targetWidth = proxy.size.width * (usesRegularWidthLayout ? 0.48 : 0.86)
-         let panelWidth = min(max(targetWidth, usesRegularWidthLayout ? 460 : 0), usesRegularWidthLayout ? 560 : 420)
+   private func applyScreenshotPresentationIfNeeded() {
+      guard isRunningInScreenshotMode, !didApplyScreenshotPresentation else { return }
+      didApplyScreenshotPresentation = true
 
-         ZStack(alignment: .leading) {
-            Color.black
-               .opacity(isShowingSettings ? 0.33 : 0)
-               .ignoresSafeArea()
-               .transaction { transaction in
-                  transaction.animation = nil
-               }
-               .onTapGesture {
-                  if isShowingSettings {
-                     closeSettingsPanel()
-                  }
-               }
-
-            if isShowingSettings {
-               SettingsView(onClose: closeSettingsPanel)
-                  .frame(width: panelWidth)
-                  .frame(maxHeight: .infinity)
-                  .background(AppColor.surface)
-                  .shadow(color: AppColor.shadow, radius: 14, x: 6, y: 0)
-                  .transition(.move(edge: .leading).combined(with: .opacity))
-                  .gesture(
-                     DragGesture(minimumDistance: 18)
-                        .onEnded { value in
-                           if value.translation.width < -70 {
-                              closeSettingsPanel()
-                           }
-                        }
-                  )
-            }
+      let screen = requestedScreenshotScreen ?? "todos"
+      switch screen {
+      case "settings":
+         DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+            openSettingsPanel()
          }
-         .animation(AppAnimation.snappyStandard, value: isShowingSettings)
-         .allowsHitTesting(isShowingSettings)
+      case "todo", "todoview", "detail":
+         DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
+            guard let target = scopedToDos.first(where: { $0.task == "Hello world!" }) ?? scopedToDos.first else {
+               return
+            }
+            isShowingSettings = false
+            inlineEditingToDoID = nil
+            isShowingNewToDo = false
+            editingToDo = nil
+            viewingToDo = target
+            expandedToDoID = target.id
+         }
+      default:
+         break
       }
    }
 
    private func toggleSearchPanel() {
+      HapticFeedbackService.play(.reveal)
       let shouldShow = !isSearchVisible
-      withAnimation(AppAnimation.snappyStandard) {
-         isUtilityTrayPresented = true
-         isSearchVisible = shouldShow
-         if shouldShow {
-            isFilterVisible = false
-         }
+      isSearchFieldFocused = false
+      isUtilityTrayPresented = true
+      isSearchVisible = shouldShow
+      if shouldShow {
+         isFilterVisible = false
       }
       if shouldShow {
-         DispatchQueue.main.async {
+         Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard isSearchVisible else { return }
             isSearchFieldFocused = true
          }
       } else {
@@ -2329,6 +2442,7 @@ struct ToDosView: View {
    }
 
    private func toggleFilterPanel() {
+      HapticFeedbackService.play(.reveal)
       let shouldShow = !isFilterVisible
       withAnimation(AppAnimation.snappyStandard) {
          isUtilityTrayPresented = true
@@ -2343,6 +2457,7 @@ struct ToDosView: View {
    }
 
    private func toggleUtilityTray() {
+      HapticFeedbackService.play(.selection)
       if isUtilityTrayVisible {
          isSearchFieldFocused = false
          withAnimation(AppAnimation.snappyStandard) {
@@ -2379,7 +2494,7 @@ struct ToDosView: View {
          defaultTagSeedVersion = 1
          SyncCoordinator.shared.scheduleLocalSync()
       } catch {
-         print("Failed to seed default tags: \(error)")
+         AppLog.error("Failed to seed default tags: \(error)", logger: AppLog.app)
       }
    }
 
@@ -2388,669 +2503,52 @@ struct ToDosView: View {
          try context.save()
          NotificationManager.shared.scheduleRefresh()
          SyncCoordinator.shared.scheduleLocalSync()
+         WidgetSnapshotService.shared.writeSnapshot(from: context)
+         LiveActivityService.shared.refresh(from: context)
+         LocationReminderService.shared.syncMonitoring(for: scopedToDos)
+
+         WatchConnectivityService.shared.refreshSnapshot()
       } catch {
-         print("\(message): \(error)")
+         AppLog.error("\(message): \(error)", logger: AppLog.app)
       }
    }
-}
 
-private struct RowContextMenuModifier<MenuContent: View>: ViewModifier {
-   let isEnabled: Bool
-   @ViewBuilder var menuContent: () -> MenuContent
+   private func removeCalendarMirrorIfPresent(for toDo: ToDo) {
+      guard toDo.calendarEventIdentifier != nil else { return }
 
-   @ViewBuilder
-   func body(content: Content) -> some View {
-      if isEnabled {
-         content.contextMenu(menuItems: menuContent)
-      } else {
-         content
+      do {
+         try CalendarIntegrationService.shared.removeCalendarEvent(for: toDo)
+      } catch {
+         AppLog.error("Failed to remove mirrored Calendar event: \(error)", logger: AppLog.calendar)
       }
    }
-}
 
-private struct ToDoListSection: Identifiable {
-   let key: String
-   let title: String
-   var sortDate: Date = .distantPast
-   var sortCount: Int = 0
-   let toDos: [ToDo]
-
-   var id: String { key }
-}
-
-private struct TagSectionKey: Hashable {
-   let key: String
-   let title: String
-}
-
-private struct DoneDrawerRowView: View {
-   let toDo: ToDo
-   let hasSyncConflict: Bool
-   let onOpen: () -> Void
-   let onReopen: () -> Void
-
-   var body: some View {
-      HStack(alignment: .top, spacing: 12) {
-         Button(action: onReopen) {
-            Image(systemName: "checkmark.circle.fill")
-               .font(.appDisplay(20, relativeTo: .headline))
-               .foregroundStyle(AppColor.actionPrimary)
-               .frame(width: 22, height: 22)
-         }
-         .buttonStyle(.plain)
-         .accessibilityLabel("Mark active")
-
-         Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 6) {
-               HStack(alignment: .firstTextBaseline, spacing: 8) {
-                  Text(toDo.task)
-                     .font(.appDisplay(20, relativeTo: .headline))
-                     .foregroundStyle(AppColor.textPrimary)
-                     .strikethrough(true, color: AppColor.textPrimary.opacity(0.35))
-                     .frame(maxWidth: .infinity, alignment: .leading)
-
-                  if hasSyncConflict {
-                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.appBodyStrong(12, relativeTo: .caption))
-                        .foregroundStyle(AppColor.secondary)
-                        .accessibilityLabel("Sync needs review")
-                  }
-               }
-
-               if hasMetadata {
-                  HStack(spacing: 10) {
-                     if toDo.dueDate != nil {
-                        Image(systemName: "calendar")
-                           .accessibilityLabel("Has due date")
-                     }
-
-                     if !toDo.nanoDos.isEmpty {
-                        Label("\(toDo.nanoDos.count)", systemImage: "smallcircle.filled.circle")
-                           .labelStyle(.titleAndIcon)
-                           .accessibilityLabel("\(toDo.nanoDos.count) nano tasks")
-                     }
-
-                     if toDo.reminderIntent == .timeSensitive {
-                        Image(systemName: "clock.fill")
-                           .foregroundStyle(AppColor.actionDestructive)
-                           .accessibilityLabel("Time-sensitive reminder")
-                     }
-                  }
-                  .font(.appBody(12, relativeTo: .caption))
-                  .foregroundStyle(AppColor.textSecondary)
-               }
-            }
-            .contentShape(Rectangle())
-         }
-         .buttonStyle(.plain)
-      }
-      .padding(.vertical, 9)
-      .padding(.horizontal, 12)
-      .background(AppColor.surfaceMuted.opacity(0.55), in: .rect(cornerRadius: 18))
-      .opacity(0.72)
-   }
-
-   private var hasMetadata: Bool {
-      toDo.dueDate != nil || !toDo.nanoDos.isEmpty || toDo.reminderIntent == .timeSensitive
-   }
-}
-
-private struct ToDoRowView: View {
-   @ScaledMetric(relativeTo: .headline) private var leadingCircleSymbolSize: CGFloat = 20
-   @State private var titleFirstLineHeight: CGFloat = 0
-//   @State private var expandedContentHeight: CGFloat = 0
-
-   let toDo: ToDo
-   let allowsCompletionToggle: Bool
-   let isSelectionMode: Bool
-   let isSelected: Bool
-   let isDetailSelected: Bool
-   let hasSyncConflict: Bool
-   let showsCompletedState: Bool
-   let isExpanded: Bool
-   let onToggleDone: (Bool) -> Void
-   let onToggleSelection: () -> Void
-   let onEdit: () -> Void
-   let isTransitioningCompletion: Bool
-
-   var body: some View {
-      // 1. Make the spacing dynamic so it snaps cleanly to 0 when collapsed
-      VStack(alignment: .leading, spacing: 0) {
-         primaryRowContent
-            .zIndex(1)
-            .padding(.bottom, isExpanded ? 8 : 0)
-
-         expandedDetailsContainer
-            .zIndex(0)
-      }
-      .padding(.vertical, 8)
-      .padding(.horizontal, 12)
-      .opacity(rowOpacity)
-      .containerShape(.rect(cornerRadius: 18))
-      .background(
-         rowBackgroundColor,
-         in: .rect(cornerRadius: 18)
-      )
-      .compositingGroup()
-      .animation(AppAnimation.easeFast, value: isSelected)
-      .animation(AppAnimation.easeStandard, value: isTransitioningCompletion)
-      .animation(AppAnimation.easeStandard, value: showsCompletedState)
-      .animation(AppAnimation.snappySection, value: isExpanded)
-   }
-
-   private var primaryRowContent: some View {
-      HStack(alignment: .top, spacing: 12) {
-         Button {
-            if isSelectionMode {
-               onToggleSelection()
-            } else {
-               guard allowsCompletionToggle else { return }
-               onToggleDone(!showsCompletedState)
-            }
-         } label: {
-            Image(systemName: leadingCircleSymbol)
-               .font(.appDisplay(20, relativeTo: .headline))
-               .foregroundStyle(leadingCircleColor)
-               .frame(width: leadingCircleSymbolSize, height: leadingCircleSymbolSize)
-         }
-         .buttonStyle(.plain)
-         .padding(.top, leadingCircleTopPadding)
-
-         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-               Text(toDo.task)
-                  .font(.appDisplay(22, relativeTo: .headline))
-                  .foregroundStyle(taskTextColor)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .background(firstLineHeightProbe)
-
-               if let primaryTag {
-                  HStack(spacing: 6) {
-                     Text(primaryTag.displayName)
-                        .font(.appAccent(14, relativeTo: .caption))
-                        .foregroundStyle(tagTextColor)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(
-                           Capsule()
-                              .fill(tagBackgroundColor)
-                        )
-
-                     if additionalTagCount > 0 {
-                        Text("+\(additionalTagCount)")
-                           .font(.appAccent(11, relativeTo: .caption))
-                           .foregroundStyle(metadataColor)
-                     }
-                  }
-                  .fixedSize(horizontal: true, vertical: false)
-               }
-
-               if hasSyncConflict {
-                  Image(systemName: "exclamationmark.triangle.fill")
-                     .font(.appBodyStrong(13, relativeTo: .caption))
-                     .foregroundStyle(syncConflictColor)
-                     .padding(.horizontal, 7)
-                     .padding(.vertical, 4)
-                     .background(
-                        Capsule()
-                           .fill(syncConflictColor.opacity(isOverdueStylingActive ? 1 : 0.12))
-                     )
-                     .accessibilityLabel("Sync needs review")
-               }
+   private func syncCalendarMirrorIfNeeded(for toDo: ToDo) {
+      Task { @MainActor in
+         do {
+            if UserDefaults.standard.bool(forKey: AppPreferences.Keys.mirrorDueDatesToCalendar),
+               toDo.isActive {
+               try await CalendarIntegrationService.shared.syncCalendarEvent(for: toDo)
+            } else if toDo.calendarEventIdentifier != nil {
+               try CalendarIntegrationService.shared.removeCalendarEvent(for: toDo)
             }
 
-            if hasMetadata {
-               HStack(spacing: 12) {
-                  if nanoDoCount > 0 {
-                     nanoDoCountBadge
-                  }
-
-                  if toDo.dueDate != nil {
-                     Image(systemName: "calendar")
-                        .accessibilityLabel("Has due date")
-                  }
-
-                  if isTimeSensitiveReminder {
-                     Image(systemName: "clock.fill")
-                        .foregroundStyle(timeSensitiveIndicatorColor)
-                        .accessibilityLabel("Time-sensitive reminder")
-                  }
-               }
-               .font(.appBody(12, relativeTo: .caption))
-               .foregroundStyle(metadataColor)
-            }
+            try context.save()
+         } catch {
+            AppLog.error("Calendar mirror failed: \(error.localizedDescription)", logger: AppLog.calendar)
          }
       }
    }
 
-//   private var expandedDetailsContainer: some View {
-//      Color.clear
-//         .frame(height: isExpanded ? expandedContentHeight : 0)
-//         .overlay(alignment: .top) {
-//            expandedDetails
-//               .offset(y: isExpanded ? 0 : -(expandedContentHeight * 0.16 + 10))
-//               .opacity(isExpanded ? 1 : 0.01)
-//               .frame(height: isExpanded ? expandedContentHeight : 0, alignment: .top)
-//               .clipped()
-//               .allowsHitTesting(isExpanded)
-//         }
-//   }
-
-   private var expandedDetailsContainer: some View {
-      expandedDetails
-         // Force content to compute full height regardless of container
-         .fixedSize(horizontal: false, vertical: true)
-         .frame(maxWidth: .infinity)
-         // Add a slight upward parallax slide as it collapses
-         .offset(y: isExpanded ? 0 : -15)
-         // Animate the bounding box from natural height (nil) to 0
-         .frame(height: isExpanded ? nil : 0, alignment: .top)
-         .clipped()
-         .opacity(isExpanded ? 1 : 0)
-   }
-
-   private var expandedDetails: some View {
-      VStack(alignment: .leading, spacing: 12) {
-         VStack(alignment: .leading, spacing: 8) {
-            if let dueDate = toDo.dueDate {
-               expandedDetailRow(
-                  systemName: "calendar",
-                  title: "Due",
-                  value: dueDate.formatted(date: .abbreviated, time: .shortened)
-               )
-            }
-
-            expandedDetailRow(
-               systemName: reminderIntentSystemName,
-               title: "Reminder",
-               value: toDo.reminderIntent.title
-            )
-
-            if let recurrenceSummary = toDo.recurrenceSummary {
-               expandedDetailRow(
-                  systemName: "arrow.clockwise",
-                  title: "Repeat",
-                  value: recurrenceSummary
-               )
-            }
-
-            if !effectiveTags.isEmpty {
-               expandedDetailRow(
-                  systemName: "tag",
-                  title: "Tags",
-                  value: effectiveTags.map(\.displayName).joined(separator: " • ")
-               )
-            }
-         }
-
-         if !toDo.nanoDos.isEmpty {
-            expandedLongformSection(title: "NanoDos", systemName: "smallcircle.filled.circle") {
-               VStack(alignment: .leading, spacing: 7) {
-                  ForEach(toDo.nanoDos) { nanoDo in
-                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Image(systemName: "arrow.right.circle"/*nanoDo.isDone ? "checkmark.circle.fill" : "circle"*/)
-                           .font(.appBodyStrong(11, relativeTo: .caption))
-                           .foregroundStyle(nanoDo.isDone ? AppColor.secondary : AppColor.textSecondary)
-
-                        Text(nanoDo.task)
-                           .font(.appBodyStrong(14, relativeTo: .footnote))
-                           .foregroundStyle(expandedValueColor)
-                           .strikethrough(nanoDo.isDone, color: expandedValueColor.opacity(0.4))
-                     }
-                  }
-               }
-            }
-         }
-
-         if !trimmedNotes.isEmpty {
-            expandedLongformSection(title: "Notes", systemName: "note.text") {
-               Text(trimmedNotes)
-                  .font(.appBody(14, relativeTo: .footnote))
-                  .foregroundStyle(expandedValueColor)
-                  .fixedSize(horizontal: false, vertical: true)
-            }
-         }
-
-         HStack {
-            Spacer(minLength: 0)
-
-            Button(action: onEdit) {
-               Image(systemName: "arrow.up.right.circle.fill")
-                  .font(.appBodyStrong(23, relativeTo: .caption))
-                  .foregroundStyle(/*expandedActionColor*/AppColor.actionNeutral)
-                  .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-         }
+   private func refreshToDos() async {
+      await SyncCoordinator.shared.refreshFromRemote(userID: supabaseAuthStore.currentUserID)
+      await NotificationManager.shared.syncScheduledNotifications()
+      #if canImport(WatchConnectivity) && os(iOS)
+      await MainActor.run {
+         WidgetSnapshotService.shared.writeSnapshot(from: context)
+         LiveActivityService.shared.refresh(from: context)
+         WatchConnectivityService.shared.refreshSnapshot()
       }
-      .padding(12)
-      .background(
-         expandedPanelBackground,
-         in: .rect(cornerRadius: 16)
-      )
-      .padding(.leading, leadingCircleSymbolSize + 12)
-      .padding(.top, 4)
-      .contentTransition(.opacity)
+      #endif
    }
-
-//   private var expandedDetailsMeasurement: some View {
-//      expandedDetails
-//         .fixedSize(horizontal: false, vertical: true)
-//         .opacity(0.001)
-//         .allowsHitTesting(false)
-//         .accessibilityHidden(true)
-//         .onGeometryChange(for: CGFloat.self) { proxy in
-//            proxy.size.height
-//         } action: { value in
-//            if abs(expandedContentHeight - value) > 0.5 {
-//               expandedContentHeight = value
-//            }
-//         }
-//   }
-
-   private var taskTextColor: Color {
-      if isDetailSelected {
-         return AppColor.textPrimary
-      }
-      guard isOverdueStylingActive else { return AppColor.textPrimary }
-      return AppColor.white
-   }
-
-   private var metadataColor: Color {
-      if isDetailSelected {
-         return AppColor.textPrimary.opacity(0.68)
-      }
-      guard isOverdueStylingActive else { return AppColor.textSecondary }
-      return AppColor.white.opacity(0.86)
-   }
-
-   private var tagTextColor: Color {
-      if isDetailSelected {
-         return AppColor.textPrimary
-      }
-      guard isOverdueStylingActive else { return AppColor.textPrimary }
-      return overdueAccentColor
-   }
-
-   private var tagBackgroundColor: Color {
-      if isDetailSelected {
-         return AppColor.surfaceElevated.opacity(0.5)
-      }
-      guard isOverdueStylingActive else { return AppColor.surfaceMuted }
-      return AppColor.white
-   }
-
-	   private var syncConflictColor: Color {
-	      isOverdueStylingActive ? overdueAccentColor : AppColor.secondary
-	   }
-
-	   private var timeSensitiveIndicatorColor: Color {
-	      isOverdueStylingActive ? AppColor.white : AppColor.actionDestructive
-	   }
-
-   private var timeSensitiveIndicatorColor: Color {
-      isOverdueStylingActive ? AppColor.white : AppColor.actionDestructive
-   }
-
-   private var rowBackgroundColor: Color {
-      if isSelectionMode && isSelected {
-         return isOverdueStylingActive ? overdueSurfaceColor : AppColor.actionSecondary.opacity(0.1)
-      }
-      if isDetailSelected {
-         return AppColor.main
-      }
-      return isOverdueStylingActive ? overdueSurfaceColor : AppColor.surfaceElevated
-   }
-
-   private var rowOpacity: Double {
-      if isDetailSelected {
-         return 1
-      }
-      guard showsCompletedState else { return 1 }
-      return isExpanded ? 0.64 : 0.22
-   }
-
-   private var expandedPanelBackground: Color {
-      AppColor.surfaceElevated
-   }
-
-   private var expandedActionColor: Color {
-      AppColor.secondary
-   }
-
-   private var overdueSurfaceColor: Color {
-      AppColor.actionDestructive
-   }
-
-   private var overdueAccentColor: Color {
-      AppColor.actionDestructive
-   }
-
-   private var isOverdueStylingActive: Bool {
-      toDo.isLate && !showsCompletedState
-   }
-
-   private var leadingCircleTopPadding: CGFloat {
-      max((titleFirstLineHeight - leadingCircleSymbolSize) / 2, 0)
-   }
-
-   private var firstLineHeightProbe: some View {
-      Text(toDo.task)
-         .font(.appDisplay(22, relativeTo: .headline))
-         .lineLimit(1)
-         .fixedSize(horizontal: false, vertical: true)
-         .hidden()
-         .background(
-            GeometryReader { proxy in
-               Color.clear
-                  .preference(key: ToDoRowFirstLineHeightKey.self, value: proxy.size.height)
-            }
-         )
-         .onPreferenceChange(ToDoRowFirstLineHeightKey.self) { value in
-            titleFirstLineHeight = value
-         }
-   }
-
-   private var leadingCircleSymbol: String {
-      if isSelectionMode {
-         return isSelected ? "checkmark.circle.fill" : "circle"
-      }
-      return showsCompletedState ? "checkmark.circle.fill" : "circle"
-   }
-
-   private var leadingCircleColor: Color {
-      if isDetailSelected {
-         return AppColor.textPrimary
-      }
-      if isOverdueStylingActive {
-         return AppColor.white
-      }
-      if isSelectionMode {
-         return AppColor.actionSecondary
-      }
-      return showsCompletedState ? AppColor.actionPrimary : AppColor.textSecondary
-   }
-
-   private var hasMetadata: Bool {
-      toDo.dueDate != nil || !toDo.nanoDos.isEmpty || isTimeSensitiveReminder
-   }
-
-   private var isTimeSensitiveReminder: Bool {
-      toDo.reminderIntent == .timeSensitive
-   }
-
-   private var trimmedNotes: String {
-      toDo.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-   }
-
-   private var nanoDoCount: Int {
-      toDo.nanoDos.count
-   }
-
-   private var effectiveTags: [Tag] {
-      toDo.effectiveTags
-   }
-
-   private var primaryTag: Tag? {
-      effectiveTags.first
-   }
-
-   private var additionalTagCount: Int {
-      max(effectiveTags.count - 1, 0)
-   }
-
-   private var completedNanoDoCount: Int {
-      toDo.nanoDos.filter(\.isDone).count
-   }
-
-   private var nanoDoCountBadge: some View {
-      ZStack {
-         Circle()
-            .fill(nanoDoBadgeFill)
-            .frame(width: 20, height: 20)
-            .overlay(
-               Circle()
-                  .stroke(AppColor.border, lineWidth: 0.8)
-            )
-
-         Text("\(nanoDoCount)")
-            .font(.appBody(10, relativeTo: .caption2))
-            .foregroundStyle(nanoDoBadgeTextColor)
-      }
-      .accessibilityLabel("\(nanoDoCount) nano tasks")
-   }
-
-   private var nanoDoBadgeFill: Color {
-      if isOverdueStylingActive {
-         return AppColor.white
-      }
-      guard nanoDoCount > 0 else { return AppColor.surfaceMuted }
-      if completedNanoDoCount == nanoDoCount {
-         return AppColor.actionSuccess.opacity(0.24)
-      }
-      if completedNanoDoCount > 0 {
-         return AppColor.actionPrimary.opacity(0.18)
-      }
-      return AppColor.surfaceMuted
-   }
-
-   private var nanoDoBadgeTextColor: Color {
-      guard isOverdueStylingActive else { return AppColor.textPrimary }
-      return overdueAccentColor
-   }
-
-   private var reminderIntentSystemName: String {
-      switch toDo.reminderIntent {
-      case .soft:
-         return "bell.badge"
-      case .due:
-         return "bell"
-      case .timeSensitive:
-         return "exclamationmark.circle"
-      }
-   }
-
-   private func expandedDetailRow(systemName: String, title: String, value: String) -> some View {
-      HStack(alignment: .center, spacing: 8) {
-         Image(systemName: systemName)
-            .font(.appBodyStrong(14, relativeTo: .caption))
-            .foregroundStyle(expandedLabelColor)
-            .frame(width: 14, alignment: .center)
-
-         Text(title)
-            .font(.appSubtitle(12, relativeTo: .caption))
-            .foregroundStyle(expandedLabelColor)
-            .frame(width: 56, alignment: .leading)
-
-         Spacer(minLength: 10)
-
-         Text(value)
-            .font(.appBodyStrong(14, relativeTo: .footnote))
-            .foregroundStyle(expandedValueColor)
-            .multilineTextAlignment(.trailing)
-      }
-   }
-
-   private func expandedLongformSection<Content: View>(title: String, systemName: String, @ViewBuilder content: () -> Content) -> some View {
-      VStack(alignment: .leading, spacing: 7) {
-         HStack(spacing: 8) {
-            Image(systemName: systemName)
-               .font(.appBodyStrong(14, relativeTo: .caption))
-               .foregroundStyle(expandedLabelColor)
-               .frame(width: 14, alignment: .center)
-
-            Text(title)
-               .font(.appSubtitle(14, relativeTo: .caption))
-               .foregroundStyle(expandedLabelColor)
-         }
-
-         content()
-            .padding(.leading, 22)
-      }
-   }
-
-   private var expandedLabelColor: Color {
-      AppColor.textSecondary
-   }
-
-   private var expandedValueColor: Color {
-      AppColor.textPrimary
-   }
-}
-
-private struct ToDoRowFirstLineHeightKey: PreferenceKey {
-   static var defaultValue: CGFloat = 0
-
-   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-      value = nextValue()
-   }
-}
-
-private enum PreviewContainerFactory {
-   static func makeToDosViewContainer() -> ModelContainer {
-      let container = PreviewSupport.makeModelContainer()
-      let context = container.mainContext
-
-      let work = Tag(name: "work")
-      let personal = Tag(name: "personal")
-
-      let sprint = ToDo(
-         task: "Plan weekly sprints",
-         notes: "neener neener",
-         dueDate: Calendar.current.date(byAdding: .day, value: 2, to: .now),
-         tags: [work]
-      )
-
-      let reset = ToDo(
-         task: "Reset home inbox",
-         dueDate: Calendar.current.date(byAdding: .day, value: 1, to: .now),
-         tags: [personal]
-      )
-      let outline = NanoDo(task: "Draft outline", toDo: sprint, tag: work)
-      let review = NanoDo(task: "Review backlog", toDo: sprint, tag: work)
-      sprint.nanoDos = [outline, review]
-
-      context.insert(work)
-      context.insert(personal)
-      context.insert(sprint)
-      context.insert(reset)
-      context.insert(outline)
-      context.insert(review)
-
-      return container
-   }
-}
-
-#Preview {
-   ToDosView()
-      .modelContainer(PreviewContainerFactory.makeToDosViewContainer())
-      .environmentObject(SupabaseAuthStore.preview)
-}
-
-#Preview("iPad") {
-   ToDosView()
-      .modelContainer(PreviewContainerFactory.makeToDosViewContainer())
-      .environmentObject(SupabaseAuthStore.preview)
-      .environment(\.horizontalSizeClass, .regular)
-      .frame(width: 1366, height: 1024)
 }

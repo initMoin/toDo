@@ -6,6 +6,7 @@ struct SettingsView: View {
    @Environment(\.modelContext) private var context
    @Environment(\.dismiss) private var dismiss
    @Environment(\.openURL) private var openURL
+   @Environment(\.colorScheme) private var colorScheme
    @EnvironmentObject private var authStore: SupabaseAuthStore
    @Query private var tags: [Tag]
    @Query private var toDos: [ToDo]
@@ -15,19 +16,24 @@ struct SettingsView: View {
    @AppStorage(AppPreferences.Keys.toDoListSortOption) private var toDoListSortOption = AppPreferences.ToDoListSortOption.dueDate.rawValue
    @AppStorage(AppPreferences.Keys.toDoListSortReversed) private var isToDoListSortReversed = false
    @AppStorage(AppPreferences.Keys.createToDoTagsEnabledByDefault) private var createToDoTagsEnabledByDefault = false
+   @AppStorage(AppPreferences.Keys.mirrorDueDatesToCalendar) private var mirrorDueDatesToCalendar = false
    @AppStorage(AppPreferences.Keys.doneSwipePrimaryAction) private var doneSwipePrimaryActionRaw = AppPreferences.DoneSwipePrimaryAction.archive.rawValue
    @AppStorage(AppPreferences.Keys.appTimeSource) private var appTimeSourceRaw = AppTimeSource.location.rawValue
    @AppStorage(AppPreferences.Keys.locationTimeZoneIdentifier) private var locationTimeZoneIdentifier = AppTimePreferences.appleParkTimeZoneIdentifier
    @AppStorage(AppPreferences.Keys.mirrorSyncDeletesToDeviceOnly) private var mirrorSyncDeletesToDeviceOnly = true
+   @AppStorage(AppPreferences.Keys.appIconBadgePolicy) private var appIconBadgePolicyRaw = AppPreferences.AppIconBadgePolicy.overdue.rawValue
+   @AppStorage(AppPreferences.Keys.notificationSoundOption) private var notificationSoundOptionRaw = AppPreferences.NotificationSoundOption.defaultSound.rawValue
+   @AppStorage("trashAutoEmptyInterval") private var trashAutoEmptyIntervalRaw = TrashAutoEmptyInterval.oneMonth.rawValue
 
    @State private var isShowingDeleteUnusedTagsConfirmation = false
    @State private var isSortMenuExpanded = false
    @State private var isDoneSwipeMenuExpanded = false
    @State private var isTimeSourceMenuExpanded = false
+   @StateObject private var onboardingManager = GuidedOnboardingManager.shared
    @StateObject private var notificationManager = NotificationManager.shared
    @StateObject private var locationTimeZoneService = LocationTimeZoneService()
    @StateObject private var syncCoordinator = SyncCoordinator.shared
-   private let brandWebsiteURL = URL(string: "https://iamshift.dev")!
+   private let brandWebsiteURL = URL(string: "https://yourtodo.today")!
    private let appSettingsURL = URL(string: "app-settings:")!
    private let onClose: (() -> Void)?
 
@@ -58,11 +64,26 @@ struct SettingsView: View {
          .sorted { $0.createdAt > $1.createdAt }
    }
 
+   private var accountSummaryDetail: String {
+      if let provider = authStore.accountProviderLabel {
+         return provider
+      }
+
+      switch authStore.effectiveSyncMode {
+      case .deviceOnly:
+         return String(localized: "Local")
+      case .iCloud:
+         return "Apple"
+      case .syncEverywhere:
+         return authStore.isAuthenticated ? String(localized: "ToDo Sync") : authStore.accountStatusLabel
+      }
+   }
+
    var body: some View {
       ZStack(alignment: .top) {
          ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-               settingsSection("Account") {
+               settingsSection(String(localized: "Account")) {
                   NavigationLink {
                      if authStore.isAuthenticated {
                         AccountView()
@@ -71,18 +92,19 @@ struct SettingsView: View {
                      }
                   } label: {
                      settingsNavigationRow(
-                        authStore.isAuthenticated ? "Profile & Session" : "Set Up Account",
-                        detail: authStore.signedInEmail ?? authStore.accountStatusLabel
+                        authStore.isAuthenticated ? String(localized: "Profile & Session") : String(localized: "Set Up Account"),
+                        detail: accountSummaryDetail
                      )
+                     .onboardingSpotlightAnchor(.settingsAccount)
                   }
                   .foregroundStyle(AppColor.textPrimary)
 
-                  Text("Manage your ToDo identity, sign-in methods, and the account currently connected to this device.")
+                  Text(String(localized: "Manage your identity and the account connected to this device."))
                      .font(.appBody(12, relativeTo: .caption))
                      .foregroundStyle(AppColor.textSecondary)
                }
 
-               settingsSection("Sync") {
+               settingsSection(String(localized: "Sync")) {
                   syncStatusBlock
 
                   if !unresolvedSyncConflicts.isEmpty {
@@ -101,106 +123,111 @@ struct SettingsView: View {
                      SyncSettingsView()
                   } label: {
                      settingsNavigationRow(
-                        "Storage & Sync",
-                        detail: syncCoordinator.pendingRestartSyncMode != nil ? "Needs relaunch" : syncCoordinator.preferredSyncMode.title
+                        String(localized: "Storage & Sync"),
+                        detail: syncCoordinator.pendingRestartSyncMode != nil ? String(localized: "Needs relaunch") : syncCoordinator.preferredSyncMode.title
+                     )
+                     .onboardingSpotlightAnchor(.settingsSync)
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+
+                  NavigationLink {
+                     syncDetailsSettingsScreen
+                  } label: {
+                     settingsNavigationRow(
+                        String(localized: "Sync Details"),
+                        detail: mirrorSyncDeletesToDeviceOnly ? String(localized: "Mirrors deletes") : String(localized: "Keeps local")
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+               }
+
+               settingsSection(String(localized: "Preferences")) {
+                  NavigationLink {
+                     behaviorSettingsScreen
+                  } label: {
+                     settingsNavigationRow(
+                        String(localized: "ToDo Behavior"),
+                        detail: resolvedSortOption.title
                      )
                   }
                   .foregroundStyle(AppColor.textPrimary)
 
                   NavigationLink {
-                     SyncDiagnosticsView(
-                        toDos: scopedToDos,
-                        tags: scopedTags,
-                        nanoDos: scopedNanoDos,
-                        unresolvedConflictCount: unresolvedSyncConflicts.count
-                     )
+                     notificationSettingsScreen
                   } label: {
                      settingsNavigationRow(
-                        "Sync Diagnostics",
-                        detail: syncDiagnosticsSummary
+                        String(localized: "Notifications"),
+                        detail: notificationAuthorizationStatusLabel
                      )
+                     .onboardingSpotlightAnchor(.settingsNotifications)
                   }
                   .foregroundStyle(AppColor.textPrimary)
-
-                  syncDeletionPreferenceToggle
-
-                  Text("Choose where ToDo stores and syncs your ToDos: on this device, in iCloud for Apple devices, or through ToDo Sync.")
-                     .font(.appBody(12, relativeTo: .caption))
-                     .foregroundStyle(AppColor.textSecondary)
-
-                  Text("ToDo Sync can be signed in with Apple or Google, depending on which path you prefer.")
-                     .font(.appBody(12, relativeTo: .caption))
-                     .foregroundStyle(AppColor.textSecondary)
-               }
-
-               settingsSection("Preferences") {
-               settingsSortDropdown
-
-               timeSourceDropdown
-
-               doneSwipeActionDropdown
-
-               NavigationLink {
-                  SnoozeOptionsView()
-               } label: {
-                  settingsNavigationRow(
-                     "Snooze Options",
-                     detail: "Manage presets"
-                  )
-               }
-               .foregroundStyle(AppColor.textPrimary)
-
-               notificationSettingsBlock
-               }
-
-               settingsSection("Tags") {
-                  Toggle(isOn: $createToDoTagsEnabledByDefault) {
-                     Text("Enable Tags by Default")
-                        .foregroundStyle(AppColor.textPrimary)
-                  }
 
                   NavigationLink {
-                     TagManagementView()
+                     tagSettingsScreen
                   } label: {
                      settingsNavigationRow(
-                        "Tag Management",
-                        detail: "\(customTagCount) custom"
+                        String(localized: "Tags"),
+                        detail: customTagCountLabel
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+
+                  NavigationLink {
+                     StatsView(ownerUserID: visibleOwnerUserID)
+                  } label: {
+                     settingsNavigationRow(
+                        String(localized: "Stats"),
+                        detail: statsSummaryDetail
                      )
                   }
                   .foregroundStyle(AppColor.textPrimary)
                }
 
-               NavigationLink {
-                  ArchivesView()
-               } label: {
-                  settingsStandaloneNavigationButton(
-                     "Archives",
-                     detail: archiveCountLabel
-                  )
-               }
-               .foregroundStyle(AppColor.textPrimary)
-               .padding(.top, -4)
-
-               settingsSection("Data Controls") {
-                  settingsActionRow(
-                     systemName: "arrow.counterclockwise",
-                     title: "Reset Preferences",
-                     detail: "Restore sorting and default tag-entry behavior to the app defaults."
-                  ) {
-                     resetPreferences()
+               settingsSection(String(localized: "Data")) {
+                  NavigationLink {
+                     dataControlsSettingsScreen
+                  } label: {
+                     settingsNavigationRow(
+                        String(localized: "Data Controls"),
+                        detail: String(localized: "Maintenance")
+                     )
                   }
+                  .foregroundStyle(AppColor.textPrimary)
 
+                  NavigationLink {
+                     ArchivesView()
+                  } label: {
+                     settingsNavigationRow(
+                        String(localized: "Archives"),
+                        detail: archiveCountLabel
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+
+                  NavigationLink {
+                     TrashView()
+                  } label: {
+                     settingsNavigationRow(
+                        String(localized: "Trash"),
+                        detail: trashCountLabel
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+               }
+
+               #if DEBUG
+               settingsSection(String(localized: "Developer")) {
                   settingsActionRow(
-                     systemName: "tag.slash",
-                     title: "Delete Unused Tags",
-                     detail: "Permanently remove tags that are no longer linked to any ToDo or nanoDo.",
-                     foregroundStyle: AppColor.actionDestructive,
-                     backgroundStyle: AppColor.actionDestructive.opacity(0.08),
-                     isDisabled: unusedTagCount == 0
+                     systemName: "sparkles",
+                     title: "Run Guided Onboarding",
+                     detail: "Development-only trigger for testing the first-run guided setup."
                   ) {
-                     isShowingDeleteUnusedTagsConfirmation = true
+                     onboardingManager.restartForTesting()
+                     closeView()
                   }
                }
+               #endif
 
                madeByBrandView
                   .frame(maxWidth: .infinity)
@@ -212,21 +239,20 @@ struct SettingsView: View {
          }
 
          pinnedTitleHeader
+
       }
       .scrollIndicators(.hidden)
       .background(AppColor.surface)
-      .tint(AppColor.actionPrimary)
+      .tint(AppColor.main)
       .appBaseTypography()
       .appNavigationChrome()
-      .toolbar {
-         ToolbarItem(placement: .topBarTrailing) {
-            Button("Done") {
-               if let onClose {
-                  onClose()
-               } else {
-                  dismiss()
-               }
+      .toolbar(.hidden, for: .navigationBar)
+      .overlayPreferenceValue(OnboardingSpotlightPreferenceKey.self) { anchors in
+         if onboardingManager.blocksSettingsChrome {
+            GuidedOnboardingOverlay(manager: onboardingManager, anchors: anchors) { step in
+               handleOnboardingPrimaryAction(step)
             }
+            .zIndex(1200)
          }
       }
       .confirmationDialog("Delete unused tags?", isPresented: $isShowingDeleteUnusedTagsConfirmation, titleVisibility: .visible) {
@@ -246,90 +272,324 @@ struct SettingsView: View {
       }
    }
 
-   private var madeByBrandView: some View {
-      VStack(spacing: 10) {
-         VStack(spacing: 2) {
-            Text("ToDo what matters")
-               .font(.appSubtitle(15, relativeTo: .subheadline))
-               .foregroundStyle(AppColor.textPrimary)
-               .padding(.bottom, 11)
-
-            Spacer()
-
-            HStack(spacing: 6) {
-               Text("intention")
-                  .font(.appBody(14, relativeTo: .body))
-                  .foregroundStyle(AppColor.textPrimary)
-
-               Image(systemName: "arrow.right")
-                  .font(.system(size: 11, weight: .semibold, design: .serif))
-                  .foregroundStyle(AppColor.textPrimary)
-
-               Text("build")
-                  .font(.appBody(14, relativeTo: .body))
-                  .foregroundStyle(AppColor.textPrimary)
-
-               Image(systemName: "arrow.right")
-                  .font(.system(size: 11, weight: .semibold, design: .serif))
-                  .foregroundStyle(AppColor.textPrimary)
-
-               Text("shift •")
-                  .font(.appBody(14, relativeTo: .body))
-                  .foregroundStyle(AppColor.textPrimary)
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-
-            Text("standard defines. craft refines.")
-               .font(.appBody(14, relativeTo: .body))
-               .foregroundStyle(AppColor.textPrimary)
-
-            Text("and then some.")
-               .font(.appBody(14, relativeTo: .body))
-               .foregroundStyle(AppColor.textPrimary)
+   private var behaviorSettingsScreen: some View {
+      SettingsSubmenuContainer(
+         title: "ToDo Behavior",
+         subtitle: "Tune how ToDos are ordered, timed, completed, and mirrored outside the app."
+      ) {
+         settingsSection("List") {
+            settingsSortDropdown
          }
-         .multilineTextAlignment(.center)
-         .frame(maxWidth: .infinity)
 
-         Spacer()
+         settingsSection("Time") {
+            timeSourceDropdown
+         }
 
-         Text("Designed & developed, with love")
-            .font(.appBody(13, relativeTo: .footnote))
-            .foregroundStyle(AppColor.textSecondary)
+         settingsSection("Done ToDos") {
+            doneSwipeActionDropdown
 
-         Link(destination: brandWebsiteURL) {
-            Image("brand-logomark")
-               .resizable()
-               .scaledToFit()
-               .frame(width: 52, height: 52)
-               .aspectRatio(1, contentMode: .fit)
+            NavigationLink {
+               SnoozeOptionsView()
+            } label: {
+                  settingsNavigationRow(
+                  "Snooze Options",
+                  detail: String(localized: "Manage presets")
+               )
+            }
+            .foregroundStyle(AppColor.textPrimary)
+         }
+
+         settingsSection("Calendar") {
+            calendarMirrorToggle
+         }
+      }
+   }
+
+   private func handleOnboardingPrimaryAction(_ step: GuidedOnboardingStep) {
+      switch step {
+      case .signInAndSync:
+         onboardingManager.advance(to: .notificationPermission)
+      case .notificationPermission:
+         Task { @MainActor in
+            await notificationManager.requestAuthorizationFlow()
+            onboardingManager.advance(to: .archiveVsDelete)
+         }
+      case .archiveVsDelete:
+         onboardingManager.advance(to: .completion)
+      case .completion:
+         onboardingManager.complete()
+         closeView()
+      default:
+         break
+      }
+   }
+
+   private var notificationSettingsScreen: some View {
+      SettingsSubmenuContainer(
+         title: "Notifications",
+         subtitle: "Control reminders, time-sensitive alerts, push registration, and the app icon badge."
+      ) {
+         settingsSection("Reminder Alerts") {
+            notificationSettingsBlock
+         }
+      }
+   }
+
+   private var tagSettingsScreen: some View {
+      SettingsSubmenuContainer(
+         title: "Tags",
+         subtitle: "Keep the main ToDo flow light while managing tag behavior and cleanup here."
+      ) {
+         settingsSection("Defaults") {
+            Toggle(isOn: $createToDoTagsEnabledByDefault) {
+               VStack(alignment: .leading, spacing: 4) {
+                  Text("Enable Tags by Default")
+                     .font(.appBodyStrong(15, relativeTo: .subheadline))
+                     .foregroundStyle(AppColor.textPrimary)
+
+                  Text("New ToDos start with tag entry available instead of staying focused only on the task text.")
+                     .font(.appBody(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.textSecondary)
+               }
+            }
+            .tint(AppColor.actionSecondary)
+         }
+
+         settingsSection("Library") {
+            NavigationLink {
+               TagManagementView()
+            } label: {
+               settingsNavigationRow(
+                  "Tag Management",
+                  detail: customTagCountLabel
+               )
+            }
+            .foregroundStyle(AppColor.textPrimary)
+
+            settingsActionRow(
+               systemName: "tag.slash",
+               title: "Delete Unused Tags",
+               detail: "Permanently remove tags that are no longer linked to any ToDo or nanoDo.",
+               foregroundStyle: AppColor.actionDestructive,
+               backgroundStyle: AppColor.actionDestructive.opacity(0.08),
+               isDisabled: unusedTagCount == 0
+            ) {
+               isShowingDeleteUnusedTagsConfirmation = true
+            }
+         }
+      }
+   }
+
+   private var syncDetailsSettingsScreen: some View {
+      SettingsSubmenuContainer(
+         title: "Sync Details",
+         subtitle: "Advanced sync behavior lives here so the main Settings view stays readable."
+      ) {
+         settingsSection("Local Copies") {
+            syncDeletionPreferenceToggle
+         }
+      }
+   }
+
+   private var dataControlsSettingsScreen: some View {
+      SettingsSubmenuContainer(
+         title: "Data Controls",
+         subtitle: "Maintenance actions are grouped here because they change stored data or app defaults."
+      ) {
+         settingsSection("Trash") {
+            trashAutoEmptyControl
+         }
+
+         settingsSection("Preferences") {
+            settingsActionRow(
+               systemName: "arrow.counterclockwise",
+               title: "Reset Preferences",
+               detail: "Restore sorting and default tag-entry behavior to the app defaults."
+            ) {
+               resetPreferences()
+            }
+         }
+      }
+   }
+
+   private var calendarMirrorToggle: some View {
+      Toggle(isOn: $mirrorDueDatesToCalendar) {
+         VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+               Text("Mirror Due ToDos to Calendar")
+                  .font(.appBodyStrong(15, relativeTo: .subheadline))
+                  .foregroundStyle(AppColor.textPrimary)
+
+               Text(mirrorDueDatesToCalendar ? "Active" : "Off")
+                  .font(.appBodyStrong(10, relativeTo: .caption2))
+                  .foregroundStyle(mirrorDueDatesToCalendar ? AppColor.onAction : AppColor.textSecondary)
+                  .padding(.horizontal, 7)
+                  .padding(.vertical, 3)
+                  .background(
+                     mirrorDueDatesToCalendar ? AppColor.actionSecondary : AppColor.surfaceMuted,
+                     in: Capsule()
+                  )
+            }
+
+            Text("Active due ToDos appear in Calendar. Completing, archiving, deleting, or removing a due date removes the mirrored event.")
+               .font(.appBody(12, relativeTo: .caption))
+               .foregroundStyle(AppColor.textSecondary)
+         }
+      }
+      .tint(AppColor.actionSecondary)
+   }
+
+   private var trashAutoEmptyControl: some View {
+      VStack(alignment: .leading, spacing: 10) {
+         Menu {
+            ForEach(TrashAutoEmptyInterval.allCases) { interval in
+               Button {
+                  trashAutoEmptyIntervalRaw = interval.rawValue
+               } label: {
+                  HStack {
+                     Text(interval.title)
+                     if interval == resolvedTrashInterval {
+                        Image(systemName: "checkmark")
+                     }
+                  }
+               }
+            }
+         } label: {
+            settingsNavigationRow(
+               "Auto-Empty Trash",
+               detail: resolvedTrashInterval.title
+            )
          }
          .buttonStyle(.plain)
+         .padding(16)
+         .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 18))
+
+         Text("Deleted ToDos will be permanently removed after this much time in the trash.")
+            .font(.appBody(12, relativeTo: .caption))
+            .foregroundStyle(AppColor.textSecondary)
+            .padding(.horizontal, 4)
+      }
+   }
+
+   private var trashedToDos: [ToDo] {
+      scopedToDos.filter { $0.lifecycleState == .trashed }
+   }
+
+   private var trashCountLabel: String {
+      let count = trashedToDos.count
+      return AppLocalization.localizedCount(count, singularKey: "%@ item", pluralKey: "%@ items")
+   }
+
+   private var resolvedTrashInterval: TrashAutoEmptyInterval {
+      TrashAutoEmptyInterval(rawValue: trashAutoEmptyIntervalRaw) ?? .oneMonth
+   }
+
+   private var madeByBrandView: some View {
+      VStack(spacing: 12) {
+         Text("\(Text("toDō").foregroundStyle(AppColor.main).bold()) what matters")
+            .font(.appSubtitle(16, relativeTo: .subheadline))
+            .foregroundStyle(AppColor.textPrimary)
+            .multilineTextAlignment(.center)
+
+         Link(destination: brandWebsiteURL) {
+            Text("yourtodo.today")
+               .font(.appBodyStrong(13, relativeTo: .caption))
+               .foregroundStyle(AppColor.actionPrimary)
+         }
+         .buttonStyle(.plain)
+
+         VStack(spacing: 8) {
+            Text("by")
+               .font(.appBody(12, relativeTo: .caption))
+               .foregroundStyle(AppColor.textSecondary)
+
+            HStack(spacing: 10) {
+               Image("brand-logomark")
+                  .resizable()
+                  .scaledToFit()
+                  .frame(width: 34, height: 34)
+                  .aspectRatio(1, contentMode: .fit)
+
+               brandWordmark
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .environment(\.layoutDirection, .leftToRight)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("moin.shift()")
+         }
+         .padding(.top, 8)
       }
       .frame(maxWidth: .infinity, alignment: .center)
+      .padding(.horizontal, -16)
       .padding(.top, 6)
       .padding(.bottom, 8)
    }
 
+   private var brandWordmark: some View {
+      HStack(spacing: 0) {
+         Text("mo")
+            .font(brandWordmarkFont)
+         Text("i").italic()
+            .font(brandWordmarkItalicFont)
+         Text("n.")
+            .font(brandWordmarkFont)
+         Text("sh").italic()
+            .font(brandWordmarkItalicFont)
+         Text("i")
+            .font(brandWordmarkFont)
+         Text("ft()").italic()
+            .font(brandWordmarkItalicFont)
+      }
+      .foregroundStyle(AppColor.textPrimary)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel("moin.shift()")
+   }
+
+   private var brandWordmarkFont: Font {
+      .custom("Aleo-Bold", size: 17, relativeTo: .footnote)
+   }
+
+   private var brandWordmarkItalicFont: Font {
+      .custom("Aleo-BoldItalic", size: 17, relativeTo: .footnote)
+   }
+
    private var pinnedTitleHeader: some View {
       VStack(spacing: 0) {
-         Text("Settings")
-            .font(.appTitle(34, relativeTo: .largeTitle))
-            .foregroundStyle(AppColor.white)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
-            .background(AppColor.secondary)
+         HStack(alignment: .center, spacing: 12) {
+            Text("Settings")
+               .font(.appTitle(34, relativeTo: .largeTitle))
+               .foregroundStyle(colorScheme == .dark ? AppColor.black : AppColor.white)
+               .accessibilityAddTraits(.isHeader)
+
+            Spacer(minLength: 12)
+
+            Button {
+               closeView()
+            } label: {
+               Image(systemName: "xmark")
+                  .font(.appBodyStrong(21, relativeTo: .largeTitle))
+                  .foregroundStyle(AppColor.main)
+                  .frame(width: 34, height: 34)
+                  .background(colorScheme == .dark ? AppColor.black : AppColor.white, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Close settings")
+         }
+         .frame(maxWidth: .infinity, alignment: .leading)
+         .padding(.horizontal, 16)
+         .padding(.top, 8)
+         .padding(.bottom, 14)
+         .background(AppColor.main)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
    }
 
    private func settingsSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
       VStack(alignment: .leading, spacing: 10) {
-         Text(title)
+         Text(LocalizedStringKey(title))
             .font(.appSubtitle(15, relativeTo: .subheadline))
-            .foregroundStyle(AppColor.secondary)
+            .foregroundStyle(AppColor.main)
 
          VStack(alignment: .leading, spacing: 14) {
             content()
@@ -351,12 +611,12 @@ struct SettingsView: View {
       detailFont: Font = .appBodyStrong(17, relativeTo: .body)
    ) -> some View {
       HStack(spacing: 12) {
-         Text(title)
+         Text(LocalizedStringKey(title))
             .foregroundStyle(AppColor.textPrimary)
 
          Spacer(minLength: 12)
 
-         Text(detail)
+         Text(LocalizedStringKey(detail))
             .font(detailFont)
             .foregroundStyle(detailForeground)
 
@@ -386,27 +646,40 @@ struct SettingsView: View {
 
    private var archivedToDos: [ToDo] {
       scopedToDos
-         .filter(\.isArchived)
+         .filter { $0.isArchived || $0.lifecycleState == .done }
          .sorted { $0.createdAt > $1.createdAt }
    }
 
    private var archiveCountLabel: String {
       let count = archivedToDos.count
-      return count == 1 ? "1 toDo" : "\(count) toDos"
+      return AppLocalization.localizedCount(count, singularKey: "%@ toDo", pluralKey: "%@ toDos")
    }
 
    private var unusedTagCount: Int {
-      scopedTags.filter { tag in
-         !scopedToDos.contains(where: { toDo in
-            toDo.effectiveTags.contains(where: { $0.id == tag.id })
-         })
-         && !scopedNanoDos.contains(where: { $0.tag?.id == tag.id })
+      let usedTagIDs = scopedUsedTagIDs()
+      return scopedTags.filter { tag in
+         !usedTagIDs.contains(tag.id)
       }.count
    }
 
    private var customTagCount: Int {
       let defaultNames = Set(TagManagementView.defaultTagNames.map { $0.lowercased() })
       return scopedTags.filter { !defaultNames.contains($0.name.lowercased()) }.count
+   }
+
+   private var customTagCountLabel: String {
+      AppLocalization.localizedCount(customTagCount, singularKey: "%@ custom", pluralKey: "%@ custom")
+   }
+
+   private var statsSummaryDetail: String {
+      let activeCount = scopedToDos.filter(\.isActive).count
+      let overdueCount = scopedToDos.filter(\.isLate).count
+
+      if overdueCount > 0 {
+         return AppLocalization.localizedCount(overdueCount, singularKey: "%@ overdue", pluralKey: "%@ overdue")
+      }
+
+      return AppLocalization.localizedCount(activeCount, singularKey: "%@ active", pluralKey: "%@ active")
    }
 
    private var resolvedSortOption: AppPreferences.ToDoListSortOption {
@@ -421,68 +694,81 @@ struct SettingsView: View {
       AppTimePreferences.resolvedTimeSource(from: appTimeSourceRaw)
    }
 
+   private var resolvedBadgePolicy: AppPreferences.AppIconBadgePolicy {
+      AppPreferences.AppIconBadgePolicy(rawValue: appIconBadgePolicyRaw) ?? .overdue
+   }
+
+   private var resolvedNotificationSoundOption: AppPreferences.NotificationSoundOption {
+      AppPreferences.NotificationSoundOption(rawValue: notificationSoundOptionRaw) ?? .defaultSound
+   }
+
    private var notificationAuthorizationStatusLabel: String {
       switch notificationManager.authorizationStatus {
       case .authorized, .provisional, .ephemeral:
-         return "Allowed"
+         return String(localized: "Allowed")
       case .denied:
-         return "Denied"
+         return String(localized: "Denied")
       case .notDetermined:
-         return "Off"
+         return String(localized: "Off")
       @unknown default:
-         return "Off"
+         return String(localized: "Off")
       }
    }
 
    private var notificationDetailCopy: String {
       switch notificationManager.authorizationStatus {
       case .authorized, .provisional, .ephemeral:
-         return "\(timeSensitiveStatusCopy) Due reminders can alert you with quick snooze and mark-done actions. \(notificationManager.registrationState.statusText). \(notificationManager.pushReadinessDetail)"
+         return String(
+            format: String(localized: "%@ Due reminders can alert you with quick snooze and mark-done actions. %@. %@"),
+            timeSensitiveStatusCopy,
+            notificationManager.registrationState.statusText,
+            notificationManager.pushReadinessDetail
+         )
       case .denied:
-         return "Notification access is disabled, so due reminders and push registration are unavailable."
+         return String(localized: "Notification access is disabled, so due reminders and push registration are unavailable.")
       case .notDetermined:
-         return "Enable notifications to receive due reminders, time-sensitive alerts, and quick snooze actions."
+         return String(localized: "Enable notifications to receive due reminders, time-sensitive alerts, and quick snooze actions.")
       @unknown default:
-         return "Enable notifications to receive due reminders, time-sensitive alerts, and quick snooze actions."
+         return String(localized: "Enable notifications to receive due reminders, time-sensitive alerts, and quick snooze actions.")
       }
    }
 
    private var notificationActionTitle: String {
       switch notificationManager.authorizationStatus {
       case .authorized, .provisional, .ephemeral:
-         return "Refresh Push Registration"
+         return String(localized: "Refresh Push Registration")
       case .denied:
-         return "Open Notification Settings"
+         return String(localized: "Open Notification Settings")
       case .notDetermined:
-         return "Enable Notifications"
+         return String(localized: "Enable Notifications")
       @unknown default:
-         return "Enable Notifications"
+         return String(localized: "Enable Notifications")
       }
    }
 
    private var notificationActionDetail: String {
       switch notificationManager.authorizationStatus {
       case .authorized, .provisional, .ephemeral:
-         return "Re-register for push notifications, refresh scheduled reminders, and re-check time-sensitive delivery."
+         return String(localized: "Re-register for push notifications, refresh scheduled reminders, and re-check time-sensitive delivery.")
       case .denied:
-         return "Open system Settings to allow notifications for ToDo."
+         return String(localized: "Open system Settings to allow notifications for ToDo.")
       case .notDetermined:
-         return "Allow alerts, sounds, notification actions, and time-sensitive delivery for due reminders."
+         return String(localized: "Allow alerts, sounds, notification actions, and time-sensitive delivery for due reminders.")
       @unknown default:
-         return "Allow alerts, sounds, notification actions, and time-sensitive delivery for due reminders."
+         return String(localized: "Allow alerts, sounds, notification actions, and time-sensitive delivery for due reminders.")
       }
    }
 
    private var timeSensitiveStatusCopy: String {
       switch notificationManager.timeSensitiveSetting {
       case .enabled:
-         return "Time-sensitive delivery is enabled."
+         return String(localized: "Time-sensitive delivery is enabled.")
       case .disabled:
-         return "Time-sensitive delivery is turned off in system settings."
+         return String(localized: "Time-sensitive delivery is turned off in system settings.")
       case .notSupported:
-         return "Time-sensitive delivery is unavailable on this device."
+         return String(localized: "Time-sensitive delivery is unavailable on this device.")
       default:
-         return "Time-sensitive delivery follows the system notification settings."
+         return String(localized: "Time-sensitive delivery follows the system notification settings.")
       }
    }
 
@@ -515,40 +801,53 @@ struct SettingsView: View {
    private var locationAccessButtonTitle: String {
       switch locationTimeZoneService.authorizationStatus {
       case .authorizedAlways, .authorizedWhenInUse:
-         return "Refresh Location Time"
+         return String(localized: "Refresh Location Time")
       case .notDetermined:
-         return "Use Current Location"
+         return String(localized: "Use Current Location")
       case .denied, .restricted:
-         return "Location Access Disabled"
+         return String(localized: "Location Access Disabled")
       @unknown default:
-         return "Use Current Location"
+         return String(localized: "Use Current Location")
       }
    }
 
    private var locationStatusCopy: String {
       switch locationTimeZoneService.authorizationStatus {
       case .authorizedAlways, .authorizedWhenInUse:
-         return "Current timezone updates from your location when you refresh it."
+         return String(localized: "Current timezone updates from your location when you refresh it.")
       case .notDetermined:
-         return "Using Apple Park until location access is granted."
+         return String(localized: "Using Apple Park until location access is granted.")
       case .denied, .restricted:
-         return "Location access is unavailable, so the app stays on Apple Park time."
+         return String(localized: "Location access is unavailable, so the app stays on Apple Park time.")
       @unknown default:
-         return "Using Apple Park until location access is available."
+         return String(localized: "Using Apple Park until location access is available.")
       }
    }
 
    private var syncStatusTitle: String {
-      syncCoordinator.effectiveSyncMode.title
+      if let pendingMode = syncCoordinator.pendingRestartSyncMode {
+         return pendingMode.title
+      }
+
+      if syncCoordinator.preferredSyncMode == .syncEverywhere,
+         !authStore.isAuthenticated {
+         return syncCoordinator.preferredSyncMode.title
+      }
+
+      return syncCoordinator.effectiveSyncMode.title
    }
 
    private var syncStatusDetail: String {
       if let pendingMode = syncCoordinator.pendingRestartSyncMode {
-         return "Close and reopen ToDo to finish activating \(pendingMode.title)."
+         return String(format: String(localized: "Close and reopen ToDo to finish activating %@."), pendingMode.title)
       }
 
       if syncCoordinator.preferredSyncMode == .syncEverywhere, !authStore.isAuthenticated {
-         return "\(syncCoordinator.preferredSyncMode.title) is selected. Open Account to finish sign-in."
+         return String(
+            format: String(localized: "%@ is selected. Open Settings to sign in; until then, ToDo stays on %@."),
+            syncCoordinator.preferredSyncMode.title,
+            syncCoordinator.effectiveSyncMode.title
+         )
       }
 
       return syncCoordinator.effectiveSyncMode.subtitle
@@ -559,11 +858,9 @@ struct SettingsView: View {
    }
 
    private func deleteUnusedTags() {
+      let usedTagIDs = scopedUsedTagIDs()
       let unusedTags = scopedTags.filter { tag in
-         !scopedToDos.contains(where: { toDo in
-            toDo.effectiveTags.contains(where: { $0.id == tag.id })
-         })
-         && !scopedNanoDos.contains(where: { $0.tag?.id == tag.id })
+         !usedTagIDs.contains(tag.id)
       }
       for tag in unusedTags {
          SyncTombstoneStore.recordDelete(
@@ -576,13 +873,38 @@ struct SettingsView: View {
       persistChanges("Failed to delete unused tags")
    }
 
+   private func closeView() {
+      if let onClose {
+         onClose()
+      } else {
+         dismiss()
+      }
+   }
+
+   private func scopedUsedTagIDs() -> Set<PersistentIdentifier> {
+      var usedTagIDs = Set<PersistentIdentifier>()
+      for toDo in scopedToDos {
+         for tag in toDo.effectiveTags {
+            usedTagIDs.insert(tag.id)
+         }
+      }
+      for nanoDo in scopedNanoDos {
+         if let tagID = nanoDo.tag?.id {
+            usedTagIDs.insert(tagID)
+         }
+      }
+      return usedTagIDs
+   }
+
    private func persistChanges(_ message: String) {
       do {
          try context.save()
          NotificationManager.shared.scheduleRefresh()
          SyncCoordinator.shared.scheduleLocalSync()
+
+         WatchConnectivityService.shared.refreshSnapshot()
       } catch {
-         print("\(message): \(error)")
+         AppLog.error("\(message): \(error)", logger: AppLog.app)
       }
    }
 
@@ -632,11 +954,11 @@ struct SettingsView: View {
                .frame(width: 18, height: 18)
 
             VStack(alignment: .leading, spacing: 4) {
-               Text(title)
+               Text(LocalizedStringKey(title))
                   .font(.appBodyStrong(15, relativeTo: .subheadline))
                   .foregroundStyle(foregroundStyle)
 
-               Text(detail)
+               Text(LocalizedStringKey(detail))
                   .font(.appBody(12, relativeTo: .caption))
                   .foregroundStyle(AppColor.textSecondary)
             }
@@ -716,6 +1038,7 @@ struct SettingsView: View {
          AppColor.secondary.opacity(0.1),
          in: .rect(corners: .concentric, isUniform: true)
       )
+      .clipShape(.rect(cornerRadius: 18))
    }
 
    private var syncReviewDetail: String {
@@ -723,22 +1046,6 @@ struct SettingsView: View {
       return count == 1
          ? "1 ToDo changed in two places. Choose which version to keep."
          : "\(count) ToDos changed in two places. Choose which versions to keep."
-   }
-
-   private var syncDiagnosticsSummary: String {
-      if !unresolvedSyncConflicts.isEmpty {
-         return "Needs review"
-      }
-
-      if syncCoordinator.syncActivityState == .failed {
-         return "Sync failed"
-      }
-
-      if syncCoordinator.preferredSyncMode == .syncEverywhere && !authStore.isAuthenticated {
-         return "Needs sign in"
-      }
-
-      return syncCoordinator.syncActivityState == .synced ? "Healthy" : syncCoordinator.effectiveSyncMode.title
    }
 
    private var syncDeletionPreferenceToggle: some View {
@@ -760,48 +1067,173 @@ struct SettingsView: View {
          AppColor.surfaceMuted,
          in: .rect(corners: .concentric, isUniform: true)
       )
+      .clipShape(.rect(cornerRadius: 18))
    }
 
    private var notificationSettingsBlock: some View {
-      VStack(alignment: .leading, spacing: 10) {
+      VStack(alignment: .leading, spacing: 14) {
          HStack(alignment: .center, spacing: 12) {
-            Text("Notifications")
-               .font(.appBody(17, relativeTo: .body))
-               .foregroundStyle(AppColor.textPrimary)
+            Image(systemName: notificationActionSystemName)
+               .font(.appDisplay(15, relativeTo: .subheadline))
+               .foregroundStyle(AppColor.main)
+               .frame(width: 18, height: 18)
+
+            VStack(alignment: .leading, spacing: 3) {
+               Text("Reminder Alerts")
+                  .font(.appBodyStrong(15, relativeTo: .subheadline))
+                  .foregroundStyle(AppColor.textPrimary)
+
+               Text(notificationDetailCopy)
+                  .font(.appBody(12, relativeTo: .caption))
+                  .foregroundStyle(AppColor.textSecondary)
+                  .fixedSize(horizontal: false, vertical: true)
+            }
 
             Spacer(minLength: 12)
 
             Text(notificationAuthorizationStatusLabel)
-               .font(.appBodyStrong(17, relativeTo: .body))
-               .foregroundStyle(AppColor.textSecondary)
+               .font(.appBodyStrong(11, relativeTo: .caption))
+               .foregroundStyle(notificationAuthorizationStatusLabel == "Allowed" ? AppColor.onAction : AppColor.textSecondary)
+               .padding(.horizontal, 9)
+               .padding(.vertical, 5)
+               .background(
+                  notificationAuthorizationStatusLabel == "Allowed" ? AppColor.actionSecondary : AppColor.surfaceMuted,
+                  in: Capsule()
+               )
          }
 
-         Text(notificationDetailCopy)
-            .font(.appBody(12, relativeTo: .caption))
-            .foregroundStyle(AppColor.textSecondary)
+         settingsActionRow(
+            systemName: notificationActionSystemName,
+            title: notificationActionTitle,
+            detail: notificationActionDetail,
+            contentVerticalAlignment: .center
+         ) {
+            handleNotificationAction()
+         }
 
-	         settingsActionRow(
-	            systemName: notificationActionSystemName,
-	            title: notificationActionTitle,
-	            detail: notificationActionDetail,
-	            contentVerticalAlignment: .center
-	         ) {
-	            handleNotificationAction()
-	         }
+         Divider()
+            .overlay(AppColor.border.opacity(0.5))
 
-	         #if DEBUG
-	         NavigationLink {
-	            NotificationDebugView(toDos: scopedToDos)
-	         } label: {
-	            settingsNavigationRow(
-	               "Notification Test Harness",
-	               detail: "Debug only"
-	            )
-	         }
-	         .foregroundStyle(AppColor.textPrimary)
-	         #endif
-	      }
-	   }
+         notificationSoundDropdown
+
+         Divider()
+            .overlay(AppColor.border.opacity(0.5))
+
+         badgePolicyDropdown
+      }
+   }
+
+   private var notificationSoundDropdown: some View {
+      Menu {
+         ForEach(AppPreferences.NotificationSoundOption.allCases) { option in
+            Button {
+               withAnimation(AppAnimation.snappyStandard) {
+                  notificationSoundOptionRaw = option.rawValue
+               }
+               NotificationManager.shared.scheduleRefresh()
+            } label: {
+               Label(
+                  option.title,
+                  systemImage: option == resolvedNotificationSoundOption ? "checkmark.circle.fill" : "circle"
+               )
+            }
+         }
+      } label: {
+         VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+               Image(systemName: "speaker.wave.2.fill")
+                  .font(.appDisplay(15, relativeTo: .subheadline))
+                  .foregroundStyle(AppColor.main)
+                  .frame(width: 18, height: 18)
+
+               VStack(alignment: .leading, spacing: 4) {
+                  Text("Reminder Sound")
+                     .font(.appBodyStrong(15, relativeTo: .subheadline))
+                     .foregroundStyle(AppColor.textPrimary)
+
+                  Text(resolvedNotificationSoundOption.detail)
+                     .font(.appBody(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.textSecondary)
+               }
+
+               Spacer(minLength: 12)
+
+               HStack(spacing: 8) {
+                  Text(resolvedNotificationSoundOption.title)
+                     .font(.appBodyStrong(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.onAction)
+                     .padding(.horizontal, 10)
+                     .padding(.vertical, 6)
+                     .background(AppColor.actionPrimary, in: Capsule())
+                     .contentTransition(.numericText())
+
+                  Image(systemName: "chevron.up.chevron.down")
+                     .font(.appBodyStrong(11, relativeTo: .caption))
+                     .foregroundStyle(AppColor.textSecondary)
+               }
+            }
+         }
+      }
+      .buttonStyle(.plain)
+      .contentShape(.rect)
+      .animation(AppAnimation.snappyStandard, value: notificationSoundOptionRaw)
+   }
+
+   private var badgePolicyDropdown: some View {
+      Menu {
+         ForEach(AppPreferences.AppIconBadgePolicy.allCases) { policy in
+            Button {
+               withAnimation(AppAnimation.snappyStandard) {
+                  appIconBadgePolicyRaw = policy.rawValue
+               }
+               NotificationManager.shared.scheduleRefresh()
+            } label: {
+               Label(
+                  policy.title,
+                  systemImage: policy == resolvedBadgePolicy ? "checkmark.circle.fill" : "circle"
+               )
+            }
+         }
+      } label: {
+         VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+               Image(systemName: "app.badge")
+                  .font(.appDisplay(15, relativeTo: .subheadline))
+                  .foregroundStyle(AppColor.main)
+                  .frame(width: 18, height: 18)
+
+               VStack(alignment: .leading, spacing: 4) {
+                  Text("App Icon Badge")
+                     .font(.appBodyStrong(15, relativeTo: .subheadline))
+                     .foregroundStyle(AppColor.textPrimary)
+
+                  Text(resolvedBadgePolicy.detail)
+                     .font(.appBody(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.textSecondary)
+               }
+
+               Spacer(minLength: 12)
+
+               HStack(spacing: 8) {
+                  Text(resolvedBadgePolicy.title)
+                     .font(.appBodyStrong(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.onAction)
+                     .padding(.horizontal, 10)
+                     .padding(.vertical, 6)
+                     .background(AppColor.actionPrimary, in: Capsule())
+                     .contentTransition(.numericText())
+
+                  Image(systemName: "chevron.up.chevron.down")
+                     .font(.appBodyStrong(11, relativeTo: .caption))
+                     .foregroundStyle(AppColor.textSecondary)
+               }
+            }
+         }
+      }
+      .buttonStyle(.plain)
+      .contentShape(.rect)
+      .animation(AppAnimation.snappyStandard, value: appIconBadgePolicyRaw)
+   }
 
    private var settingsSortDropdown: some View {
       VStack(alignment: .leading, spacing: 10) {
@@ -1080,568 +1512,4 @@ struct SettingsView: View {
          .opacity(isDoneSwipeMenuExpanded ? 1 : 0)
       }
    }
-}
-
-struct SyncConflictReviewView: View {
-   @Environment(\.modelContext) private var context
-   @State private var resolvingConflictIDs = Set<UUID>()
-   @State private var resolutionErrorMessage: String?
-   @State private var pendingResolution: PendingConflictResolution?
-   let conflicts: [SyncConflict]
-   let toDos: [ToDo]
-
-   var body: some View {
-      ScrollView {
-         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-               Text("Sync Needs Review")
-                  .font(.appTitle(34, relativeTo: .largeTitle))
-                  .foregroundStyle(AppColor.textPrimary)
-
-               Text("These ToDos changed on another device while this device had unsynced edits. Choose the version that should continue syncing.")
-                  .font(.appBody(14, relativeTo: .footnote))
-                  .foregroundStyle(AppColor.textSecondary)
-            }
-
-            if let resolutionErrorMessage {
-               Label {
-                  Text(resolutionErrorMessage)
-                     .font(.appBody(12, relativeTo: .caption))
-                     .foregroundStyle(AppColor.textPrimary)
-               } icon: {
-                  Image(systemName: "exclamationmark.circle.fill")
-                     .foregroundStyle(AppColor.actionDestructive)
-               }
-               .padding(12)
-               .background(AppColor.actionDestructive.opacity(0.08), in: .rect(cornerRadius: 16))
-            }
-
-            if unresolvedConflicts.isEmpty {
-               allClearCard
-            }
-
-            ForEach(unresolvedConflicts) { conflict in
-               conflictCard(conflict)
-            }
-         }
-         .padding(16)
-      }
-      .background(AppColor.surface)
-      .appBaseTypography()
-      .appNavigationChrome()
-      .alert("Confirm Sync Choice", isPresented: isShowingPendingResolution) {
-         Button("Cancel", role: .cancel) {}
-         if let pendingResolution {
-            Button(pendingResolution.actionTitle) {
-               resolve(pendingResolution.conflict, as: pendingResolution.resolution)
-            }
-         }
-      } message: {
-         Text(pendingResolution?.message ?? "")
-      }
-   }
-
-   private var unresolvedConflicts: [SyncConflict] {
-      conflicts.filter { !$0.isResolved }
-   }
-
-   private var isShowingPendingResolution: Binding<Bool> {
-      Binding {
-         pendingResolution != nil
-      } set: { isPresented in
-         if !isPresented {
-            pendingResolution = nil
-         }
-      }
-   }
-
-   private var allClearCard: some View {
-      HStack(alignment: .top, spacing: 12) {
-         Image(systemName: "checkmark.circle.fill")
-            .font(.appDisplay(18, relativeTo: .headline))
-            .foregroundStyle(AppColor.tertiary)
-
-         VStack(alignment: .leading, spacing: 4) {
-            Text("All Clear")
-               .font(.appBodyStrong(16, relativeTo: .body))
-               .foregroundStyle(AppColor.textPrimary)
-
-            Text("No ToDos need sync review right now.")
-               .font(.appBody(12, relativeTo: .caption))
-               .foregroundStyle(AppColor.textSecondary)
-         }
-      }
-      .padding(16)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 24))
-   }
-
-   private func conflictCard(_ conflict: SyncConflict) -> some View {
-      let isResolving = resolvingConflictIDs.contains(conflict.id)
-
-      return VStack(alignment: .leading, spacing: 14) {
-         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: conflict.severity == .destructive ? "exclamationmark.circle.fill" : "exclamationmark.triangle.fill")
-               .font(.appDisplay(18, relativeTo: .headline))
-               .foregroundStyle(conflict.severity == .destructive ? AppColor.actionDestructive : AppColor.secondary)
-               .symbolEffect(.pulse, value: conflict.id)
-
-            VStack(alignment: .leading, spacing: 4) {
-               Text(conflict.title)
-                  .font(.appBodyStrong(16, relativeTo: .body))
-                  .foregroundStyle(AppColor.textPrimary)
-
-               Text(conflict.message)
-                  .font(.appBody(12, relativeTo: .caption))
-                  .foregroundStyle(AppColor.textSecondary)
-            }
-         }
-
-         versionBlock(
-            title: "This Device",
-            summary: conflict.localSummary,
-            updatedAt: conflict.localUpdatedAt
-         )
-         versionBlock(
-            title: "Synced Version",
-            summary: conflict.syncedSummary,
-            updatedAt: conflict.syncedUpdatedAt
-         )
-
-         HStack(spacing: 10) {
-            Button {
-               pendingResolution = PendingConflictResolution(
-                  conflict: conflict,
-                  resolution: .keepDeviceVersion
-               )
-            } label: {
-               Label("Keep This Device", systemImage: "iphone")
-                  .font(.appBodyStrong(13, relativeTo: .footnote))
-                  .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.bordered)
-            .tint(AppColor.actionSecondary)
-            .disabled(isResolving)
-
-            Button {
-               pendingResolution = PendingConflictResolution(
-                  conflict: conflict,
-                  resolution: .useSyncedVersion
-               )
-            } label: {
-               Label("Use Synced", systemImage: "checkmark.icloud")
-                  .font(.appBodyStrong(13, relativeTo: .footnote))
-                  .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(AppColor.actionPrimary)
-            .disabled(isResolving)
-         }
-
-         if isResolving {
-            HStack(spacing: 8) {
-               ProgressView()
-                  .controlSize(.mini)
-                  .tint(AppColor.actionPrimary)
-
-               Text("Saving your choice and syncing it now.")
-                  .font(.appBody(12, relativeTo: .caption))
-                  .foregroundStyle(AppColor.textSecondary)
-            }
-         }
-      }
-      .padding(16)
-      .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 24))
-      .overlay {
-         RoundedRectangle(cornerRadius: 24, style: .continuous)
-            .stroke(AppColor.secondary.opacity(0.18), lineWidth: 1)
-      }
-   }
-
-   private func versionBlock(title: String, summary: String, updatedAt: Date?) -> some View {
-      VStack(alignment: .leading, spacing: 5) {
-         Text(title)
-            .font(.appSubtitle(12, relativeTo: .caption))
-            .foregroundStyle(AppColor.secondary)
-
-         Text(summary)
-            .font(.appBodyStrong(14, relativeTo: .footnote))
-            .foregroundStyle(AppColor.textPrimary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-         if let updatedAt {
-            Text("Changed \(updatedAt.formatted(date: .abbreviated, time: .shortened))")
-               .font(.appBody(11, relativeTo: .caption2))
-               .foregroundStyle(AppColor.textSecondary)
-         }
-      }
-      .padding(12)
-      .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 16))
-   }
-
-   private func resolve(_ conflict: SyncConflict, as resolution: SyncConflictResolution) {
-      guard !resolvingConflictIDs.contains(conflict.id) else { return }
-
-      resolvingConflictIDs.insert(conflict.id)
-      resolutionErrorMessage = nil
-
-      Task { @MainActor in
-         do {
-            try SyncConflictStore.resolve(conflict, resolution: resolution, toDos: toDos, in: context)
-            if let userID = conflict.userID {
-               await SyncCoordinator.shared.flushLocalSync(userID: userID)
-            }
-            SyncCoordinator.shared.showTransientFeedback(
-               title: "Sync Choice Saved",
-               message: "ToDo is syncing the version you selected.",
-               style: .success
-            )
-         } catch {
-            resolutionErrorMessage = "Could not save that sync choice. \(error.localizedDescription)"
-            print("Failed to resolve sync conflict: \(error)")
-         }
-
-         resolvingConflictIDs.remove(conflict.id)
-      }
-   }
-
-   private struct PendingConflictResolution: Identifiable {
-      let conflict: SyncConflict
-      let resolution: SyncConflictResolution
-
-      var id: String {
-         "\(conflict.id)-\(actionTitle)"
-      }
-
-      var actionTitle: String {
-         switch resolution {
-         case .keepDeviceVersion:
-            return "Keep This Device"
-         case .useSyncedVersion:
-            return "Use Synced"
-         }
-      }
-
-      var message: String {
-         switch resolution {
-         case .keepDeviceVersion:
-            return "ToDo will keep this device's version and send it back to ToDo Sync."
-         case .useSyncedVersion:
-            return "ToDo will replace this device's version with the synced version."
-         }
-      }
-   }
-}
-
-struct SyncDiagnosticsView: View {
-   @EnvironmentObject private var authStore: SupabaseAuthStore
-   @StateObject private var syncCoordinator = SyncCoordinator.shared
-   @StateObject private var notificationManager = NotificationManager.shared
-   let toDos: [ToDo]
-   let tags: [Tag]
-   let nanoDos: [NanoDo]
-   let unresolvedConflictCount: Int
-
-   var body: some View {
-      ScrollView {
-         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-               Text("Sync Diagnostics")
-                  .font(.appTitle(34, relativeTo: .largeTitle))
-                  .foregroundStyle(AppColor.textPrimary)
-
-               Text("Use this as the quick device-to-device QA panel before deeper Supabase checks.")
-                  .font(.appBody(14, relativeTo: .footnote))
-                  .foregroundStyle(AppColor.textSecondary)
-            }
-
-            diagnosticsSection("Mode") {
-               diagnosticsRow("Preferred", value: syncCoordinator.preferredSyncMode.title)
-               diagnosticsRow("Active", value: syncCoordinator.effectiveSyncMode.title)
-               diagnosticsRow("State", value: syncStateLabel)
-               diagnosticsRow("Last Sync", value: lastSyncLabel)
-            }
-
-            diagnosticsSection("Account") {
-               diagnosticsRow("Signed In", value: authStore.isAuthenticated ? "Yes" : "No")
-               diagnosticsRow("Method", value: authStore.signInMethodLabel ?? "None")
-               diagnosticsRow("Email", value: authStore.signedInEmail ?? "None")
-            }
-
-            diagnosticsSection("Device Data") {
-               diagnosticsRow("ToDos", value: "\(toDos.count)")
-               diagnosticsRow("Tags", value: "\(tags.count)")
-               diagnosticsRow("NanoDos", value: "\(nanoDos.count)")
-               diagnosticsRow("Conflicts", value: unresolvedConflictCount == 0 ? "None" : "\(unresolvedConflictCount) need review")
-            }
-
-            diagnosticsSection("Push") {
-               diagnosticsRow("Permission", value: notificationPermissionLabel)
-               diagnosticsRow("APNs", value: notificationManager.registrationState.statusText)
-
-               Text(notificationManager.pushReadinessDetail)
-                  .font(.appBody(12, relativeTo: .caption))
-                  .foregroundStyle(AppColor.textSecondary)
-                  .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Button {
-               runManualRefresh()
-            } label: {
-               Label("Refresh ToDo Sync Now", systemImage: "arrow.clockwise")
-                  .font(.appBodyStrong(14, relativeTo: .subheadline))
-                  .frame(maxWidth: .infinity)
-                  .padding(.vertical, 12)
-                  .foregroundStyle(AppColor.onAction)
-                  .background(AppColor.actionPrimary, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(authStore.effectiveSyncMode != .syncEverywhere || authStore.currentUserID == nil)
-            .opacity(authStore.effectiveSyncMode == .syncEverywhere && authStore.currentUserID != nil ? 1 : 0.45)
-         }
-         .padding(16)
-      }
-      .background(AppColor.surface)
-      .appBaseTypography()
-      .appNavigationChrome()
-      .task {
-         await notificationManager.refreshAuthorizationStatus()
-      }
-   }
-
-   private var syncStateLabel: String {
-      if syncCoordinator.effectiveSyncMode == .syncEverywhere && !authStore.isAuthenticated {
-         return "Needs Sign In"
-      }
-
-      if unresolvedConflictCount > 0 {
-         return "Needs Review"
-      }
-
-      switch syncCoordinator.syncActivityState {
-      case .idle:
-         return "Active"
-      case .activating:
-         return "Activating"
-      case .syncing:
-         return syncCoordinator.currentSyncPhase == .queuedLocalChanges ? "Waiting to Sync" : "Syncing"
-      case .synced:
-         return "Active"
-      case .failed:
-         return "Sync Failed"
-      }
-   }
-
-   private var lastSyncLabel: String {
-      guard let lastSuccessfulSyncAt = syncCoordinator.lastSuccessfulSyncAt else {
-         return "Not yet"
-      }
-
-      return lastSuccessfulSyncAt.formatted(date: .abbreviated, time: .shortened)
-   }
-
-   private var notificationPermissionLabel: String {
-      switch notificationManager.authorizationStatus {
-      case .authorized:
-         return "Allowed"
-      case .provisional:
-         return "Provisional"
-      case .ephemeral:
-         return "Ephemeral"
-      case .denied:
-         return "Denied"
-      case .notDetermined:
-         return "Not Requested"
-      @unknown default:
-         return "Unknown"
-      }
-   }
-
-   private func diagnosticsSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-      VStack(alignment: .leading, spacing: 10) {
-         Text(title)
-            .font(.appSubtitle(15, relativeTo: .subheadline))
-            .foregroundStyle(AppColor.secondary)
-
-         VStack(alignment: .leading, spacing: 10) {
-            content()
-         }
-         .padding(16)
-         .frame(maxWidth: .infinity, alignment: .leading)
-         .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 24))
-      }
-   }
-
-   private func diagnosticsRow(_ title: String, value: String) -> some View {
-      HStack(alignment: .firstTextBaseline, spacing: 12) {
-         Text(title)
-            .font(.appBody(13, relativeTo: .footnote))
-            .foregroundStyle(AppColor.textSecondary)
-
-         Spacer(minLength: 12)
-
-         Text(value)
-            .font(.appBodyStrong(13, relativeTo: .footnote))
-            .foregroundStyle(AppColor.textPrimary)
-            .multilineTextAlignment(.trailing)
-      }
-   }
-
-   private func runManualRefresh() {
-      guard authStore.effectiveSyncMode == .syncEverywhere,
-            let userID = authStore.currentUserID else { return }
-
-      Task {
-         await syncCoordinator.refreshFromRemote(userID: userID)
-         await notificationManager.syncScheduledNotifications()
-      }
-	   }
-	}
-
-#if DEBUG
-struct NotificationDebugView: View {
-   @StateObject private var notificationManager = NotificationManager.shared
-   @State private var selectedToDoID: PersistentIdentifier?
-   @State private var statusMessage: String?
-   let toDos: [ToDo]
-
-   private var selectedToDo: ToDo? {
-      guard let selectedToDoID else { return toDos.first }
-      return toDos.first { $0.id == selectedToDoID }
-   }
-
-   var body: some View {
-      ScrollView {
-         VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 8) {
-               Text("Notification Test Harness")
-                  .font(.appTitle(34, relativeTo: .largeTitle))
-                  .foregroundStyle(AppColor.textPrimary)
-
-               Text("Schedules local debug notifications using the same payload fields that remote APNs notifications use for routing.")
-                  .font(.appBody(14, relativeTo: .footnote))
-                  .foregroundStyle(AppColor.textSecondary)
-            }
-
-            if !toDos.isEmpty {
-               VStack(alignment: .leading, spacing: 8) {
-                  Text("Target ToDo")
-                     .font(.appSubtitle(15, relativeTo: .subheadline))
-                     .foregroundStyle(AppColor.secondary)
-
-                  Picker("Target ToDo", selection: $selectedToDoID) {
-                     ForEach(toDos) { toDo in
-                        Text(toDo.task.isEmpty ? "Untitled ToDo" : toDo.task)
-                           .tag(Optional(toDo.id))
-                     }
-                  }
-                  .pickerStyle(.menu)
-               }
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-               Text("Scenarios")
-                  .font(.appSubtitle(15, relativeTo: .subheadline))
-                  .foregroundStyle(AppColor.secondary)
-
-               ForEach(NotificationDebugScenario.allCases) { scenario in
-                  Button {
-                     schedule(scenario)
-                  } label: {
-                     HStack(alignment: .firstTextBaseline, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                           Text(scenario.title)
-                              .font(.appBodyStrong(15, relativeTo: .subheadline))
-                              .foregroundStyle(AppColor.textPrimary)
-
-                           Text(scenario.body)
-                              .font(.appBody(12, relativeTo: .caption))
-                              .foregroundStyle(AppColor.textSecondary)
-                        }
-
-                        Spacer(minLength: 12)
-
-                        Image(systemName: "bell.badge")
-                           .font(.appBodyStrong(14, relativeTo: .footnote))
-                           .foregroundStyle(AppColor.actionPrimary)
-                     }
-                     .padding(14)
-<<<<<<< Updated upstream
-                     .background(Color.white, in: .rect(cornerRadius: 20))
-=======
-                     .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 20))
->>>>>>> Stashed changes
-                  }
-                  .buttonStyle(.plain)
-               }
-            }
-
-            Button {
-               Task {
-                  await notificationManager.clearDebugNotifications()
-                  statusMessage = "Debug notifications cleared."
-               }
-            } label: {
-               Label("Clear Debug Notifications", systemImage: "bell.slash")
-                  .font(.appBodyStrong(14, relativeTo: .subheadline))
-                  .frame(maxWidth: .infinity)
-                  .padding(.vertical, 12)
-                  .foregroundStyle(AppColor.actionDestructive)
-                  .background(AppColor.actionDestructive.opacity(0.08), in: Capsule())
-            }
-            .buttonStyle(.plain)
-
-            if let statusMessage {
-               Text(statusMessage)
-                  .font(.appBody(12, relativeTo: .caption))
-                  .foregroundStyle(AppColor.textSecondary)
-            }
-         }
-         .padding(16)
-      }
-      .background(AppColor.surface)
-      .appBaseTypography()
-      .appNavigationChrome()
-      .task {
-         selectedToDoID = selectedToDoID ?? toDos.first?.id
-      }
-   }
-
-   private func schedule(_ scenario: NotificationDebugScenario) {
-      Task {
-         do {
-            try await notificationManager.scheduleDebugNotification(
-               scenario: scenario,
-               toDo: selectedToDo
-            )
-            statusMessage = "\(scenario.title) debug notification scheduled."
-         } catch {
-            statusMessage = "Could not schedule \(scenario.title): \(error.localizedDescription)"
-         }
-      }
-   }
-}
-#endif
-
-#Preview {
-   let container = PreviewSupport.makeModelContainer()
-   NavigationStack {
-      SettingsView()
-   }
-   .modelContainer(container)
-   .environmentObject(SupabaseAuthStore.preview)
-}
-
-#Preview("Sync Diagnostics") {
-   let container = PreviewSupport.makeModelContainer()
-   NavigationStack {
-      SyncDiagnosticsView(
-         toDos: [],
-         tags: [],
-         nanoDos: [],
-         unresolvedConflictCount: 0
-      )
-   }
-   .modelContainer(container)
-   .environmentObject(SupabaseAuthStore.preview)
 }

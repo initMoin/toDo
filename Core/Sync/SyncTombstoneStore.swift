@@ -261,7 +261,9 @@ enum SyncConflictStore {
         }
 
         try context.save()
+        #if !WIDGET_EXTENSION
         SyncCoordinator.shared.scheduleLocalSync()
+        #endif
     }
 
     private static func applySyncedVersion(from conflict: SyncConflict, to toDo: ToDo) {

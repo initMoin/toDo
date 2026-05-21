@@ -10,6 +10,8 @@ import SwiftData
 
 @Model
 final class Tag {
+    static let defaultTagNames = ["personal", "work", "health", "shopping", "ideas"]
+
     var cloudID: UUID? = nil
     var ownerUserID: UUID? = nil
     var name: String = ""
@@ -39,7 +41,8 @@ final class Tag {
     }
 
     var displayName: String {
-        Self.normalizeName(name)
+        let normalized = Self.normalizeName(name)
+        return Self.defaultTagNames.contains(normalized) ? String(localized: String.LocalizationValue(normalized)) : normalized
     }
 
     var allToDos: [ToDo] {
@@ -53,7 +56,6 @@ final class Tag {
     }
 
    var linkedTaskCount: Int {
-      // SwiftData automatically maintains these inverse relationship arrays.
       let uniqueToDoIDs = Set(
          (toDos ?? []).map(\.id) +
          (primaryToDos ?? []).map(\.id)

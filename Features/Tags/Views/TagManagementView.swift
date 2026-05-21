@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct TagManagementView: View {
-    static let defaultTagNames = ["personal", "work", "health", "shopping", "ideas"]
+    static let defaultTagNames = Tag.defaultTagNames
 
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
@@ -50,7 +50,7 @@ struct TagManagementView: View {
                     Color.clear
                         .frame(height: 120)
                 }
-                .padding(.top, 62)
+                .padding(.top, 86)
                 .padding(.bottom, 8)
             }
             
@@ -85,56 +85,44 @@ struct TagManagementView: View {
         .tint(AppColor.actionPrimary)
         .appBaseTypography()
         .appNavigationChrome()
-        .toolbar {
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button {
-                    if isSearchVisible {
-                        isSearchFieldFocused = false
-                        withAnimation(.snappy(duration: 0.20)) {
-                            isSearchVisible = false
-                        }
-                    } else {
-                        withAnimation(.snappy(duration: 0.24, extraBounce: 0.02)) {
-                            isSearchVisible = true
-                        }
-                        DispatchQueue.main.async {
-                            isSearchFieldFocused = true
-                        }
-                    }
-                } label: {
-                    Image(systemName: "magnifyingglass")
-                        .font(.appDisplay(14, relativeTo: .caption))
-                }
-                .buttonStyle(TagManagementToolbarButtonStyle(isToggled: isSearchVisible, size: 30))
-
-                Button {
-                    isShowingSortDialog = true
-                } label: {
-                    Image(systemName: "arrow.up.arrow.down")
-                        .font(.appDisplay(14, relativeTo: .caption))
-                }
-                .buttonStyle(TagManagementToolbarButtonStyle(isToggled: isShowingSortDialog, size: 30))
-                .popover(isPresented: $isShowingSortDialog, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
-                    sortPopoverContent
-                        .presentationCompactAdaptation(.popover)
-                }
-            }
-        }
+        .toolbar(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden()
     }
 
     private var pinnedTitleHeader: some View {
-        VStack(spacing: 0) {
-            Text("Tag Management")
-                .font(.appTitle(34, relativeTo: .largeTitle))
-                .foregroundStyle(AppColor.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityAddTraits(.isHeader)
-                .padding(.horizontal, 16)
-                .padding(.top, -4)
-                .padding(.bottom, 2)
-                .background(AppColor.tertiary)
+        AppSettingsDetailHeader(title: "Tag Management") {
+            Button {
+                if isSearchVisible {
+                    isSearchFieldFocused = false
+                    withAnimation(.snappy(duration: 0.20)) {
+                        isSearchVisible = false
+                    }
+                } else {
+                    withAnimation(.snappy(duration: 0.24, extraBounce: 0.02)) {
+                        isSearchVisible = true
+                    }
+                    DispatchQueue.main.async {
+                        isSearchFieldFocused = true
+                    }
+                }
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.appDisplay(14, relativeTo: .caption))
+            }
+            .buttonStyle(TagManagementToolbarButtonStyle(isToggled: isSearchVisible, size: 30))
+
+            Button {
+                isShowingSortDialog = true
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.appDisplay(14, relativeTo: .caption))
+            }
+            .buttonStyle(TagManagementToolbarButtonStyle(isToggled: isShowingSortDialog, size: 30))
+            .popover(isPresented: $isShowingSortDialog, attachmentAnchor: .rect(.bounds), arrowEdge: .top) {
+                sortPopoverContent
+                    .presentationCompactAdaptation(.popover)
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var addSection: some View {
@@ -200,9 +188,10 @@ struct TagManagementView: View {
                     .font(.appBody(12, relativeTo: .caption))
                     .foregroundStyle(AppColor.textSecondary)
             } else {
+                let usageCounts = usageCountsByTagID()
                 tagFlow {
                     ForEach(filteredTags) { tag in
-                        tagRow(for: tag)
+                        tagRow(for: tag, usageCounts: usageCounts)
                     }
                 }
                 .animation(AppAnimation.snappySection, value: filteredTags.map(\.id))
@@ -240,9 +229,10 @@ struct TagManagementView: View {
                         .font(.appBody(12, relativeTo: .caption))
                         .foregroundStyle(AppColor.textSecondary)
                 } else {
+                    let defaultUsageCounts = defaultTagUsageCountsByNormalizedName()
                     tagFlow {
-                        ForEach(filteredDefaultTagNames, id: \.self) { name in
-                            let usageCount = toDoUsageCount(forDefaultTagNamed: name)
+                        ForEach(Array(filteredDefaultTagNames.enumerated()), id: \.offset) { _, name in
+                            let usageCount = defaultUsageCounts[Tag.normalizeName(name), default: 0]
                             tagPill(name: name, usageCount: usageCount)
                         }
                     }
@@ -298,9 +288,10 @@ struct TagManagementView: View {
                 return isSortAscending ? lhs.createdAt < rhs.createdAt : lhs.createdAt > rhs.createdAt
             }
         case .linked:
+            let usageCounts = usageCountsByTagID()
             return scopedTags.sorted { lhs, rhs in
-                let leftCount = usageCount(for: lhs)
-                let rightCount = usageCount(for: rhs)
+                let leftCount = usageCounts[lhs.id, default: 0]
+                let rightCount = usageCounts[rhs.id, default: 0]
                 if leftCount == rightCount {
                     return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
                 }
@@ -452,8 +443,8 @@ struct TagManagementView: View {
     }
 
     @ViewBuilder
-    private func tagRow(for tag: Tag) -> some View {
-        interactiveTagPill(for: tag)
+    private func tagRow(for tag: Tag, usageCounts: [PersistentIdentifier: Int]) -> some View {
+        interactiveTagPill(for: tag, usageCount: usageCounts[tag.id, default: 0])
                 .transition(.asymmetric(
                     insertion: .scale(scale: 0.92).combined(with: .opacity),
                     removal: .scale(scale: 0.01).combined(with: .opacity)
@@ -461,8 +452,8 @@ struct TagManagementView: View {
             .animation(AppAnimation.snappyStandard, value: isDeleteMode)
     }
 
-    private func interactiveTagPill(for tag: Tag) -> some View {
-        tagPill(name: tag.displayName, usageCount: usageCount(for: tag))
+    private func interactiveTagPill(for tag: Tag, usageCount: Int) -> some View {
+        tagPill(name: tag.displayName, usageCount: usageCount)
             .modifier(ShakeEffect(animatableData: deleteModeShakeTrigger))
             .overlay(alignment: .topTrailing) {
                 if isDeleteMode {
@@ -523,12 +514,19 @@ struct TagManagementView: View {
         .animation(AppAnimation.easeStandard, value: isDuplicateHighlight)
     }
 
-    private func usageCount(for tag: Tag) -> Int {
-        let toDoCount = scopedToDos.filter { toDo in
-            toDo.effectiveTags.contains(where: { $0.id == tag.id })
-        }.count
-        let nanoDoCount = scopedNanoDos.filter { $0.tag?.id == tag.id }.count
-        return toDoCount + nanoDoCount
+    private func usageCountsByTagID() -> [PersistentIdentifier: Int] {
+        var counts: [PersistentIdentifier: Int] = [:]
+        for toDo in scopedToDos {
+            for tag in toDo.effectiveTags {
+                counts[tag.id, default: 0] += 1
+            }
+        }
+        for nanoDo in scopedNanoDos {
+            if let tagID = nanoDo.tag?.id {
+                counts[tagID, default: 0] += 1
+            }
+        }
+        return counts
     }
 
     private func handleTagFieldAction() {
@@ -664,12 +662,14 @@ struct TagManagementView: View {
         .appBaseTypography()
     }
 
-    private func toDoUsageCount(forDefaultTagNamed name: String) -> Int {
-        scopedToDos.filter { toDo in
-            toDo.effectiveTags.contains { tag in
-                tag.name.caseInsensitiveCompare(name) == .orderedSame
+    private func defaultTagUsageCountsByNormalizedName() -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for toDo in scopedToDos {
+            for tag in toDo.effectiveTags {
+                counts[Tag.normalizeName(tag.name), default: 0] += 1
             }
-        }.count
+        }
+        return counts
     }
 
     private func resetAllTagsToDefault() {
@@ -746,7 +746,7 @@ struct TagManagementView: View {
             NotificationManager.shared.scheduleRefresh()
             SyncCoordinator.shared.scheduleLocalSync()
         } catch {
-            print("\(message): \(error)")
+            AppLog.error("\(message): \(error)", logger: AppLog.app)
         }
     }
 }

@@ -8,8 +8,6 @@ final class CloudKitSyncBackend: ToDoSyncBackend {
     func configure(modelContainer: ModelContainer) {}
 
     func activate(userID: UUID?) async -> Bool {
-        // SwiftData + CloudKit mirroring is configured when the model container is created.
-        // This backend exists so the app can treat iCloud as an explicit sync mode.
         true
     }
 

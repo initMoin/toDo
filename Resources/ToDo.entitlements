@@ -8,15 +8,19 @@
 	<array>
 		<string>Default</string>
 	</array>
-	<key>com.apple.developer.usernotifications.time-sensitive</key>
-	<true/>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
-		<string>iCloud.dev.iamshift.ToDo-TaskManagement</string>
+		<string>iCloud.dev.iamshift.toDo</string>
 	</array>
 	<key>com.apple.developer.icloud-services</key>
 	<array>
 		<string>CloudKit</string>
+	</array>
+	<key>com.apple.developer.usernotifications.time-sensitive</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.dev.iamshift.toDo</string>
 	</array>
 </dict>
 </plist>

@@ -3,55 +3,83 @@ import SwiftData
 
 struct ArchivesView: View {
    @Environment(\.modelContext) private var context
+   @Environment(\.dismiss) private var dismiss
    @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
    @Query private var toDos: [ToDo]
    @State private var isShowingPurgeConfirmation = false
    @State private var editingArchivedToDo: ToDo?
+   @State private var isSelectionMode = false
+   @State private var selectedToDoIDs = Set<PersistentIdentifier>()
 
    var body: some View {
       ZStack(alignment: .top) {
          ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-               archiveSection("Archived ToDos") {
-                  if archivedToDos.isEmpty {
-                     Text("No archived ToDos")
+               if isArchivesEmpty {
+                  archiveSection("Archives") {
+                     Text("No completed or archived ToDos")
                         .foregroundStyle(AppColor.textSecondary)
-                  } else {
-                     ForEach(Array(archivedToDos.enumerated()), id: \.element.id) { index, toDo in
-                        archivedToDoRow(toDo)
+                  }
+               } else {
+                  if !completedToDos.isEmpty {
+                     archiveSection("Completed") {
+                        ForEach(Array(completedToDos.enumerated()), id: \.element.id) { index, toDo in
+                           archivedToDoRow(toDo)
 
-                        if index < archivedToDos.count - 1 {
-                           Divider()
+                           if index < completedToDos.count - 1 {
+                              Divider()
+                           }
+                        }
+                     }
+                  }
+
+                  if !archivedToDos.isEmpty {
+                     archiveSection("Archived") {
+                        ForEach(Array(archivedToDos.enumerated()), id: \.element.id) { index, toDo in
+                           archivedToDoRow(toDo)
+
+                           if index < archivedToDos.count - 1 {
+                              Divider()
+                           }
                         }
                      }
                   }
                }
-               
+
                Color.clear
                   .frame(height: 116)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 62)
+            .padding(.top, 86)
             .padding(.bottom, 24)
          }
-         
+
          pinnedTitleHeader
       }
       .scrollIndicators(.hidden)
       .background(AppColor.surface)
       .overlay(alignment: .bottom) {
-         bottomPurgeBar
+         if isSelectionMode {
+            bulkActionBar
+               .transition(.move(edge: .bottom).combined(with: .opacity))
+         } else {
+            bottomPurgeBar
+               .transition(.move(edge: .bottom).combined(with: .opacity))
+         }
       }
       .tint(AppColor.actionPrimary)
+      .animation(AppAnimation.snappyStandard, value: isSelectionMode)
       .appBaseTypography()
       .appNavigationChrome()
-      .confirmationDialog("Purge all archived ToDos?", isPresented: $isShowingPurgeConfirmation, titleVisibility: .visible) {
+      .toolbar(.hidden, for: .navigationBar)
+      .navigationBarBackButtonHidden()
+      .confirmationDialog("Purge all completed and archived ToDos?", isPresented: $isShowingPurgeConfirmation, titleVisibility: .visible) {
          Button("Purge Archives", role: .destructive) {
             purgeArchives()
          }
          Button("Cancel", role: .cancel) {}
       } message: {
-         Text("This permanently deletes every archived ToDo.")
+         Text("This permanently deletes every completed and archived ToDo.")
       }
       .sheet(item: $editingArchivedToDo) { toDo in
          ToDoView(
@@ -66,18 +94,21 @@ struct ArchivesView: View {
    }
 
    private var pinnedTitleHeader: some View {
-      VStack(spacing: 0) {
-         Text("Archives")
-            .font(.appTitle(34, relativeTo: .largeTitle))
-            .foregroundStyle(AppColor.white)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityAddTraits(.isHeader)
-            .padding(.horizontal, 16)
-            .padding(.top, -4)
-            .padding(.bottom, 2)
-            .background(AppColor.black)
+      AppSettingsDetailHeader(title: "Archives") {
+            if !isArchivesEmpty {
+               Button {
+                  withAnimation(AppAnimation.snappyStandard) {
+                     isSelectionMode.toggle()
+                     if !isSelectionMode { selectedToDoIDs.removeAll() }
+                  }
+               } label: {
+                  Text(isSelectionMode ? "Done" : "Select")
+                     .font(.appBodyStrong(16, relativeTo: .headline))
+                     .foregroundStyle(AppColor.white)
+               }
+               .buttonStyle(.plain)
+            }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
    }
 
    private var visibleOwnerUserID: UUID? {
@@ -85,11 +116,24 @@ struct ArchivesView: View {
       return supabaseAuthStore.currentUserID
    }
 
+   private var scopedToDos: [ToDo] {
+      toDos.filter { $0.ownerUserID == visibleOwnerUserID }
+   }
+
+   private var completedToDos: [ToDo] {
+      scopedToDos
+         .filter { $0.lifecycleState == .done && !$0.isArchived }
+         .sorted { $0.syncUpdatedAt > $1.syncUpdatedAt }
+   }
+
    private var archivedToDos: [ToDo] {
-      toDos
-         .filter { $0.ownerUserID == visibleOwnerUserID }
-         .filter(\.isArchived)
-         .sorted { $0.createdAt > $1.createdAt }
+      scopedToDos
+         .filter { $0.lifecycleState == .archived || $0.isArchived }
+         .sorted { $0.syncUpdatedAt > $1.syncUpdatedAt }
+   }
+
+   private var isArchivesEmpty: Bool {
+      completedToDos.isEmpty && archivedToDos.isEmpty
    }
 
    private func archiveSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -113,6 +157,13 @@ struct ArchivesView: View {
 
    private func archivedToDoRow(_ toDo: ToDo) -> some View {
       HStack(alignment: .top, spacing: 10) {
+         if isSelectionMode {
+            Image(systemName: selectedToDoIDs.contains(toDo.id) ? "checkmark.circle.fill" : "circle")
+               .font(.appDisplay(20, relativeTo: .headline))
+               .foregroundStyle(selectedToDoIDs.contains(toDo.id) ? AppColor.actionPrimary : AppColor.textSecondary)
+               .padding(.top, 2)
+         }
+
          VStack(alignment: .leading, spacing: 4) {
             Text(toDo.task)
                .foregroundStyle(AppColor.textPrimary)
@@ -129,45 +180,21 @@ struct ArchivesView: View {
       }
       .padding(.vertical, 4)
       .contentShape(Rectangle())
-      .swipeActions(edge: .leading, allowsFullSwipe: true) {
-         Button {
-            restoreToActive(toDo)
-         } label: {
-            Label("Restore", systemImage: "arrow.uturn.backward.circle")
-         }
-         .tint(AppColor.actionPrimary)
+      .onTapGesture {
+         if isSelectionMode { toggleSelection(for: toDo) }
       }
-      .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-         Button {
-            restoreWithEdits(toDo)
-         } label: {
-            Label("Restore with Edits", systemImage: "square.and.pencil")
-         }
-         .tint(AppColor.actionSecondary)
-
-         Button(role: .destructive) {
-            deleteToDo(toDo)
-         } label: {
-            Label("Delete", systemImage: "trash")
+      .swipeActions(edge: .leading, allowsFullSwipe: !isSelectionMode) {
+         if !isSelectionMode {
+            Button { restoreToActive(toDo) } label: { Label("Restore", systemImage: "arrow.uturn.backward.circle") }
+               .tint(AppColor.actionPrimary)
          }
       }
-      .contextMenu {
-         Button {
-            restoreToActive(toDo)
-         } label: {
-            Label("Restore", systemImage: "arrow.uturn.backward.circle")
-         }
+      .swipeActions(edge: .trailing, allowsFullSwipe: !isSelectionMode) {
+         if !isSelectionMode {
+            Button { restoreWithEdits(toDo) } label: { Label("Restore with Edits", systemImage: "square.and.pencil") }
+               .tint(AppColor.actionSecondary)
 
-         Button {
-            restoreWithEdits(toDo)
-         } label: {
-            Label("Restore with Edits", systemImage: "square.and.pencil")
-         }
-
-         Button(role: .destructive) {
-            deleteToDo(toDo)
-         } label: {
-            Label("Delete", systemImage: "trash")
+            Button(role: .destructive) { deleteToDo(toDo) } label: { Label("Delete", systemImage: "trash") }
          }
       }
    }
@@ -183,7 +210,7 @@ struct ArchivesView: View {
             VStack(alignment: .leading, spacing: 2) {
                Text("Purge Archives")
                   .font(.appDisplay(18, relativeTo: .headline))
-               Text("Permanently deletes all archived ToDos.")
+               Text("Permanently deletes all completed and archived ToDos.")
                   .font(.appBody(12, relativeTo: .caption))
                   .opacity(0.92)
             }
@@ -200,8 +227,8 @@ struct ArchivesView: View {
          )
       }
       .buttonStyle(.plain)
-      .disabled(archivedToDos.isEmpty)
-      .opacity(archivedToDos.isEmpty ? 0.45 : 1)
+      .disabled(isArchivesEmpty)
+      .opacity(isArchivesEmpty ? 0.45 : 1)
    }
 
    private var bottomPurgeBar: some View {
@@ -219,7 +246,11 @@ struct ArchivesView: View {
    }
 
    private func purgeArchives() {
-      for toDo in archivedToDos {
+      guard !isArchivesEmpty else { return }
+      HapticFeedbackService.play(.destructive)
+      let allToPurge = completedToDos + archivedToDos
+      for toDo in allToPurge {
+         removeCalendarMirrorIfPresent(for: toDo)
          SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: toDo, in: context)
          context.delete(toDo)
       }
@@ -233,11 +264,12 @@ struct ArchivesView: View {
          NotificationManager.shared.scheduleRefresh()
          SyncCoordinator.shared.scheduleLocalSync()
       } catch {
-         print("\(message): \(error)")
+         AppLog.error("\(message): \(error)", logger: AppLog.app)
       }
    }
 
    private func restoreToActive(_ toDo: ToDo) {
+      HapticFeedbackService.play(.restored)
       withAnimation(AppAnimation.easeStandard) {
          toDo.transition(to: .active)
       }
@@ -245,6 +277,7 @@ struct ArchivesView: View {
    }
 
    private func restoreWithEdits(_ toDo: ToDo) {
+      HapticFeedbackService.play(.restored)
       withAnimation(AppAnimation.easeStandard) {
          toDo.transition(to: .active)
       }
@@ -253,11 +286,94 @@ struct ArchivesView: View {
    }
 
    private func deleteToDo(_ toDo: ToDo) {
+      HapticFeedbackService.play(.destructive)
       withAnimation(AppAnimation.easeFast) {
-         SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: toDo, in: context)
-         context.delete(toDo)
+         toDo.trashedAt = Date()
+         toDo.transition(to: .trashed)
       }
+      removeCalendarMirrorIfPresent(for: toDo)
       persistChanges("Failed to delete archived ToDo")
+   }
+
+   private func removeCalendarMirrorIfPresent(for toDo: ToDo) {
+      guard toDo.calendarEventIdentifier != nil else { return }
+
+      do {
+         try CalendarIntegrationService.shared.removeCalendarEvent(for: toDo)
+      } catch {
+         AppLog.error("Failed to remove mirrored Calendar event: \(error)", logger: AppLog.calendar)
+      }
+   }
+
+   private var bulkActionBar: some View {
+      VStack(spacing: 0) {
+         Divider()
+         HStack(spacing: 0) {
+            bulkActionButton(systemName: "arrow.uturn.backward.circle", label: "Restore", disabled: selectedToDoIDs.isEmpty) {
+               restoreSelected()
+            }
+            bulkActionButton(systemName: "trash", label: "Delete", isDestructive: true, disabled: selectedToDoIDs.isEmpty) {
+               deleteSelected()
+            }
+         }
+         .padding(.vertical, 12)
+         .background(AppColor.surface)
+      }
+   }
+
+   private func bulkActionButton(systemName: String, label: String, isDestructive: Bool = false, disabled: Bool, action: @escaping () -> Void) -> some View {
+      Button(action: action) {
+         VStack(spacing: 5) {
+            Image(systemName: systemName)
+               .font(.appDisplay(20, relativeTo: .title2))
+            Text(label)
+               .font(.appDisplay(11, relativeTo: .caption))
+         }
+         .frame(maxWidth: .infinity)
+         .foregroundStyle(isDestructive ? AppColor.actionDestructive : AppColor.textPrimary)
+         .opacity(disabled ? 0.45 : 1)
+      }
+      .buttonStyle(.plain)
+      .disabled(disabled)
+   }
+
+   private func toggleSelection(for toDo: ToDo) {
+      HapticFeedbackService.play(.selection)
+      if selectedToDoIDs.contains(toDo.id) {
+         selectedToDoIDs.remove(toDo.id)
+      } else {
+         selectedToDoIDs.insert(toDo.id)
+      }
+   }
+
+   private func restoreSelected() {
+      guard !selectedToDoIDs.isEmpty else { return }
+      HapticFeedbackService.play(.restored)
+      withAnimation(AppAnimation.snappyStandard) {
+         let toDosToRestore = scopedToDos.filter { selectedToDoIDs.contains($0.id) }
+         for toDo in toDosToRestore {
+            toDo.transition(to: .active)
+         }
+         selectedToDoIDs.removeAll()
+         isSelectionMode = false
+      }
+      persistChanges("Failed to restore selected")
+   }
+
+   private func deleteSelected() {
+      guard !selectedToDoIDs.isEmpty else { return }
+      HapticFeedbackService.play(.destructive)
+      withAnimation(AppAnimation.easeFast) {
+         let toDosToDelete = scopedToDos.filter { selectedToDoIDs.contains($0.id) }
+         for toDo in toDosToDelete {
+            toDo.trashedAt = Date()
+            toDo.transition(to: .trashed)
+            removeCalendarMirrorIfPresent(for: toDo)
+         }
+         selectedToDoIDs.removeAll()
+         isSelectionMode = false
+      }
+      persistChanges("Failed to move selected to trash")
    }
 }
 

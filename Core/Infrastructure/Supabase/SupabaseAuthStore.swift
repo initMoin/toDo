@@ -106,6 +106,7 @@ final class SupabaseAuthStore: ObservableObject {
 
     private lazy var supabase = SupabaseService.shared
     private var authStateTask: Task<Void, Never>?
+    private var lastAppliedSyncKey: String?
     private let isPreviewMode: Bool
 
     private init(isPreviewMode: Bool = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1") {
@@ -167,26 +168,26 @@ final class SupabaseAuthStore: ObservableObject {
 
     var signInMethodLabel: String? {
         guard isAuthenticated else { return nil }
-        return accountProviderLabel.map { "Sign In with \($0)" }
+        return accountProviderLabel.map { String(format: String(localized: "Sign In with %@"), $0) }
     }
 
     var accountStateTitle: String {
         switch effectiveSyncMode {
         case .deviceOnly:
-            return "Local Only"
+            return String(localized: "Local Only")
         case .iCloud:
-            return "iCloud"
+            return String(localized: "iCloud")
         case .syncEverywhere:
             if let provider = accountProviderLabel {
-                return "Signed In: \(provider)"
+                return String(format: String(localized: "Signed In: %@"), provider)
             }
-            return isAuthenticated ? "Signed In" : "Needs Sign In"
+            return isAuthenticated ? String(localized: "Signed In") : String(localized: "Needs Sign In")
         }
     }
 
     var accountDisplayName: String {
         guard isAuthenticated else {
-            return effectiveSyncMode == .iCloud ? "iCloud ToDo" : "Local ToDo"
+            return effectiveSyncMode == .iCloud ? String(localized: "iCloud ToDo") : String(localized: "Local ToDo")
         }
         if let displayName = profile?.displayName, !displayName.isEmpty {
             return displayName
@@ -194,7 +195,7 @@ final class SupabaseAuthStore: ObservableObject {
         if let email = signedInEmail {
             return email
         }
-        return "Cloud Account"
+        return String(localized: "Cloud Account")
     }
 
     var accountDetailText: String {
@@ -202,12 +203,12 @@ final class SupabaseAuthStore: ObservableObject {
             return effectiveSyncMode.subtitle
         }
         guard isAuthenticated else {
-            return "Signed out. ToDos stay on this device until you sign in to \(effectiveSyncMode.title)."
+            return String(format: String(localized: "Signed out. ToDos stay on this device until you sign in to %@."), effectiveSyncMode.title)
         }
         if let provider = accountProviderLabel {
-            return "Signed In: \(provider). \(effectiveSyncMode.title) is ready."
+            return String(format: String(localized: "Signed In: %@. %@ is ready."), provider, effectiveSyncMode.title)
         }
-        return "Signed in and ready to keep iPhone, Android, and web in step."
+        return String(localized: "Signed in and ready to keep iPhone, Android, and web in step.")
     }
 
     var dataModeTitle: String {
@@ -227,10 +228,11 @@ final class SupabaseAuthStore: ObservableObject {
         isStarted = true
 
         applyActiveSession(supabase.auth.currentSession)
+        logAuthConfiguration()
 
         await supabase.auth.startAutoRefresh()
         startAuthStateListener()
-        await SyncCoordinator.shared.applyPreferredSyncMode(userID: currentUserID)
+        await applyPreferredSyncModeIfNeeded(userID: currentUserID)
 
         if let currentUser = activeSession?.user {
             await bootstrapProfile(for: currentUser)
@@ -245,8 +247,10 @@ final class SupabaseAuthStore: ObservableObject {
         case .active:
             Task {
                 await supabase.auth.startAutoRefresh()
+                await SupabaseSyncService.shared.resumeRealtimeIfNeeded()
             }
         case .background, .inactive:
+            SupabaseSyncService.shared.suspendRealtime()
             Task {
                 await supabase.auth.stopAutoRefresh()
             }
@@ -261,6 +265,9 @@ final class SupabaseAuthStore: ObservableObject {
         lastErrorMessage = nil
 
         do {
+            #if DEBUG
+            authLog.notice("Apple sign-in token audience: \(Self.jwtStringClaim("aud", in: idToken) ?? "unknown", privacy: .public); app bundle: \(Bundle.main.bundleIdentifier ?? "unknown", privacy: .public)")
+            #endif
             let authSession = try await supabase.auth.signInWithIdToken(
                 credentials: OpenIDConnectCredentials(
                     provider: .apple,
@@ -274,7 +281,7 @@ final class SupabaseAuthStore: ObservableObject {
             authProviderInProgress = nil
             await bootstrapProfile(for: authSession.user, fullName: fullName)
             await syncCurrentDeviceTokenIfPossible()
-            await SyncCoordinator.shared.applyPreferredSyncMode(userID: authSession.user.id)
+            await applyPreferredSyncModeIfNeeded(userID: authSession.user.id)
             SyncCoordinator.shared.showTransientFeedback(
                 title: "Signed In: Apple",
                 message: successMessage(for: authSession.user, providerName: "Apple"),
@@ -297,7 +304,9 @@ final class SupabaseAuthStore: ObservableObject {
         guard !isPreviewMode else { return }
         lastErrorMessage = nil
         authProviderInProgress = .google
+        #if DEBUG
         authLog.notice("Google sign-in started with native GoogleSignIn.")
+        #endif
 
         do {
             let rawNonce = AuthNonceGenerator.random()
@@ -312,13 +321,15 @@ final class SupabaseAuthStore: ObservableObject {
             authProviderInProgress = nil
             await bootstrapProfile(for: authSession.user)
             await syncCurrentDeviceTokenIfPossible()
-            await SyncCoordinator.shared.applyPreferredSyncMode(userID: authSession.user.id)
+            await applyPreferredSyncModeIfNeeded(userID: authSession.user.id)
             SyncCoordinator.shared.showTransientFeedback(
                 title: "Signed In: Google",
                 message: successMessage(for: authSession.user, providerName: "Google"),
                 style: .success
             )
+            #if DEBUG
             authLog.notice("Google sign-in succeeded for user: \(authSession.user.id.uuidString, privacy: .public)")
+            #endif
         } catch where Self.isGoogleCancellation(error) {
             authProviderInProgress = nil
             lastErrorMessage = nil
@@ -361,7 +372,7 @@ final class SupabaseAuthStore: ObservableObject {
             authProviderInProgress = nil
             await bootstrapProfile(for: authSession.user)
             await syncCurrentDeviceTokenIfPossible()
-            await SyncCoordinator.shared.applyPreferredSyncMode(userID: authSession.user.id)
+            await applyPreferredSyncModeIfNeeded(userID: authSession.user.id)
             SyncCoordinator.shared.showTransientFeedback(
                 title: provider.map { "Signed In: \($0)" } ?? "Signed In",
                 message: successMessage(for: authSession.user, providerName: provider),
@@ -402,7 +413,7 @@ final class SupabaseAuthStore: ObservableObject {
             profile = nil
             lastErrorMessage = nil
             clearStoredSignInProvider()
-            await SyncCoordinator.shared.applyPreferredSyncMode(userID: nil)
+            await applyPreferredSyncModeIfNeeded(userID: nil)
             SyncCoordinator.shared.showTransientFeedback(
                 title: "Signed Out",
                 message: "ToDo returned this device to local mode.",
@@ -445,10 +456,9 @@ final class SupabaseAuthStore: ObservableObject {
                 .upsert(payload, onConflict: "push_provider,token")
                 .execute()
            
-           print("SYSLOG: APNs token synced to Supabase")
+           AppLog.info("APNs token synced to Supabase", logger: AppLog.auth)
         } catch {
-            print("SYSLOG: Failed to sync APNs token:")
-            print(error)
+            AppLog.error("Failed to sync APNs token: \(error)", logger: AppLog.auth)
 
             lastErrorMessage = error.localizedDescription
         }
@@ -525,6 +535,9 @@ final class SupabaseAuthStore: ObservableObject {
             }
         }
 
+        #if DEBUG
+        authLog.notice("Google sign-in token audience: \(Self.jwtStringClaim("aud", in: tokens.idToken) ?? "unknown", privacy: .public); app bundle: \(Bundle.main.bundleIdentifier ?? "unknown", privacy: .public); iOS client: \(Self.infoPlistString("GIDClientID") ?? "missing", privacy: .public); server client: \(Self.infoPlistString("GIDServerClientID") ?? "missing", privacy: .public)")
+        #endif
         return try await supabase.auth.signInWithIdToken(
             credentials: OpenIDConnectCredentials(
                 provider: .google,
@@ -539,7 +552,7 @@ final class SupabaseAuthStore: ObservableObject {
         switch event {
         case .initialSession, .signedIn, .tokenRefreshed, .userUpdated, .passwordRecovery:
             applyActiveSession(session, shouldClearWhenInactive: false)
-            await SyncCoordinator.shared.applyPreferredSyncMode(userID: currentUserID)
+            await applyPreferredSyncModeIfNeeded(userID: currentUserID)
             if let user = activeSession?.user {
                 if storedSignInProvider(for: user.id) == nil,
                    let provider = inferredProviderLabel(for: user) {
@@ -553,10 +566,18 @@ final class SupabaseAuthStore: ObservableObject {
             currentUser = nil
             profile = nil
             clearStoredSignInProvider()
-            await SyncCoordinator.shared.applyPreferredSyncMode(userID: nil)
+            await applyPreferredSyncModeIfNeeded(userID: nil)
         default:
             applyActiveSession(session, shouldClearWhenInactive: false)
         }
+    }
+
+    private func applyPreferredSyncModeIfNeeded(userID: UUID?) async {
+        let syncKey = "\(SyncCoordinator.shared.preferredSyncMode.rawValue)|\(userID?.uuidString ?? "signed-out")"
+        guard lastAppliedSyncKey != syncKey else { return }
+
+        lastAppliedSyncKey = syncKey
+        await SyncCoordinator.shared.applyPreferredSyncMode(userID: userID)
     }
 
     private func deactivateCurrentDeviceTokenIfPossible(for userID: UUID) async {
@@ -724,7 +745,60 @@ final class SupabaseAuthStore: ObservableObject {
             return "Sign In with \(providerName) is not enabled in Supabase Auth yet. Enable the \(providerName) provider in the Supabase dashboard, then try again."
         }
 
+        if combinedMessage.contains("audience") || combinedMessage.contains("aud") || combinedMessage.contains("client_id") || combinedMessage.contains("invalid_client") {
+            return "Sign In with \(providerName) was rejected because the provider client ID does not match this app’s current bundle ID (\(Bundle.main.bundleIdentifier ?? "unknown")). Verify the \(providerName) provider settings in Supabase and the provider console."
+        }
+
+        if combinedMessage.contains("nonce") {
+            return "Sign In with \(providerName) was rejected because the identity token nonce did not match. Try again; if it repeats, the provider nonce settings need review."
+        }
+
+        #if DEBUG
+        if localizedMessage == "The operation couldn’t be completed." || localizedMessage == "The operation couldn’t be completed. (Supabase.AuthError error 0.)" {
+            return rawMessage
+        }
+        #endif
+
         return localizedMessage
+    }
+
+    private func logAuthConfiguration() {
+        #if DEBUG
+        authLog.notice("Auth configuration: bundle=\(Bundle.main.bundleIdentifier ?? "unknown", privacy: .public); redirect=\(SupabaseConfig.redirectURL.absoluteString, privacy: .public); callbackScheme=\(SupabaseConfig.callbackScheme, privacy: .public); googleClient=\(Self.infoPlistString("GIDClientID") ?? "missing", privacy: .public); googleServerClient=\(Self.infoPlistString("GIDServerClientID") ?? "missing", privacy: .public)")
+        #endif
+    }
+
+    private static func infoPlistString(_ key: String) -> String? {
+        Bundle.main.object(forInfoDictionaryKey: key) as? String
+    }
+
+    private static func jwtStringClaim(_ claim: String, in token: String) -> String? {
+        let segments = token.split(separator: ".")
+        guard segments.count >= 2,
+              let payload = base64URLDecodedData(String(segments[1])),
+              let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any]
+        else {
+            return nil
+        }
+
+        if let string = object[claim] as? String {
+            return string
+        }
+        if let strings = object[claim] as? [String] {
+            return strings.joined(separator: ",")
+        }
+        return nil
+    }
+
+    private static func base64URLDecodedData(_ value: String) -> Data? {
+        var base64 = value
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let paddingLength = (4 - base64.count % 4) % 4
+        if paddingLength > 0 {
+            base64.append(String(repeating: "=", count: paddingLength))
+        }
+        return Data(base64Encoded: base64)
     }
 
     private func storeSignInProvider(_ provider: String, userID: UUID) {
@@ -893,11 +967,11 @@ private extension SyncMode {
     var accountStatusLabel: String {
         switch self {
         case .deviceOnly:
-            return "This Device Only"
+            return String(localized: "This Device Only")
         case .iCloud:
-            return "Sync with iCloud"
+            return String(localized: "Sync with iCloud")
         case .syncEverywhere:
-            return "ToDo Sync"
+            return String(localized: "ToDo Sync")
         }
     }
 
@@ -913,24 +987,24 @@ private extension SyncMode {
     var dataModeTitle: String {
         switch self {
         case .deviceOnly:
-            return "This Device Only"
+            return String(localized: "This Device Only")
         case .iCloud:
-            return "Sync with iCloud"
+            return String(localized: "Sync with iCloud")
         case .syncEverywhere:
-            return "ToDo Sync"
+            return String(localized: "ToDo Sync")
         }
     }
 
     func dataModeDescription(isAuthenticated: Bool) -> String {
         switch self {
         case .deviceOnly:
-            return "ToDo is running without a remote sync engine. Your data stays on this device until you choose a sync option."
+            return String(localized: "ToDo is running without a remote sync engine. Your data stays on this device until you choose a sync option.")
         case .iCloud:
-            return "ToDo is configured to sync through iCloud for Apple devices. This mode stays inside your private iCloud storage."
+            return String(localized: "ToDo is configured to sync through iCloud for Apple devices. This mode stays inside your private iCloud storage.")
         case .syncEverywhere:
             return isAuthenticated
-                ? "ToDo is running with ToDo Sync. Data is owner-scoped locally and synchronized through Supabase for cross-platform access."
-                : "\(title) is selected, but no account is signed in yet. ToDos stay on this device until you authenticate."
+                ? String(localized: "ToDo is running with ToDo Sync. Data is owner-scoped locally and synchronized through Supabase for cross-platform access.")
+                : String(format: String(localized: "%@ is selected, but no account is signed in yet. ToDos stay on this device until you authenticate."), title)
         }
     }
 

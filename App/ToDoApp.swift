@@ -10,20 +10,25 @@ import SwiftData
 
 @main
 struct ToDoApp: App {
-   // APNs still enters through app-delegate callbacks. This adaptor keeps the app on
-   // the SwiftUI lifecycle while confining UIKit exposure to the notification bridge.
    @UIApplicationDelegateAdaptor(PushNotificationAppDelegate.self) private var pushNotificationDelegate
    @Environment(\.scenePhase) private var scenePhase
    @StateObject private var supabaseAuthStore: SupabaseAuthStore
+   @State private var didRunInitialStartupMaintenance = false
+   @State private var isRunningForegroundMaintenance = false
+   @AppStorage("todo.lastForegroundRemoteRefreshAt") private var lastForegroundRemoteRefreshAt = 0.0
 
    private let sharedModelContainer: ModelContainer
    private let isRunningInPreview: Bool
+   private let isRunningForScreenshots: Bool
    private let shouldStartSupabaseAuth: Bool
+   private let foregroundRemoteRefreshInterval: TimeInterval = 6 * 60 * 60
 
    init() {
       let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+      let isScreenshot = ProcessInfo.processInfo.arguments.contains("-UITestScreenshotMode")
       isRunningInPreview = isPreview
-      shouldStartSupabaseAuth = !isPreview
+      isRunningForScreenshots = isScreenshot
+      shouldStartSupabaseAuth = !isPreview && !isScreenshot
       _supabaseAuthStore = StateObject(wrappedValue: isPreview ? .preview : .shared)
       AppPreferences.registerDefaults()
       let preferredSyncMode = AppPreferences.preferredSyncMode()
@@ -32,11 +37,13 @@ struct ToDoApp: App {
          UserDefaults.standard.set(preferredSyncMode.rawValue, forKey: AppPreferences.Keys.syncMode)
       }
       sharedModelContainer = Self.makeModelContainer(
-         inMemory: isPreview,
+         inMemory: isPreview || isScreenshot,
          preferredSyncMode: preferredSyncMode
       )
 
-      if !isPreview {
+      if isScreenshot {
+         Self.seedScreenshotDataIfNeeded(in: sharedModelContainer)
+      } else if !isPreview {
          MigrationService.shared.runPendingStoreMigrationIfNeeded(
             into: sharedModelContainer,
             activeMode: preferredSyncMode
@@ -48,10 +55,14 @@ struct ToDoApp: App {
                PushNotificationAppDelegate.registerForRemoteNotifications()
             }
          )
+         LocationReminderService.shared.configure(modelContainer: sharedModelContainer)
          SyncCoordinator.shared.configure(
             modelContainer: sharedModelContainer,
             configuredSyncMode: preferredSyncMode
          )
+         #if canImport(WatchConnectivity) && os(iOS)
+         WatchConnectivityService.shared.configure(modelContainer: sharedModelContainer)
+         #endif
       }
    }
 
@@ -63,19 +74,20 @@ struct ToDoApp: App {
             } else {
                ToDosView()
                   .task {
-                     guard shouldStartSupabaseAuth else { return }
-                     try? await Task.sleep(nanoseconds: 250_000_000)
-                     await SyncCoordinator.shared.start(userID: supabaseAuthStore.currentUserID)
-                     await supabaseAuthStore.start()
+                     guard !didRunInitialStartupMaintenance else { return }
+                     didRunInitialStartupMaintenance = true
+                     try? await Task.sleep(nanoseconds: 900_000_000)
+                     if shouldStartSupabaseAuth {
+                        await supabaseAuthStore.start()
+                     }
+                     await runForegroundMaintenance(refreshRemote: shouldRefreshRemoteOnForeground)
                   }
                   .onChange(of: scenePhase) { _, newPhase in
-                     guard !isRunningInPreview else { return }
+                     guard !isRunningInPreview, !isRunningForScreenshots else { return }
                      supabaseAuthStore.handleScenePhase(newPhase)
                      guard newPhase == .active else { return }
                      Task {
-                        await NotificationManager.shared.refreshAuthorizationStatus()
-                        NotificationManager.shared.scheduleRefresh()
-                        await SyncCoordinator.shared.refreshFromRemote(userID: supabaseAuthStore.currentUserID)
+                        await runForegroundMaintenance(refreshRemote: shouldRefreshRemoteOnForeground)
                      }
                   }
             }
@@ -85,11 +97,41 @@ struct ToDoApp: App {
          .onOpenURL { url in
             guard !isRunningInPreview else { return }
             Task {
+               if NavigationCoordinator.shared.route(url: url) {
+                  return
+               }
                await supabaseAuthStore.handleIncomingURL(url)
             }
          }
       }
       .modelContainer(sharedModelContainer)
+   }
+
+   @MainActor
+   private func runForegroundMaintenance(refreshRemote: Bool) async {
+      guard !isRunningForegroundMaintenance else { return }
+      isRunningForegroundMaintenance = true
+      defer { isRunningForegroundMaintenance = false }
+
+      await NotificationManager.shared.refreshAuthorizationStatus()
+      NotificationManager.shared.scheduleRefresh()
+      LocationReminderService.shared.syncMonitoringFromStore()
+      LiveActivityService.shared.refresh(from: sharedModelContainer)
+
+      if refreshRemote {
+         await SyncCoordinator.shared.refreshFromRemote(userID: supabaseAuthStore.currentUserID)
+         lastForegroundRemoteRefreshAt = Date().timeIntervalSince1970
+      }
+
+      WidgetSnapshotService.shared.writeSnapshot(from: sharedModelContainer)
+
+      #if canImport(WatchConnectivity) && os(iOS)
+      WatchConnectivityService.shared.refreshSnapshot()
+      #endif
+   }
+
+   private var shouldRefreshRemoteOnForeground: Bool {
+      Date().timeIntervalSince1970 - lastForegroundRemoteRefreshAt >= foregroundRemoteRefreshInterval
    }
 
    private static func makeModelContainer(
@@ -108,6 +150,7 @@ struct ToDoApp: App {
          }
       }
 
+      SharedStoreLocation.migrateLegacyStoresIfNeeded()
       let storeURL = defaultStoreURL(for: preferredSyncMode)
       ensureStoreDirectoryExists(for: storeURL)
       let configuration = ModelConfiguration(
@@ -165,35 +208,16 @@ struct ToDoApp: App {
    }
 
    private static func defaultStoreURL(for syncMode: SyncMode) -> URL {
-      let fileManager = FileManager.default
-      let applicationSupport: URL
-
-      do {
-         applicationSupport = try fileManager.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-         )
-      } catch {
-         applicationSupport = URL.applicationSupportDirectory
-      }
-
-      let fileName: String
-      switch syncMode {
-      case .deviceOnly, .syncEverywhere:
-         fileName = "default.store"
-      case .iCloud:
-         fileName = "icloud.store"
-      }
-
-      return applicationSupport.appending(path: fileName)
+      SharedStoreLocation.storeURL(for: syncMode)
    }
 
    private static func ensureStoreDirectoryExists(for storeURL: URL) {
-      let fileManager = FileManager.default
-      let directoryURL = storeURL.deletingLastPathComponent()
-      try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+      SharedStoreLocation.ensureStoreDirectoryExists(for: storeURL)
+   }
+
+   @MainActor
+   private static func seedScreenshotDataIfNeeded(in container: ModelContainer) {
+      ScreenshotDataSeeder.seedIfNeeded(in: container.mainContext)
    }
 
    private static func runPendingMigrations(
@@ -245,13 +269,21 @@ struct ToDoApp: App {
          let nanoDos = try context.fetch(FetchDescriptor<NanoDo>())
 
          var canonicalTagsByName: [String: Tag] = [:]
+         let toDosByTagID = Dictionary(grouping: toDos.flatMap { toDo in
+            toDo.effectiveTags.map { tag in (tag.id, toDo) }
+         }, by: \.0)
+            .mapValues { pairs in pairs.map(\.1) }
+         let nanoDosByTagID = Dictionary(grouping: nanoDos.compactMap { nanoDo in
+            nanoDo.tag.map { tag in (tag.id, nanoDo) }
+         }, by: \.0)
+            .mapValues { pairs in pairs.map(\.1) }
          var didChange = false
 
          for tag in tags {
             let normalizedName = Tag.normalizeName(tag.name)
 
             guard !normalizedName.isEmpty else {
-               for toDo in toDos {
+               for toDo in toDosByTagID[tag.id, default: []] {
                   let remainingTags = toDo.effectiveTags.filter { $0.id != tag.id }
                   if remainingTags.count != toDo.effectiveTags.count {
                      toDo.setSelectedTags(remainingTags)
@@ -259,7 +291,7 @@ struct ToDoApp: App {
                   }
                }
 
-               for nanoDo in nanoDos where nanoDo.tag?.id == tag.id {
+               for nanoDo in nanoDosByTagID[tag.id, default: []] {
                   nanoDo.tag = nil
                   didChange = true
                }
@@ -270,10 +302,8 @@ struct ToDoApp: App {
             }
 
             if let canonicalTag = canonicalTagsByName[normalizedName], canonicalTag.id != tag.id {
-               for toDo in toDos {
+               for toDo in toDosByTagID[tag.id, default: []] {
                   let effectiveTags = toDo.effectiveTags
-                  guard effectiveTags.contains(where: { $0.id == tag.id }) else { continue }
-
                   let mergedTags = effectiveTags.map { currentTag in
                      currentTag.id == tag.id ? canonicalTag : currentTag
                   }
@@ -281,7 +311,7 @@ struct ToDoApp: App {
                   didChange = true
                }
 
-               for nanoDo in nanoDos where nanoDo.tag?.id == tag.id {
+               for nanoDo in nanoDosByTagID[tag.id, default: []] {
                   nanoDo.tag = canonicalTag
                   didChange = true
                }
@@ -304,7 +334,7 @@ struct ToDoApp: App {
          }
          return true
       } catch {
-         print("Failed to normalize stored tags: \(error)")
+         AppLog.error("Failed to normalize stored tags: \(error)", logger: AppLog.app)
          return false
       }
    }
@@ -337,7 +367,7 @@ struct ToDoApp: App {
          }
          return true
       } catch {
-         print("Failed to normalize ToDo lifecycle states: \(error)")
+         AppLog.error("Failed to normalize ToDo lifecycle states: \(error)", logger: AppLog.app)
          return false
       }
    }
@@ -366,8 +396,134 @@ struct ToDoApp: App {
 
          return true
       } catch {
-         print("Failed to normalize ToDo reminder intents: \(error)")
+         AppLog.error("Failed to normalize ToDo reminder intents: \(error)", logger: AppLog.app)
          return false
+      }
+   }
+}
+
+@MainActor
+private enum ScreenshotDataSeeder {
+   static func seedIfNeeded(in context: ModelContext) {
+      let descriptor = FetchDescriptor<ToDo>()
+      if let existingCount = try? context.fetchCount(descriptor), existingCount > 0 {
+         return
+      }
+
+      let calendar = Calendar.current
+      let now = Date()
+      let personal = Tag(name: "personal", createdAt: calendar.date(byAdding: .day, value: -8, to: now) ?? now)
+      let work = Tag(name: "work", createdAt: calendar.date(byAdding: .day, value: -7, to: now) ?? now)
+      let health = Tag(name: "health", createdAt: calendar.date(byAdding: .day, value: -6, to: now) ?? now)
+      let planning = Tag(name: "planning", createdAt: calendar.date(byAdding: .day, value: -5, to: now) ?? now)
+
+      [personal, work, health, planning].forEach(context.insert)
+
+      let hello = ToDo(
+         task: "Hello world!",
+         notes: "Use this ToDo to verify the full detail view: due date, tags, NanoDos, recurrence, and notes should all feel intentional.",
+         createdAt: calendar.date(byAdding: .day, value: -3, to: now) ?? now,
+         updatedAt: calendar.date(byAdding: .hour, value: -2, to: now),
+         dueDate: calendar.date(byAdding: .hour, value: 4, to: now),
+         reminderIntent: .timeSensitive,
+         recurrenceUnit: .days,
+         recurrenceInterval: 2,
+         recurrenceMode: .finite,
+         recurrenceCount: 3,
+         recurrenceAnchorDate: now,
+         locationReminderLatitude: 37.3349,
+         locationReminderLongitude: -122.0090,
+         locationReminderRadius: 250,
+         locationReminderTrigger: .arriving,
+         locationReminderLabel: "Apple Park",
+         tags: [personal, work, planning]
+      )
+
+      let outline = NanoDo(
+         task: "Confirm localized screenshots",
+         createdAt: calendar.date(byAdding: .day, value: -2, to: now) ?? now,
+         dueDate: calendar.date(byAdding: .hour, value: 2, to: now),
+         isDone: false,
+         toDo: hello,
+         tag: work
+      )
+      let polish = NanoDo(
+         task: "Review visual spacing",
+         createdAt: calendar.date(byAdding: .day, value: -2, to: now) ?? now,
+         isDone: true,
+         toDo: hello,
+         tag: planning
+      )
+      let send = NanoDo(
+         task: "Capture App Store screenshots",
+         createdAt: calendar.date(byAdding: .day, value: -1, to: now) ?? now,
+         isDone: false,
+         toDo: hello,
+         tag: personal
+      )
+      hello.nanoDos = [outline, polish, send]
+
+      let review = ToDo(
+         task: "Review beta feedback",
+         notes: "Prioritize crash reports, sync issues, and unclear interaction copy before visual polish.",
+         createdAt: calendar.date(byAdding: .day, value: -2, to: now) ?? now,
+         dueDate: calendar.date(byAdding: .day, value: 1, to: now),
+         reminderIntent: .due,
+         tags: [work, planning]
+      )
+      review.nanoDos = [
+         NanoDo(task: "Read TestFlight notes", isDone: true, toDo: review, tag: work),
+         NanoDo(task: "Tag follow-up fixes", isDone: false, toDo: review, tag: planning)
+      ]
+
+      let workout = ToDo(
+         task: "Evening walk",
+         notes: "Keep the reminder gentle unless the day is packed.",
+         createdAt: calendar.date(byAdding: .day, value: -1, to: now) ?? now,
+         dueDate: calendar.date(bySettingHour: 18, minute: 30, second: 0, of: now),
+         reminderIntent: .soft,
+         tags: [health, personal]
+      )
+
+      let overdue = ToDo(
+         task: "Send invoice",
+         notes: "Overdue item included so the list looks like an active user's real day.",
+         createdAt: calendar.date(byAdding: .day, value: -5, to: now) ?? now,
+         dueDate: calendar.date(byAdding: .hour, value: -3, to: now),
+         reminderIntent: .timeSensitive,
+         tags: [work]
+      )
+
+      let groceries = ToDo(
+         task: "Pick up groceries",
+         createdAt: calendar.date(byAdding: .hour, value: -12, to: now) ?? now,
+         dueDate: calendar.date(byAdding: .hour, value: 8, to: now),
+         reminderIntent: .due,
+         locationReminderLatitude: 37.3318,
+         locationReminderLongitude: -122.0312,
+         locationReminderRadius: 180,
+         locationReminderTrigger: .arriving,
+         locationReminderLabel: "Market",
+         tags: [personal]
+      )
+
+      let done = ToDo(
+         task: "Archive old screenshots",
+         createdAt: calendar.date(byAdding: .day, value: -4, to: now) ?? now,
+         updatedAt: calendar.date(byAdding: .hour, value: -6, to: now),
+         lifecycleState: .done,
+         isDone: true,
+         tags: [planning]
+      )
+
+      [hello, review, workout, overdue, groceries, done].forEach(context.insert)
+      [outline, polish, send].forEach(context.insert)
+      review.nanoDos.forEach(context.insert)
+
+      do {
+         try context.save()
+      } catch {
+         assertionFailure("Failed to seed screenshot data: \(error)")
       }
    }
 }

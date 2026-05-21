@@ -3,7 +3,7 @@
 `ToDo` is configured to use the private CloudKit database for Apple-device replication of the local SwiftData store.
 
 Container identifier:
-- `iCloud.dev.iamshift.ToDo-TaskManagement`
+- `iCloud.dev.iamshift.toDo`
 
 Required Apple-side setup:
 - enable the iCloud capability for the app identifier

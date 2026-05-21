@@ -17,6 +17,7 @@ struct NotificationPayload: Codable, Sendable {
     let body: String
 
     let toDoID: UUID?
+    let toDoLocalIdentifier: String?
     let circleID: UUID?
 
     let isRecurring: Bool
@@ -30,6 +31,7 @@ struct NotificationPayload: Codable, Sendable {
         title: String,
         body: String,
         toDoID: UUID? = nil,
+        toDoLocalIdentifier: String? = nil,
         circleID: UUID? = nil,
         isRecurring: Bool = false,
         isTimeSensitive: Bool = false,
@@ -40,6 +42,7 @@ struct NotificationPayload: Codable, Sendable {
         self.title = title
         self.body = body
         self.toDoID = toDoID
+        self.toDoLocalIdentifier = toDoLocalIdentifier
         self.circleID = circleID
         self.isRecurring = isRecurring
         self.isTimeSensitive = isTimeSensitive

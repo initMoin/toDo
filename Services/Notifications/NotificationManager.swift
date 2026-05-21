@@ -59,10 +59,13 @@ final class NotificationManager: NSObject, ObservableObject {
    private let snoozeActionPrefix = "todo.snooze."
    private let initialSyncDelayNanoseconds: UInt64 = 1_500_000_000
    private let coalescedSyncDelayNanoseconds: UInt64 = 350_000_000
+   private let maxScheduledNotificationRequests = 64
 
    private var modelContainer: ModelContainer?
    private var remoteNotificationRegistrar: (@MainActor () -> Void)?
    private var scheduledSyncTask: Task<Void, Never>?
+   private var isSyncingScheduledNotifications = false
+   private var needsScheduledNotificationSyncAfterCurrent = false
 
    private override init() {
       super.init()
@@ -97,7 +100,9 @@ final class NotificationManager: NSObject, ObservableObject {
       registerNotificationCategories()
 
       do {
-         let granted = try await center.requestAuthorization(options: [.alert, .badge, .sound])
+         let granted = try await center.requestAuthorization(
+            options: [.alert, .badge, .sound]
+         )
          await refreshAuthorizationStatus()
 
          guard granted else { return }
@@ -144,7 +149,9 @@ final class NotificationManager: NSObject, ObservableObject {
       registrationState = .registered(token: token)
       currentAPNSToken = token
 
-      print("SYSLOG: APNs Token Updated:", token)
+      #if DEBUG
+      AppLog.info("APNs token updated. Token ends in \(token.suffix(8)).", logger: AppLog.notifications)
+      #endif
 
       Task {
          await SupabaseAuthStore.shared.syncCurrentDeviceTokenIfPossible()
@@ -185,16 +192,22 @@ final class NotificationManager: NSObject, ObservableObject {
       }
 
       guard let action = userInfo["todoAction"] as? String,
-            let toDoIdentifier = userInfo["todoIdentifier"] as? String,
             let container = modelContainer else {
          return .noData
       }
+
+      let toDoIdentifier = userInfo["todoIdentifier"] as? String
+      let toDoCloudIdentifier = (userInfo["todoCloudIdentifier"] as? String).flatMap(UUID.init(uuidString:))
 
       let context = ModelContext(container)
 
       do {
          let toDos = try context.fetch(FetchDescriptor<ToDo>())
-         guard let toDo = toDos.first(where: { persistentIdentifierString(for: $0) == toDoIdentifier }) else {
+         guard let toDo = toDo(
+            matchingLocalIdentifier: toDoIdentifier,
+            cloudIdentifier: toDoCloudIdentifier,
+            in: toDos
+         ) else {
             return .noData
          }
 
@@ -248,6 +261,19 @@ final class NotificationManager: NSObject, ObservableObject {
 
    func syncScheduledNotifications() async {
       guard let container = modelContainer else { return }
+      guard !isSyncingScheduledNotifications else {
+         needsScheduledNotificationSyncAfterCurrent = true
+         return
+      }
+
+      isSyncingScheduledNotifications = true
+      defer {
+         isSyncingScheduledNotifications = false
+         if needsScheduledNotificationSyncAfterCurrent {
+            needsScheduledNotificationSyncAfterCurrent = false
+            scheduleRefresh()
+         }
+      }
 
       registerNotificationCategories()
 
@@ -256,17 +282,8 @@ final class NotificationManager: NSObject, ObservableObject {
       do {
          let toDos = try context.fetch(FetchDescriptor<ToDo>())
          let now = Date()
-         let schedulableOccurrences = toDos
-            .filter(\.isActive)
-            .flatMap { toDo in
-               scheduledNotificationOccurrences(for: toDo, now: now).map { occurrence in
-                  ScheduledOccurrence(
-                     toDo: toDo,
-                     fireDate: occurrence.fireDate,
-                     occurrenceIndex: occurrence.occurrenceIndex
-                  )
-               }
-            }
+         let schedulableOccurrences = limitedScheduledOccurrences(for: toDos, now: now)
+         await updateAppIconBadge(for: toDos, now: now)
 
          let pendingIdentifiers = await center.pendingNotificationRequests()
             .map(\.identifier)
@@ -292,9 +309,11 @@ final class NotificationManager: NSObject, ObservableObject {
                for: notificationType,
                title: notificationTitle(for: occurrence.toDo, fireDate: occurrence.fireDate),
                body: notificationBody(for: occurrence.toDo),
-               isTimeSensitive: isTimeSensitive,
-               isQuiet: occurrence.toDo.reminderIntent == .soft
-            )
+	               isTimeSensitive: isTimeSensitive,
+	               isQuiet: occurrence.toDo.reminderIntent == .soft,
+	               soundOption: preferredSoundOption
+	            )
+            content.badge = NSNumber(value: appIconBadgeCount(for: toDos, now: occurrence.fireDate))
 
             var userInfo: [String: Any] = [
                "schemaVersion": 1,
@@ -325,7 +344,7 @@ final class NotificationManager: NSObject, ObservableObject {
             try await center.add(request)
          }
       } catch {
-         print("Failed to sync notifications: \(error)")
+         AppLog.error("Failed to sync notifications: \(error)", logger: AppLog.notifications)
       }
    }
 
@@ -414,14 +433,18 @@ final class NotificationManager: NSObject, ObservableObject {
       }
 
       if fireDate < .now {
-         return "Overdue ToDo"
+         return "ToDo: overdue"
+      }
+
+      if toDo.isRecurring {
+         return "ToDo: repeating"
       }
 
       switch toDo.reminderIntent {
       case .soft:
          return "ToDo reminder"
       case .due, .timeSensitive:
-         return "ToDo due"
+         return "ToDo: due"
       }
    }
 
@@ -459,6 +482,21 @@ final class NotificationManager: NSObject, ObservableObject {
       String(describing: toDo.id)
    }
 
+   private var preferredSoundOption: AppPreferences.NotificationSoundOption {
+      let rawValue = UserDefaults.standard.string(forKey: AppPreferences.Keys.notificationSoundOption)
+      return rawValue.flatMap(AppPreferences.NotificationSoundOption.init(rawValue:)) ?? .defaultSound
+   }
+
+   private func notificationSound(for option: AppPreferences.NotificationSoundOption) -> UNNotificationSound? {
+      guard option != .silent else { return nil }
+
+      if let bundledSoundName = option.bundledSoundName {
+         return UNNotificationSound(named: UNNotificationSoundName(rawValue: bundledSoundName))
+      }
+
+      return .default
+   }
+
    #if DEBUG
    func scheduleDebugNotification(
       scenario: NotificationDebugScenario,
@@ -469,11 +507,12 @@ final class NotificationManager: NSObject, ObservableObject {
       let content = NotificationContentBuilder.debugContent(
          for: scenario,
          toDoTitle: toDoTitle?.isEmpty == false ? toDoTitle! : "Review ToDo",
-         toDoIdentifier: toDo.map(persistentIdentifierString(for:)),
-         toDoCloudIdentifier: toDo?.cloudID
-      )
+	         toDoIdentifier: toDo.map(persistentIdentifierString(for:)),
+	         toDoCloudIdentifier: toDo?.cloudID
+	      )
+	      content.sound = notificationSound(for: preferredSoundOption)
 
-      let trigger = UNTimeIntervalNotificationTrigger(
+	      let trigger = UNTimeIntervalNotificationTrigger(
          timeInterval: max(seconds, 1),
          repeats: false
       )
@@ -541,6 +580,71 @@ final class NotificationManager: NSObject, ObservableObject {
       return occurrences
    }
 
+   private func limitedScheduledOccurrences(for toDos: [ToDo], now: Date) -> [ScheduledOccurrence] {
+      var occurrences: [ScheduledOccurrence] = []
+      occurrences.reserveCapacity(maxScheduledNotificationRequests)
+
+      let focusFilterMode = UserDefaults.standard.string(forKey: AppPreferences.Keys.toDoFocusFilterMode) ?? "all"
+
+      for toDo in toDos where toDo.isActive && toDo.matchesFocusFilter(modeRawValue: focusFilterMode) {
+         for occurrence in scheduledNotificationOccurrences(for: toDo, now: now) {
+            occurrences.append(ScheduledOccurrence(
+               toDo: toDo,
+               fireDate: occurrence.fireDate,
+               occurrenceIndex: occurrence.occurrenceIndex
+            ))
+         }
+
+         if occurrences.count > maxScheduledNotificationRequests * 2 {
+            occurrences.sort { $0.fireDate < $1.fireDate }
+            occurrences = Array(occurrences.prefix(maxScheduledNotificationRequests))
+         }
+      }
+
+      occurrences.sort { $0.fireDate < $1.fireDate }
+      return Array(occurrences.prefix(maxScheduledNotificationRequests))
+   }
+
+   private func updateAppIconBadge(for toDos: [ToDo], now: Date) async {
+      await withCheckedContinuation { continuation in
+         center.setBadgeCount(appIconBadgeCount(for: toDos, now: now)) { _ in
+            continuation.resume()
+         }
+      }
+   }
+
+   private func appIconBadgeCount(for toDos: [ToDo], now: Date) -> Int {
+      let policy = AppPreferences.AppIconBadgePolicy(
+         rawValue: UserDefaults.standard.string(forKey: AppPreferences.Keys.appIconBadgePolicy) ?? ""
+      ) ?? .overdue
+
+      guard policy != .off else { return 0 }
+
+      let calendar = Calendar.current
+      let activeToDos = toDos.filter(\.isActive)
+
+      switch policy {
+      case .off:
+         return 0
+      case .activeToDos:
+         return activeToDos.count
+      case .dueToday:
+         return activeToDos.filter { toDo in
+            toDo.dueDate.map { calendar.isDate($0, inSameDayAs: now) } ?? false
+         }.count
+      case .overdue:
+         return activeToDos.filter { toDo in
+            toDo.dueDate.map { $0 < now } ?? false
+         }.count
+      case .timeSensitive:
+         return activeToDos.filter { $0.reminderIntent == .timeSensitive }.count
+      case .scheduledReminders:
+         return activeToDos.filter { toDo in
+            scheduledNotificationOccurrences(for: toDo, now: now, limit: 1).isEmpty == false
+         }.count
+      }
+   }
+
    private func nextOccurrenceIndex(after date: Date, anchor: Date, unit: ToDoRecurrenceUnit, interval: Int) -> Int {
       guard date >= anchor else { return 0 }
 
@@ -594,19 +698,27 @@ final class NotificationManager: NSObject, ObservableObject {
       let occurrenceIndex: Int
    }
 
-   private func applyAction(identifier: String, toDoIdentifier: String) async {
+   private func applyAction(identifier: String, toDoIdentifier: String?, toDoCloudIdentifier: UUID?) async {
       guard let container = modelContainer else { return }
 
       let context = ModelContext(container)
 
       do {
          let toDos = try context.fetch(FetchDescriptor<ToDo>())
-         guard let toDo = toDos.first(where: { persistentIdentifierString(for: $0) == toDoIdentifier }) else {
+         guard let toDo = toDo(
+            matchingLocalIdentifier: toDoIdentifier,
+            cloudIdentifier: toDoCloudIdentifier,
+            in: toDos
+         ) else {
             return
          }
 
          if identifier == markDoneActionIdentifier {
             toDo.transition(to: .done)
+            if toDo.calendarEventIdentifier != nil {
+               try CalendarIntegrationService.shared.removeCalendarEvent(for: toDo)
+            }
+            LiveActivityService.shared.endActivity(for: toDo)
          } else if identifier.hasPrefix(snoozeActionPrefix),
                    let descriptor = SnoozeDescriptor(
                      identifier: String(identifier.dropFirst(snoozeActionPrefix.count))
@@ -618,6 +730,10 @@ final class NotificationManager: NSObject, ObservableObject {
                to: baseDate
             )
             toDo.markUpdated()
+            if UserDefaults.standard.bool(forKey: AppPreferences.Keys.mirrorDueDatesToCalendar),
+               toDo.isActive {
+               try await CalendarIntegrationService.shared.syncCalendarEvent(for: toDo)
+            }
          } else {
             return
          }
@@ -628,60 +744,93 @@ final class NotificationManager: NSObject, ObservableObject {
          }
          await syncScheduledNotifications()
       } catch {
-         print("Failed to apply notification action: \(error)")
+         AppLog.error("Failed to apply notification action: \(error)", logger: AppLog.notifications)
       }
+   }
+
+   private func toDo(
+      matchingLocalIdentifier localIdentifier: String?,
+      cloudIdentifier: UUID?,
+      in toDos: [ToDo]
+   ) -> ToDo? {
+      if let cloudIdentifier,
+         let toDo = toDos.first(where: { $0.cloudID == cloudIdentifier }) {
+         return toDo
+      }
+
+      if let localIdentifier,
+         let toDo = toDos.first(where: { persistentIdentifierString(for: $0) == localIdentifier }) {
+         return toDo
+      }
+
+      return nil
    }
 }
 
 extension NotificationManager: UNUserNotificationCenterDelegate {
-   nonisolated func userNotificationCenter(
+   func userNotificationCenter(
       _ center: UNUserNotificationCenter,
-      willPresent notification: UNNotification
-   ) async -> UNNotificationPresentationOptions {
+      willPresent notification: UNNotification,
+      withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+   ) {
       let content = notification.request.content
 
+      let options: UNNotificationPresentationOptions
       switch content.interruptionLevel {
       case .passive:
-         // Quiet reminders should remain in Notification Center only.
-         return [.list]
+         options = [.list, .badge]
       case .active, .timeSensitive, .critical:
-         var options: UNNotificationPresentationOptions = [.banner, .list]
+         var opts: UNNotificationPresentationOptions = [.banner, .list, .badge]
          if content.sound != nil {
-            options.insert(.sound)
+            opts.insert(.sound)
          }
-         return options
+         options = opts
       @unknown default:
-         var options: UNNotificationPresentationOptions = [.banner, .list]
+         var opts: UNNotificationPresentationOptions = [.banner, .list, .badge]
          if content.sound != nil {
-            options.insert(.sound)
+            opts.insert(.sound)
          }
-         return options
+         options = opts
       }
+      completionHandler(options)
    }
 
-   nonisolated func userNotificationCenter(
+   func userNotificationCenter(
       _ center: UNUserNotificationCenter,
-      didReceive response: UNNotificationResponse
-   ) async {
-      let content = response.notification.request.content
+      didReceive response: UNNotificationResponse,
+      withCompletionHandler completionHandler: @escaping () -> Void
+   ) {
+      Task { @MainActor in
+         defer { completionHandler() }
 
-      if response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+         let actionIdentifier = response.actionIdentifier
+         let content = response.notification.request.content
+
          let payload = NotificationRouter.payload(
             from: content.userInfo,
             title: content.title,
             body: content.body
-         ) {
-         await NotificationRouter.shared.route(payload: payload)
-      }
+         )
 
-      guard let toDoIdentifier = content.userInfo["todoIdentifier"] as? String else {
-         return
-      }
+         if actionIdentifier == UNNotificationDefaultActionIdentifier,
+            let payload {
+            NotificationRouter.shared.route(payload: payload)
+            return
+         }
 
-      await NotificationManager.shared.applyAction(
-         identifier: response.actionIdentifier,
-         toDoIdentifier: toDoIdentifier
-      )
+         let toDoIdentifier = content.userInfo["todoIdentifier"] as? String
+         let toDoCloudIdentifier = (content.userInfo["todoCloudIdentifier"] as? String).flatMap(UUID.init(uuidString:))
+
+         guard toDoIdentifier != nil || toDoCloudIdentifier != nil else {
+            return
+         }
+
+         await NotificationManager.shared.applyAction(
+            identifier: actionIdentifier,
+            toDoIdentifier: toDoIdentifier,
+            toDoCloudIdentifier: toDoCloudIdentifier
+         )
+      }
    }
 }
 
