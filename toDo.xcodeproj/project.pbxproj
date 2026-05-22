@@ -7,9 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		617A00102FD220000075F17B /* ToDosViewComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617A00112FD220000075F17B /* ToDosViewComponents.swift */; };
-		617A00122FD220000075F17B /* ToDoViewComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617A00132FD220000075F17B /* ToDoViewComponents.swift */; };
-		617A00142FD220000075F17B /* SettingsSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617A00152FD220000075F17B /* SettingsSupportViews.swift */; };
 		610LOC012FD000000075F17B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 610LOC032FD000000075F17B /* Localizable.xcstrings */; };
 		610LOC022FD000000075F17B /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 610LOC042FD000000075F17B /* InfoPlist.xcstrings */; };
 		610LOC052FD100000075F17B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 610LOC032FD000000075F17B /* Localizable.xcstrings */; };
@@ -33,6 +30,9 @@
 		611776CE2F4BFC890075F17B /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611776CF2F4BFC890075F17B /* AppTheme.swift */; };
 		611776D02F4BFC890075F17B /* ArchivesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611776D12F4BFC890075F17B /* ArchivesView.swift */; };
 		617000032FD110000075F17B /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617000022FD110000075F17B /* StatsView.swift */; };
+		617A00102FD220000075F17B /* ToDosViewComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617A00112FD220000075F17B /* ToDosViewComponents.swift */; };
+		617A00122FD220000075F17B /* ToDoViewComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617A00132FD220000075F17B /* ToDoViewComponents.swift */; };
+		617A00142FD220000075F17B /* SettingsSupportViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 617A00152FD220000075F17B /* SettingsSupportViews.swift */; };
 		6180EB3E2FB65343006AE5DD /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 61032D0B2F658DC300EB44B0 /* AppIcon.icon */; };
 		6180EBA92FB75CA6006AE5DD /* TrashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6180EBA82FB75CA1006AE5DD /* TrashView.swift */; };
 		61A09F012F6A20000075F17B /* AppTimePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A09F022F6A20000075F17B /* AppTimePreferences.swift */; };
@@ -158,9 +158,6 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		617A00112FD220000075F17B /* ToDosViewComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDosViewComponents.swift; sourceTree = "<group>"; };
-		617A00132FD220000075F17B /* ToDoViewComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDoViewComponents.swift; sourceTree = "<group>"; };
-		617A00152FD220000075F17B /* SettingsSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSupportViews.swift; sourceTree = "<group>"; };
 		61032D0B2F658DC300EB44B0 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = AppIcon.icon; sourceTree = "<group>"; };
 		610LOC032FD000000075F17B /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		610LOC042FD000000075F17B /* InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
@@ -188,6 +185,9 @@
 		616BF01D2F3A6D0A002F8D74 /* ToDoTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ToDoTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		616BF0272F3A6D0A002F8D74 /* ToDoUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ToDoUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		617000022FD110000075F17B /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
+		617A00112FD220000075F17B /* ToDosViewComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDosViewComponents.swift; sourceTree = "<group>"; };
+		617A00132FD220000075F17B /* ToDoViewComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDoViewComponents.swift; sourceTree = "<group>"; };
+		617A00152FD220000075F17B /* SettingsSupportViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSupportViews.swift; sourceTree = "<group>"; };
 		6180EBA82FB75CA1006AE5DD /* TrashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashView.swift; sourceTree = "<group>"; };
 		61A09F022F6A20000075F17B /* AppTimePreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTimePreferences.swift; sourceTree = "<group>"; };
 		61A09F042F6A20000075F17B /* LocationTimeZoneService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationTimeZoneService.swift; sourceTree = "<group>"; };
@@ -1220,7 +1220,7 @@
 				CODE_SIGN_ENTITLEMENTS = Resources/ToDo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1232,7 +1232,6 @@
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "ToDo uses location only when you choose arrival or leaving reminders for specific ToDos.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ToDo uses your location to set up arrival and leaving reminders you choose.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -1269,7 +1268,7 @@
 				CODE_SIGN_ENTITLEMENTS = Resources/ToDo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1281,7 +1280,6 @@
 				INFOPLIST_KEY_NSLocationAlwaysAndWhenInUseUsageDescription = "ToDo uses location only when you choose arrival or leaving reminders for specific ToDos.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "ToDo uses your location to set up arrival and leaving reminders you choose.";
 				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
@@ -1442,7 +1440,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.ToDoTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1468,7 +1466,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.ToDoTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1493,7 +1491,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.ToDoUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1515,7 +1513,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 3.0;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.ToDoUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1538,7 +1536,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = "ToDo Watch App/ToDoWatch.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1576,7 +1574,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = "ToDo Watch App/ToDoWatch.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1625,7 +1623,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ToDo Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ToDo Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Debug;
 		};
@@ -1648,7 +1646,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ToDo Watch App.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ToDo Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Release;
 		};
@@ -1670,7 +1668,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_TARGET_NAME = "ToDo Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Debug;
 		};
@@ -1692,7 +1690,7 @@
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
 				TEST_TARGET_NAME = "ToDo Watch App";
-				WATCHOS_DEPLOYMENT_TARGET = 26.5;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Release;
 		};
@@ -1704,7 +1702,7 @@
 				CODE_SIGN_ENTITLEMENTS = ToDoWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ToDoWidget/Info.plist;
@@ -1741,7 +1739,7 @@
 				CODE_SIGN_ENTITLEMENTS = ToDoWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ToDoWidget/Info.plist;

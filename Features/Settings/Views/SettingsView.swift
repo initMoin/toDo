@@ -216,18 +216,18 @@ struct SettingsView: View {
                   .foregroundStyle(AppColor.textPrimary)
                }
 
-               #if DEBUG
-               settingsSection(String(localized: "Developer")) {
-                  settingsActionRow(
-                     systemName: "sparkles",
-                     title: "Run Guided Onboarding",
-                     detail: "Development-only trigger for testing the first-run guided setup."
-                  ) {
-                     onboardingManager.restartForTesting()
-                     closeView()
-                  }
-               }
-               #endif
+//               #if DEBUG
+//               settingsSection(String(localized: "Developer")) {
+//                  settingsActionRow(
+//                     systemName: "sparkles",
+//                     title: "Run Guided Onboarding",
+//                     detail: "Development-only trigger for testing the first-run guided setup."
+//                  ) {
+//                     onboardingManager.restartForTesting()
+//                     closeView()
+//                  }
+//               }
+//               #endif
 
                madeByBrandView
                   .frame(maxWidth: .infinity)

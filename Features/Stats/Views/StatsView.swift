@@ -538,6 +538,14 @@ private struct StatsInsightCard: View {
    @Binding var isEnabled: Bool
    @State private var animateGlow = false
    @State private var didUnlock = false
+   
+   @State private var orbOneSize: CGFloat = 150
+   @State private var orbTwoSize: CGFloat = 92
+   @State private var orbOneOpacity: Double = 0.14
+   @State private var orbTwoOpacity: Double = 0.12
+   @State private var orbOneOffset: CGSize = CGSize(width: 48, height: -58)
+   @State private var orbTwoOffset: CGSize = CGSize(width: -220, height: 164)
+   @State private var backgroundShift: CGFloat = -0.18
 
    var body: some View {
       ZStack(alignment: .topTrailing) {
@@ -613,9 +621,15 @@ private struct StatsInsightCard: View {
             .stroke(AppColor.secondary.opacity(isEnabled ? 0.45 : 0.24), lineWidth: 1)
       }
       .onAppear {
-         withAnimation(.easeInOut(duration: 1.9).repeatForever(autoreverses: true)) {
+//         withAnimation(.easeInOut(duration: 1.9).repeatForever(autoreverses: true)) {
+         withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
             animateGlow = true
+            
+            backgroundShift = 0.22
          }
+         
+         randomizeOrbState()
+         
       }
       .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isEnabled)
    }
@@ -627,24 +641,81 @@ private struct StatsInsightCard: View {
             AppColor.secondary.opacity(isEnabled ? 0.18 : 0.1),
             AppColor.tertiary.opacity(isEnabled ? 0.12 : 0.06)
          ],
-         startPoint: .topLeading,
-         endPoint: .bottomTrailing
+//         startPoint: .topLeading,
+//         endPoint: .bottomTrailing
+         startPoint: UnitPoint(x: backgroundShift, y: 0),
+         endPoint: UnitPoint(x: 1.0 - backgroundShift, y: 1)
       )
    }
 
    private var decorativeOrbs: some View {
       ZStack {
          Circle()
-            .fill(AppColor.secondary.opacity(animateGlow ? 0.18 : 0.08))
-            .frame(width: animateGlow ? 162 : 144, height: animateGlow ? 162 : 144)
-            .offset(x: animateGlow ? 38 : 54, y: animateGlow ? -50 : -64)
+//            .fill(AppColor.secondary.opacity(animateGlow ? 0.18 : 0.08))
+//            .frame(width: animateGlow ? 162 : 144, height: animateGlow ? 162 : 144)
+//            .offset(x: animateGlow ? 38 : 54, y: animateGlow ? -50 : -64)
+            .fill(AppColor.secondary.opacity(orbOneOpacity))
+            .frame(width: orbOneSize, height: orbOneSize)
+            .blur(radius: animateGlow ? 0 : 6)
+            .offset(orbOneOffset)
+            .animation(.easeInOut(duration: 4.8), value: orbOneSize)
+            .animation(.easeInOut(duration: 4.8), value: orbOneOpacity)
+            .animation(.easeInOut(duration: 4.8), value: orbOneOffset)
 
          Circle()
-            .fill(AppColor.tertiary.opacity(animateGlow ? 0.16 : 0.07))
-            .frame(width: animateGlow ? 100 : 86, height: animateGlow ? 100 : 86)
-            .offset(x: animateGlow ? -210 : -226, y: animateGlow ? 158 : 174)
+//            .fill(AppColor.tertiary.opacity(animateGlow ? 0.16 : 0.07))
+//            .frame(width: animateGlow ? 100 : 86, height: animateGlow ? 100 : 86)
+//            .offset(x: animateGlow ? -210 : -226, y: animateGlow ? 158 : 174)
+            .fill(AppColor.tertiary.opacity(orbTwoOpacity))
+            .frame(width: orbTwoSize, height: orbTwoSize)
+            .blur(radius: animateGlow ? 0 : 5)
+            .offset(orbTwoOffset)
+            .animation(.easeInOut(duration: 5.6), value: orbTwoSize)
+            .animation(.easeInOut(duration: 5.6), value: orbTwoOpacity)
+            .animation(.easeInOut(duration: 5.6), value: orbTwoOffset)
       }
       .allowsHitTesting(false)
+   }
+   
+   
+   private func randomizeOrbState() {
+      orbOneSize = CGFloat.random(in: 132...178)
+      orbTwoSize = CGFloat.random(in: 82...118)
+      
+      orbOneOpacity = Double.random(in: 0.08...0.18)
+      orbTwoOpacity = Double.random(in: 0.06...0.16)
+      
+      orbOneOffset = CGSize(
+         width: CGFloat.random(in: 26...64),
+         height: CGFloat.random(in: -76 ... -36)
+      )
+      
+      orbTwoOffset = CGSize(
+         width: CGFloat.random(in: -240 ... -188),
+         height: CGFloat.random(in: 132 ... 188)
+      )
+      
+      Timer.scheduledTimer(withTimeInterval: 5.2, repeats: true) { _ in
+         Task { @MainActor in
+            withAnimation(.easeInOut(duration: 5.2)) {
+               orbOneSize = CGFloat.random(in: 132...178)
+               orbTwoSize = CGFloat.random(in: 82...118)
+               
+               orbOneOpacity = Double.random(in: 0.08...0.18)
+               orbTwoOpacity = Double.random(in: 0.06...0.16)
+               
+               orbOneOffset = CGSize(
+                  width: CGFloat.random(in: 26...64),
+                  height: CGFloat.random(in: -76 ... -36)
+               )
+               
+               orbTwoOffset = CGSize(
+                  width: CGFloat.random(in: -240 ... -188),
+                  height: CGFloat.random(in: 132 ... 188)
+               )
+            }
+         }
+      }
    }
 }
 
