@@ -51,7 +51,7 @@ struct SyncHealthStatusView: View {
                     .contentShape(.rect(cornerRadius: 14))
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(syncCoordinator.syncActivityState == .failed ? "Retry ToDo Sync" : "Refresh ToDo Sync")
+                .accessibilityLabel(syncCoordinator.syncActivityState == .failed ? "Retry toDō Sync" : "Refresh toDō Sync")
             }
         }
         .padding(.horizontal, 14)
@@ -67,16 +67,16 @@ struct SyncHealthStatusView: View {
 
     private var statusTitle: String {
         if syncCoordinator.pendingRestartSyncMode != nil {
-            return String(localized: "Needs Relaunch")
+            return String(localized: "Ready After Restart")
         }
 
         if syncCoordinator.preferredSyncMode == .syncEverywhere,
            !isAccountAuthenticated {
-            return String(localized: "Needs Sign In")
+            return String(localized: "Sign In Needed")
         }
 
         if syncCoordinator.preferredSyncMode != syncCoordinator.effectiveSyncMode {
-            return String(localized: "Activating")
+            return String(localized: "Getting Ready")
         }
 
         if syncCoordinator.effectiveSyncMode != .syncEverywhere {
@@ -92,11 +92,11 @@ struct SyncHealthStatusView: View {
             return String(localized: "Active")
         case .activating:
             return syncCoordinator.currentSyncPhase == .queuedLocalChanges
-                ? String(localized: "Waiting to Sync")
-                : String(localized: "Activating")
+                ? String(localized: "Waiting")
+                : String(localized: "Getting Ready")
         case .syncing:
             return syncCoordinator.currentSyncPhase == .queuedLocalChanges
-                ? String(localized: "Waiting to Sync")
+                ? String(localized: "Waiting")
                 : syncCoordinator.currentSyncPhase?.title ?? String(localized: "Syncing")
         case .synced:
             return String(localized: "Active")
@@ -115,46 +115,46 @@ struct SyncHealthStatusView: View {
 
     private var statusDetail: String {
         if let pendingMode = syncCoordinator.pendingRestartSyncMode {
-            return String(format: String(localized: "%@ is saved. Close and reopen ToDo when you are ready to activate it."), pendingMode.title)
+            return String(format: String(localized: "%@ is saved. Close and reopen toDō when you are ready to use it."), pendingMode.title)
         }
 
         if syncCoordinator.preferredSyncMode == .syncEverywhere,
            !isAccountAuthenticated {
-            return String(format: String(localized: "ToDo Sync is selected, but this device is still using %@ until you sign in."), syncCoordinator.effectiveSyncMode.title)
+            return String(format: String(localized: "toDō Sync is selected. Sign in to turn it on; until then, toDō stays with %@."), syncCoordinator.effectiveSyncMode.title)
         }
 
         if syncCoordinator.preferredSyncMode != syncCoordinator.effectiveSyncMode {
-            return String(format: String(localized: "%@ is selected. ToDo is still using %@ until setup completes."), syncCoordinator.preferredSyncMode.title, syncCoordinator.effectiveSyncMode.title)
+            return String(format: String(localized: "%@ is selected. toDō will keep using %@ until the switch is finished."), syncCoordinator.preferredSyncMode.title, syncCoordinator.effectiveSyncMode.title)
         }
 
         if syncCoordinator.effectiveSyncMode != .syncEverywhere {
-            return String(format: String(localized: "ToDo is currently using %@."), syncCoordinator.effectiveSyncMode.title)
+            return String(format: String(localized: "toDō is using %@."), syncCoordinator.effectiveSyncMode.title)
         }
 
         if unresolvedConflictCount > 0 {
             return unresolvedConflictCount == 1
-                ? String(localized: "1 ToDo changed in two places. Review it before ToDo overwrites either version.")
-                : String(format: String(localized: "%@ ToDos changed in two places. Review them before ToDo overwrites either version."), AppLocalization.numberString(unresolvedConflictCount))
+                ? String(localized: "1 toDō changed on more than one device. Choose which version to keep.")
+                : String(format: String(localized: "%@ toDōs changed on more than one device. Choose which versions to keep."), AppLocalization.numberString(unresolvedConflictCount))
         }
 
         switch syncCoordinator.syncActivityState {
         case .idle:
             return syncCoordinator.lastSuccessfulSyncAt.map(lastSyncMessage)
-                ?? String(localized: "ToDo Sync is active and waiting for changes.")
+                ?? String(localized: "toDō Sync is on and ready.")
         case .activating:
             return syncCoordinator.currentSyncPhase?.detail
-                ?? String(localized: "Preparing local ToDos and connecting this device to your account.")
+                ?? String(localized: "Getting this device ready.")
         case .syncing:
             return syncCoordinator.currentSyncPhase?.detail
-                ?? String(localized: "Sending recent changes and checking for updates.")
+                ?? String(localized: "Sharing changes and checking for updates.")
         case .synced:
             return syncCoordinator.lastSuccessfulSyncAt.map(lastSyncMessage)
-                ?? String(localized: "ToDo Sync is active and up to date.")
+                ?? String(localized: "toDō Sync is on and up to date.")
         case .failed:
             let phasePrefix = syncCoordinator.lastFailedSyncPhase.map { "\($0.title): " } ?? ""
             return syncCoordinator.lastSyncErrorMessage.map {
-                String(format: String(localized: "Last attempt failed. %@%@"), phasePrefix, $0)
-            } ?? String(localized: "The last sync attempt failed. Tap refresh to try again.")
+                String(format: String(localized: "The last sync did not finish. %@%@"), phasePrefix, $0)
+            } ?? String(localized: "The last sync did not finish. Tap refresh to try again.")
         }
     }
 

@@ -184,7 +184,7 @@ enum AuthError: LocalizedError {
       case .rejected(let message):
          return message
       case .missingConfiguration:
-         return "ToDo Sync is not configured on this Watch app."
+         return "toDō Sync is not configured on this Watch app."
       }
    }
 }

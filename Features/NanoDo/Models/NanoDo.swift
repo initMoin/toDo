@@ -10,6 +10,8 @@ import SwiftData
 
 @Model
 final class NanoDo {
+    #Index<NanoDo>([\.ownerUserID])
+
     var cloudID: UUID? = nil
     var ownerUserID: UUID? = nil
     var task: String = ""

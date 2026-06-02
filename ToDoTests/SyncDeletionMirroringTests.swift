@@ -8,6 +8,10 @@ import Testing
 struct SyncDeletionMirroringTests {
    @Test func syncedDeleteRemovesMatchingDeviceOnlyCounterpartByDefault() throws {
       let context = try makeContext()
+      let defaults = try #require(UserDefaults(suiteName: "SyncDeletionMirroringTests.removeDefault"))
+      defaults.set(true, forKey: AppPreferences.Keys.mirrorSyncDeletesToDeviceOnly)
+      defer { defaults.removePersistentDomain(forName: "SyncDeletionMirroringTests.removeDefault") }
+
       let createdAt = Date(timeIntervalSinceReferenceDate: 10)
       let localToDo = ToDo(task: "Budget", createdAt: createdAt)
       let syncedToDo = ToDo(
@@ -19,7 +23,11 @@ struct SyncDeletionMirroringTests {
       context.insert(localToDo)
       context.insert(syncedToDo)
 
-      SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: syncedToDo, in: context)
+      SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+         for: syncedToDo,
+         in: context,
+         userDefaults: defaults
+      )
       context.delete(syncedToDo)
       try context.save()
 
@@ -84,7 +92,11 @@ struct SyncDeletionMirroringTests {
    }
 
    private func makeContext() throws -> ModelContext {
-      let configuration = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+      let configuration = ModelConfiguration(
+         UUID().uuidString,
+         isStoredInMemoryOnly: true,
+         cloudKitDatabase: .none
+      )
       let container = try ModelContainer(
          for: ToDo.self,
          Tag.self,

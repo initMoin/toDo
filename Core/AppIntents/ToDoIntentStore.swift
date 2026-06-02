@@ -35,6 +35,15 @@ enum ToDoIntentStore {
       ModelContext(try modelContainer())
    }
 
+   static var visibleOwnerUserID: UUID? {
+      let syncMode = SyncCoordinator.shared.effectiveSyncMode
+      return syncMode == .syncEverywhere ? SupabaseAuthStore.shared.scopedOwnerUserID : nil
+   }
+
+   static func isVisibleInCurrentScope(_ toDo: ToDo) -> Bool {
+      toDo.ownerUserID == visibleOwnerUserID
+   }
+
    static func persistentIdentifierString(for toDo: ToDo) -> String {
       String(describing: toDo.id)
    }

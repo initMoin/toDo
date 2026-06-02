@@ -22,9 +22,14 @@ enum SyncDeletionMirroring {
         let syncedID = syncedToDo.id
 
         do {
-            let toDos = try context.fetch(FetchDescriptor<ToDo>())
+            let descriptor = FetchDescriptor<ToDo>(
+                predicate: #Predicate<ToDo> { toDo in
+                    toDo.ownerUserID == nil
+                }
+            )
+            let toDos = try context.fetch(descriptor)
             let counterparts = toDos.filter {
-                guard $0.id != syncedID, $0.ownerUserID == nil else { return false }
+                guard $0.id != syncedID else { return false }
                 if let syncedCloudID = syncedToDo.cloudID, let localCloudID = $0.cloudID {
                     return localCloudID == syncedCloudID
                 }
@@ -35,7 +40,7 @@ enum SyncDeletionMirroring {
                 context.delete(counterpart)
             }
         } catch {
-            AppLog.error("Failed to mirror ToDo Sync delete locally: \(error)", logger: AppLog.sync)
+            AppLog.error("Failed to mirror toDō Sync delete locally: \(error)", logger: AppLog.sync)
         }
     }
 }

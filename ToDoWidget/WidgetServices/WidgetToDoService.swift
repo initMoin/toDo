@@ -50,7 +50,7 @@ struct WidgetToDoService {
             return ToDoWidgetItem(
                id: String(describing: toDo.id),
                cloudID: toDo.cloudID,
-               missive: toDo.task.isEmpty ? "Untitled ToDo" : toDo.task,
+               missive: toDo.task.isEmpty ? "Untitled toDō" : toDo.task,
                due: toDo.dueDate,
                isDone: toDo.isDoneState,
                isOverdue: isOverdue,
@@ -127,7 +127,7 @@ struct WidgetToDoService {
       SharedStoreLocation.ensureStoreDirectoryExists(for: storeURL)
 
       let configuration = ModelConfiguration(
-         "ToDo",
+         "toDō",
          url: storeURL,
          cloudKitDatabase: CloudKitConfig.database(for: syncMode)
       )

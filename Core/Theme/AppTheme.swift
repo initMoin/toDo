@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 enum AppAnimation {
     static let snappyFast = Animation.snappy(duration: 0.2)
@@ -30,20 +33,175 @@ enum AppActionIntent {
     }
 }
 
+enum AppThemeOption: String, CaseIterable, Identifiable {
+    case classic
+    case coastal
+    case ember
+    case orchard
+    case midnight
+    case shift
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .classic:
+            return String(localized: "Classic")
+        case .coastal:
+            return String(localized: "Coastal")
+        case .ember:
+            return String(localized: "Ember")
+        case .orchard:
+            return String(localized: "Orchard")
+        case .midnight:
+            return String(localized: "Midnight")
+        case .shift:
+            return String(localized: "shift")
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .classic:
+            return String(localized: "The original toDō yellow and blue.")
+        case .coastal:
+            return String(localized: "Blue-green focus with a sunlit accent.")
+        case .ember:
+            return String(localized: "Warm, loud, and built for urgency.")
+        case .orchard:
+            return String(localized: "Fresh greens with a calm workday feel.")
+        case .midnight:
+            return String(localized: "Deep blue accents with electric highlights.")
+        case .shift:
+            return String(localized: "Bold red, dark ink, clean white, and electric lime.")
+        }
+    }
+
+    var palette: AppThemePalette {
+        switch self {
+        case .classic:
+            return .assetBacked
+        case .coastal:
+            return AppThemePalette(
+                main: Color(red: 0.08, green: 0.55, blue: 0.68),
+                secondary: Color(red: 0.07, green: 0.38, blue: 0.64),
+                tertiary: Color(red: 0.98, green: 0.73, blue: 0.18),
+                destructive: Color(red: 0.88, green: 0.20, blue: 0.24),
+                actionPrimary: Color(red: 0.05, green: 0.47, blue: 0.68),
+                onAction: .white,
+                iconAccent: Color(red: 0.05, green: 0.47, blue: 0.68)
+            )
+        case .ember:
+            return AppThemePalette(
+                main: Color(red: 0.93, green: 0.31, blue: 0.12),
+                secondary: Color(red: 0.98, green: 0.58, blue: 0.16),
+                tertiary: Color(red: 0.35, green: 0.12, blue: 0.08),
+                destructive: Color(red: 0.78, green: 0.05, blue: 0.07),
+                actionPrimary: Color(red: 0.93, green: 0.31, blue: 0.12),
+                onAction: .white,
+                iconAccent: Color(red: 0.82, green: 0.22, blue: 0.10)
+            )
+        case .orchard:
+            return AppThemePalette(
+                main: Color(red: 0.20, green: 0.56, blue: 0.28),
+                secondary: Color(red: 0.56, green: 0.69, blue: 0.24),
+                tertiary: Color(red: 0.95, green: 0.65, blue: 0.18),
+                destructive: Color(red: 0.75, green: 0.14, blue: 0.16),
+                actionPrimary: Color(red: 0.14, green: 0.48, blue: 0.28),
+                onAction: .white,
+                iconAccent: Color(red: 0.14, green: 0.48, blue: 0.28)
+            )
+        case .midnight:
+            return AppThemePalette(
+                main: Color(red: 0.18, green: 0.23, blue: 0.72),
+                secondary: Color(red: 0.17, green: 0.65, blue: 0.88),
+                tertiary: Color(red: 0.90, green: 0.78, blue: 0.23),
+                destructive: Color(red: 0.95, green: 0.18, blue: 0.29),
+                actionPrimary: Color(red: 0.22, green: 0.31, blue: 0.86),
+                onAction: .white,
+                iconAccent: Color(red: 0.22, green: 0.31, blue: 0.86)
+            )
+        case .shift:
+            return AppThemePalette(
+                main: AppThemePalette.color(hex: 0xB50000),
+                secondary: AppThemePalette.adaptiveColor(light: 0x22181C, dark: 0xFCFCFC),
+                tertiary: AppThemePalette.color(hex: 0xC6F91F),
+                destructive: AppThemePalette.color(hex: 0xB50000),
+                actionPrimary: AppThemePalette.color(hex: 0xB50000),
+                onAction: AppThemePalette.color(hex: 0xFCFCFC),
+                iconAccent: AppThemePalette.color(hex: 0xB50000)
+            )
+        }
+    }
+}
+
+struct AppThemePalette {
+    let main: Color
+    let secondary: Color
+    let tertiary: Color
+    let destructive: Color
+    let actionPrimary: Color
+    let onAction: Color
+    let iconAccent: Color
+
+    static let assetBacked = AppThemePalette(
+        main: Color("appBrandMain"),
+        secondary: Color("appBrandSecondary"),
+        tertiary: Color("appBrandTertiary"),
+        destructive: Color("appBrandDestructive"),
+        actionPrimary: Color("appActionPrimary"),
+        onAction: Color("appOnAction"),
+        iconAccent: Color("appActionPrimary")
+    )
+
+    static func color(hex: Int) -> Color {
+        Color(
+            red: Double((hex >> 16) & 0xFF) / 255.0,
+            green: Double((hex >> 8) & 0xFF) / 255.0,
+            blue: Double(hex & 0xFF) / 255.0
+        )
+    }
+
+    static func adaptiveColor(light: Int, dark: Int) -> Color {
+        #if canImport(UIKit)
+        return Color(UIColor { traits in
+            let hex = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(
+                red: CGFloat((hex >> 16) & 0xFF) / 255.0,
+                green: CGFloat((hex >> 8) & 0xFF) / 255.0,
+                blue: CGFloat(hex & 0xFF) / 255.0,
+                alpha: 1
+            )
+        })
+        #else
+        return color(hex: light)
+        #endif
+    }
+}
+
 enum AppColor {
-    static let main = Color("appBrandMain")
-    static let secondary = Color("appBrandSecondary")
+    private static var selectedTheme: AppThemeOption {
+        let rawValue = UserDefaults.standard.string(forKey: AppPreferences.Keys.appTheme)
+        return rawValue.flatMap(AppThemeOption.init(rawValue:)) ?? .classic
+    }
+
+    private static var palette: AppThemePalette {
+        selectedTheme.palette
+    }
+
+    static var main: Color { palette.main }
+    static var secondary: Color { palette.secondary }
     static let white = Color("brandWhitish")
     static let black = Color("brandDarkish")
-    static let tertiary = Color("appBrandTertiary")
-    static let destructive = Color("appBrandDestructive")
+    static var tertiary: Color { palette.tertiary }
+    static var destructive: Color { palette.destructive }
 
-    static let actionPrimary = Color("appActionPrimary")
-    static let actionSecondary = secondary
-    static let actionSuccess = tertiary
-    static let actionNeutral = secondary
-    static let actionDestructive = destructive
-    static let onAction = Color("appOnAction")
+    static var actionPrimary: Color { palette.actionPrimary }
+    static var actionSecondary: Color { secondary }
+    static var actionSuccess: Color { tertiary }
+    static var actionNeutral: Color { secondary }
+    static var actionDestructive: Color { destructive }
+    static var onAction: Color { palette.onAction }
 
     static let textPrimary = Color("appTextPrimary")
     static let textSecondary = Color("appTextSecondary")
@@ -52,15 +210,32 @@ enum AppColor {
     static let surfaceElevated = Color("appSurfaceElevated")
     static let surfaceMuted = Color("appSurfaceMuted")
     static let border = Color("appBorder")
-    static let iconCircle = actionPrimary
+    static var iconCircle: Color { palette.iconAccent }
+    static var iconAccent: Color { palette.iconAccent }
     static let shadow = Color("appShadow")
+
+    static func headerForeground(for colorScheme: ColorScheme) -> Color {
+        selectedTheme == .classic && colorScheme == .dark ? black : white
+    }
+
+    static func headerControlForeground(for colorScheme: ColorScheme) -> Color {
+        selectedTheme == .classic ? main : white
+    }
+
+    static func headerControlBackground(for colorScheme: ColorScheme) -> Color {
+        if selectedTheme == .classic {
+            return colorScheme == .dark ? black : white
+        }
+
+        return white.opacity(0.18)
+    }
 }
 
 enum AppTypography {
     private static let displayFontName = "CalSans-Regular"
-    private static let bodyLightFontName = "CarbonPlusLight"
-    private static let bodyRegularFontName = "CarbonPlusRegular"
-    private static let subtitleBoldFontName = "CarbonPlusBold"
+    private static let bodyLightFontName = "Jura-Light"
+    private static let bodyRegularFontName = "Jura-Regular"
+    private static let subtitleBoldFontName = "Jura-Bold"
 
     static func title(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
         .custom(displayFontName, size: size, relativeTo: textStyle)
@@ -124,7 +299,7 @@ extension Font {
 
 extension View {
     func appBaseTypography() -> some View {
-        self.font(.appBody(17))
+        modifier(AppThemeRefreshModifier())
     }
 
     func appNavigationChrome() -> some View {
@@ -144,6 +319,54 @@ extension View {
         self
             .disabled(disabled)
             .allowsHitTesting(!disabled)
+    }
+
+    @ViewBuilder
+    func appInteractiveCircleGlass(tint: Color) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.tint(tint).interactive(), in: .circle)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func appInteractiveCapsuleGlass(tint: Color) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.tint(tint).interactive(), in: .capsule)
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func appInteractiveRoundedGlass(tint: Color, cornerRadius: CGFloat) -> some View {
+        if #available(iOS 26.0, *) {
+            self.glassEffect(.regular.tint(tint).interactive(), in: .rect(cornerRadius: cornerRadius))
+        } else {
+            self
+        }
+    }
+}
+
+private struct AppThemeRefreshModifier: ViewModifier {
+    @AppStorage(AppPreferences.Keys.appTheme) private var appThemeRaw = AppThemeOption.classic.rawValue
+
+    func body(content: Content) -> some View {
+        content
+            .font(.appBody(17))
+            .environment(\.appThemeRefreshToken, appThemeRaw)
+    }
+}
+
+private struct AppThemeRefreshTokenKey: EnvironmentKey {
+    static let defaultValue = AppThemeOption.classic.rawValue
+}
+
+private extension EnvironmentValues {
+    var appThemeRefreshToken: String {
+        get { self[AppThemeRefreshTokenKey.self] }
+        set { self[AppThemeRefreshTokenKey.self] = newValue }
     }
 }
 
@@ -189,9 +412,15 @@ struct AppSettingsDetailHeader<Trailing: View>: View {
                 } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(AppColor.main)
+                        .foregroundStyle(AppColor.headerControlForeground(for: colorScheme))
                         .frame(width: 36, height: 36)
-                        .background(headerButtonBackground, in: Circle())
+                        .background {
+                            if #unavailable(iOS 26.0) {
+                                Circle()
+                                    .fill(headerButtonBackground)
+                            }
+                        }
+                        .appInteractiveCircleGlass(tint: headerButtonBackground)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(backAccessibilityLabel)
@@ -217,11 +446,11 @@ struct AppSettingsDetailHeader<Trailing: View>: View {
     }
 
     private var headerForeground: Color {
-        colorScheme == .dark ? AppColor.black : AppColor.white
+        AppColor.headerForeground(for: colorScheme)
     }
 
     private var headerButtonBackground: Color {
-        colorScheme == .dark ? AppColor.black : AppColor.white
+        AppColor.headerControlBackground(for: colorScheme)
     }
 }
 
@@ -249,25 +478,32 @@ struct AppCircleActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let foreground: Color = {
             guard isEnabled else { return AppColor.textSecondary }
-            return AppColor.onAction
+//            return AppColor.onAction
+           return AppColor.black
         }()
 
         let background: Color = {
             guard isEnabled else { return AppColor.iconCircle.opacity(0.28) }
-            return configuration.isPressed ? intent.pressedBackground : AppColor.iconCircle
+//            return configuration.isPressed ? intent.pressedBackground : AppColor.iconCircle
+           return AppColor.main
         }()
 
         return configuration.label
             .foregroundStyle(foreground)
             .frame(width: size, height: size)
-            .background(
-                Circle()
-                    .fill(background)
-            )
-            .overlay(
-                Circle()
-                    .stroke(AppColor.border, lineWidth: 1)
-            )
+            .background {
+                if #unavailable(iOS 26.0) {
+                    Circle()
+                        .fill(background)
+                }
+            }
+            .appInteractiveCircleGlass(tint: background)
+            .overlay {
+                if #unavailable(iOS 26.0) {
+                    Circle()
+                        .stroke(AppColor.border, lineWidth: 1)
+                }
+            }
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(AppAnimation.easeFast, value: configuration.isPressed)
     }
@@ -283,10 +519,13 @@ struct AppSemanticTextButtonStyle: ButtonStyle {
             .foregroundStyle(foreground)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(background)
-            )
+            .background {
+                if #unavailable(iOS 26.0) {
+                    Capsule()
+                        .fill(background)
+                }
+            }
+            .appInteractiveCapsuleGlass(tint: background)
             .animation(AppAnimation.easeFast, value: configuration.isPressed)
     }
 }
@@ -309,10 +548,13 @@ struct AppToolbarToggleButtonStyle: ButtonStyle {
         return configuration.label
             .foregroundStyle(foreground)
             .frame(width: size, height: size)
-            .background(
-                Circle()
-                    .fill(background)
-            )
+            .background {
+                if #unavailable(iOS 26.0) {
+                    Circle()
+                        .fill(background)
+                }
+            }
+            .appInteractiveCircleGlass(tint: background)
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(AppAnimation.easeFast, value: configuration.isPressed)
             .opacity(isEnabled ? 1 : 0.4)

@@ -35,8 +35,10 @@ struct WatchDirectSyncClient {
          return
       case .create:
          try await create(action, session: session)
-      case .complete, .reopen, .setDueDate, .snooze:
+      case .complete, .reopen, .archive, .trash, .updateTask, .setDueDate, .snooze:
          try await update(action, session: session)
+      case .completeNanoDo, .reopenNanoDo, .deleteNanoDo:
+         throw DirectSyncError.invalidAction("This nanoDo needs to sync through iPhone.")
       }
    }
 
@@ -76,12 +78,20 @@ struct WatchDirectSyncClient {
 
    private func update(_ action: WatchToDoAction, session: WatchAuthSession) async throws {
       guard let id = action.cloudID else {
-         throw DirectSyncError.invalidAction("This ToDo needs to sync through iPhone before Watch can update it directly.")
+         throw DirectSyncError.invalidAction("This toDō needs to sync through iPhone before Watch can update it directly.")
       }
 
       let dueAt: Date?
       let reminderIntent: String?
       switch action.type {
+      case .updateTask:
+         let task = action.task?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+         guard !task.isEmpty else {
+            throw DirectSyncError.invalidAction("Add a task before saving.")
+         }
+         dueAt = nil
+         reminderIntent = nil
+         try await patch(id: id, session: session, payload: ToDoUpdatePayload(task: task))
       case .complete:
          dueAt = nil
          reminderIntent = nil
@@ -90,6 +100,14 @@ struct WatchDirectSyncClient {
          dueAt = nil
          reminderIntent = nil
          try await patch(id: id, session: session, payload: ToDoUpdatePayload(isDone: false, lifecycleState: "active"))
+      case .archive:
+         dueAt = nil
+         reminderIntent = nil
+         try await patch(id: id, session: session, payload: ToDoUpdatePayload(lifecycleState: "archived"))
+      case .trash:
+         dueAt = nil
+         reminderIntent = nil
+         try await patch(id: id, session: session, payload: ToDoUpdatePayload(lifecycleState: "trashed", trashedAt: .now))
       case .setDueDate:
          dueAt = action.dueDate
          reminderIntent = action.dueDate == nil ? "soft" : (action.isTimeSensitive == true ? "timeSensitive" : "due")
@@ -101,7 +119,7 @@ struct WatchDirectSyncClient {
          dueAt = Date(timeIntervalSinceNow: seconds)
          reminderIntent = action.isTimeSensitive == true ? "timeSensitive" : "due"
          try await patch(id: id, session: session, payload: ToDoUpdatePayload(dueAt: dueAt, shouldEncodeDueAt: true, reminderIntent: reminderIntent))
-      case .create, .requestRefresh, .openOnPhone:
+      case .create, .requestRefresh, .openOnPhone, .completeNanoDo, .reopenNanoDo, .deleteNanoDo:
          return
       }
    }
@@ -137,7 +155,7 @@ struct WatchDirectSyncClient {
          throw DirectSyncError.invalidResponse
       }
       guard acceptedStatusCodes.contains(httpResponse.statusCode) else {
-         throw DirectSyncError.rejected(errorMessage(from: data) ?? "ToDo Sync rejected the Watch request.")
+         throw DirectSyncError.rejected(errorMessage(from: data) ?? "toDō Sync rejected the Watch request.")
       }
       return data
    }
@@ -236,39 +254,48 @@ private struct ToDoCreatePayload: Encodable {
 }
 
 private struct ToDoUpdatePayload: Encodable {
+   let task: String?
    let isDone: Bool?
    let lifecycleState: String?
    let dueAt: Date?
    let shouldEncodeDueAt: Bool
    let reminderIntent: String?
+   let trashedAt: Date?
    let updatedAt: Date
 
    init(
+      task: String? = nil,
       isDone: Bool? = nil,
       lifecycleState: String? = nil,
       dueAt: Date? = nil,
       shouldEncodeDueAt: Bool = false,
       reminderIntent: String? = nil,
+      trashedAt: Date? = nil,
       updatedAt: Date = .now
    ) {
+      self.task = task
       self.isDone = isDone
       self.lifecycleState = lifecycleState
       self.dueAt = dueAt
       self.shouldEncodeDueAt = shouldEncodeDueAt
       self.reminderIntent = reminderIntent
+      self.trashedAt = trashedAt
       self.updatedAt = updatedAt
    }
 
    enum CodingKeys: String, CodingKey {
+      case task
       case isDone = "is_done"
       case lifecycleState = "lifecycle_state"
       case dueAt = "due_at"
       case reminderIntent = "reminder_intent"
+      case trashedAt = "trashed_at"
       case updatedAt = "updated_at"
    }
 
    func encode(to encoder: Encoder) throws {
       var container = encoder.container(keyedBy: CodingKeys.self)
+      try container.encodeIfPresent(task, forKey: .task)
       try container.encodeIfPresent(isDone, forKey: .isDone)
       try container.encodeIfPresent(lifecycleState, forKey: .lifecycleState)
       if shouldEncodeDueAt {
@@ -279,6 +306,7 @@ private struct ToDoUpdatePayload: Encodable {
          }
       }
       try container.encodeIfPresent(reminderIntent, forKey: .reminderIntent)
+      try container.encodeIfPresent(trashedAt, forKey: .trashedAt)
       try container.encode(updatedAt, forKey: .updatedAt)
    }
 }
@@ -297,7 +325,7 @@ enum DirectSyncError: LocalizedError {
    var errorDescription: String? {
       switch self {
       case .invalidResponse:
-         return "ToDo Sync returned an invalid response."
+         return "toDō Sync returned an invalid response."
       case .rejected(let message), .invalidAction(let message):
          return message
       }

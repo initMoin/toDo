@@ -365,8 +365,17 @@ enum SupabaseSchemaContractProbe {
       updatedAt ?? createdAt ?? .distantPast
    }
 
+   private static func remoteToDoStateSummary(_ records: [SupabaseToDoRecord]) -> String {
+      let counts = Dictionary(grouping: records, by: \.lifecycleState)
+         .mapValues(\.count)
+
+      return ToDoState.allCases
+         .map { "\($0.rawValue)=\(counts[$0.rawValue, default: 0])" }
+         .joined(separator: ",")
+   }
+
    private static func shouldApplyRemote(localUpdatedAt: Date, remoteCreatedAt: Date?, remoteUpdatedAt: Date?) -> Bool {
-      remoteTimestamp(createdAt: remoteCreatedAt, updatedAt: remoteUpdatedAt) >= localUpdatedAt
+      remoteTimestamp(createdAt: remoteCreatedAt, updatedAt: remoteUpdatedAt) > localUpdatedAt
    }
 
    private static func shouldUploadLocal(localUpdatedAt: Date, remoteCreatedAt: Date?, remoteUpdatedAt: Date?) -> Bool {
@@ -436,6 +445,10 @@ private struct LocalUploadResult {
    let uploadedToDoIDs: Set<UUID>
 }
 
+private struct RemoteApplyResult {
+   let appliedToDoCount: Int
+}
+
 private struct ToDoDuplicateKey: Hashable {
    let task: String
    let notes: String
@@ -495,6 +508,7 @@ final class SupabaseSyncService {
    private var isPushingLocalSnapshot = false
    private var isRefreshingFromRemote = false
    private var needsRemoteRefreshAfterCurrent = false
+   private var needsRemoteChangeFeedbackAfterCurrent = false
 
    private init() {}
 
@@ -503,9 +517,14 @@ final class SupabaseSyncService {
    }
 
    func activate(for userID: UUID) async -> Bool {
-      guard modelContainer != nil else { return false }
+      guard modelContainer != nil else {
+         Self.logSync("Supabase activate skipped: model container is not configured.")
+         return false
+      }
+      Self.logSync("Supabase activate requested: userID=\(userID), activeUserID=\(activeUserID?.uuidString ?? "nil"), hydrated=\(hasHydratedActiveUser), bootstrapRunning=\(bootstrapTask != nil)")
       guard activeUserID != userID || !hasHydratedActiveUser else {
          await ensureRealtimeSubscription(for: userID)
+         Self.logSync("Supabase activate reused hydrated user: \(userID).")
          return true
       }
 
@@ -518,6 +537,7 @@ final class SupabaseSyncService {
    }
 
    private func performActivation(for userID: UUID) async -> Bool {
+      Self.logSync("Supabase activation switching active user to \(userID).")
       activeUserID = userID
       hasHydratedActiveUser = false
       needsLocalSyncAfterHydration = false
@@ -531,9 +551,16 @@ final class SupabaseSyncService {
    }
 
    private func startBootstrapIfNeeded(for userID: UUID) {
-      guard activeUserID == userID else { return }
-      guard bootstrapTask == nil || bootstrapTask?.isCancelled == true else { return }
+      guard activeUserID == userID else {
+         Self.logSync("Supabase bootstrap skipped: requested user \(userID) is not active.")
+         return
+      }
+      guard bootstrapTask == nil || bootstrapTask?.isCancelled == true else {
+         Self.logSync("Supabase bootstrap already running for user \(userID).")
+         return
+      }
 
+      Self.logSync("Supabase bootstrap starting for user \(userID).")
       SyncCoordinator.shared.beginSyncActivation(phase: .activating)
       bootstrapTask = Task { @MainActor [weak self] in
          guard let self else { return }
@@ -541,7 +568,11 @@ final class SupabaseSyncService {
          guard self.activeUserID == userID else { return }
          self.bootstrapTask = nil
 
-         guard didHydrate else { return }
+         guard didHydrate else {
+            Self.logSync("Supabase bootstrap ended without hydration for user \(userID).")
+            return
+         }
+         Self.logSync("Supabase bootstrap hydrated user \(userID).")
          await self.startRealtimeSubscription(for: userID)
 
          if self.needsLocalSyncAfterHydration {
@@ -601,15 +632,17 @@ final class SupabaseSyncService {
       await pushLocalSnapshot(for: userID)
    }
 
-   func refreshFromRemote(for userID: UUID) async {
+   func refreshFromRemote(for userID: UUID, showsRemoteChangeFeedback: Bool = false) async {
       guard activeUserID == userID, modelContainer != nil else { return }
       guard hasHydratedActiveUser else {
          needsRemoteRefreshAfterCurrent = true
+         needsRemoteChangeFeedbackAfterCurrent = needsRemoteChangeFeedbackAfterCurrent || showsRemoteChangeFeedback
          return
       }
       guard !isApplyingRemoteSnapshot else { return }
       guard !isPushingLocalSnapshot, !isRefreshingFromRemote else {
          needsRemoteRefreshAfterCurrent = true
+         needsRemoteChangeFeedbackAfterCurrent = needsRemoteChangeFeedbackAfterCurrent || showsRemoteChangeFeedback
          return
       }
 
@@ -617,12 +650,18 @@ final class SupabaseSyncService {
       defer {
          isRefreshingFromRemote = false
          if needsRemoteRefreshAfterCurrent {
+            let shouldShowFeedback = needsRemoteChangeFeedbackAfterCurrent
             needsRemoteRefreshAfterCurrent = false
-            scheduleRemoteRefresh(for: userID, delayNanoseconds: 150_000_000)
+            needsRemoteChangeFeedbackAfterCurrent = false
+            scheduleRemoteRefresh(
+               for: userID,
+               delayNanoseconds: 150_000_000,
+               showsRemoteChangeFeedback: shouldShowFeedback
+            )
          }
       }
 
-      await pullRemoteSnapshot(for: userID)
+      await pullRemoteSnapshot(for: userID, showsRemoteChangeFeedback: showsRemoteChangeFeedback)
    }
 
    private func ensureRealtimeSubscription(for userID: UUID) async {
@@ -690,8 +729,12 @@ final class SupabaseSyncService {
          realtimeListenerTasks = streams.map { stream in
             Task { [weak self] in
                for await _ in stream {
-                  Self.logRealtime("Supabase realtime event received. Refreshing ToDo Sync.")
-                  self?.scheduleRemoteRefresh(for: userID, delayNanoseconds: 150_000_000)
+                  Self.logRealtime("Supabase realtime event received. Refreshing toDō Sync.")
+                  self?.scheduleRemoteRefresh(
+                     for: userID,
+                     delayNanoseconds: 150_000_000,
+                     showsRemoteChangeFeedback: true
+                  )
                }
                guard !Task.isCancelled else { return }
                self?.handleRealtimeStreamEnded(for: userID)
@@ -701,7 +744,7 @@ final class SupabaseSyncService {
          realtimeChannel = channel
          realtimeUserID = userID
          realtimeRetryAttempt = 0
-         Self.logRealtime("Supabase realtime subscribed for ToDo Sync user \(userID).")
+         Self.logRealtime("Supabase realtime subscribed for toDō Sync user \(userID).")
       } catch {
          realtimeStatusTask?.cancel()
          realtimeStatusTask = nil
@@ -771,7 +814,11 @@ final class SupabaseSyncService {
       }
    }
 
-   private func scheduleRemoteRefresh(for userID: UUID, delayNanoseconds: UInt64 = 150_000_000) {
+   private func scheduleRemoteRefresh(
+      for userID: UUID,
+      delayNanoseconds: UInt64 = 150_000_000,
+      showsRemoteChangeFeedback: Bool = false
+   ) {
       guard activeUserID == userID else { return }
 
       debouncedRemoteRefreshTask?.cancel()
@@ -779,7 +826,7 @@ final class SupabaseSyncService {
          guard let self else { return }
          try? await Task.sleep(nanoseconds: delayNanoseconds)
          guard !Task.isCancelled else { return }
-         await self.refreshFromRemote(for: userID)
+         await self.refreshFromRemote(for: userID, showsRemoteChangeFeedback: showsRemoteChangeFeedback)
       }
    }
 
@@ -791,12 +838,20 @@ final class SupabaseSyncService {
 #endif
    }
 
+   private static func logSync(_ message: String) {
+      AppLog.info(message, logger: AppLog.sync)
+   }
+
    private func bootstrapLocalCache(for userID: UUID) async -> Bool {
-      guard let modelContainer else { return false }
+      guard let modelContainer else {
+         Self.logSync("Supabase bootstrap local cache skipped: model container is missing.")
+         return false
+      }
 
       do {
+         Self.logSync("Supabase bootstrap local cache loading: userID=\(userID).")
          SyncCoordinator.shared.updateSyncPhase(.preparingLocalData)
-         let context = ModelContext(modelContainer)
+         let context = modelContainer.mainContext
          let didRepairTags = repairDuplicateTags(in: context, ownerUserID: userID)
          let didRepairToDos = repairDuplicateToDos(in: context, ownerUserID: userID)
          if didRepairTags || didRepairToDos {
@@ -835,8 +890,8 @@ final class SupabaseSyncService {
             hasHydratedActiveUser = true
             needsLocalSyncAfterHydration = false
             NotificationManager.shared.scheduleRefresh()
-         WidgetSnapshotService.shared.writeSnapshot(from: context)
-         LiveActivityService.shared.refresh(from: context)
+            WidgetSnapshotService.shared.writeSnapshot(from: context)
+            LiveActivityService.shared.refresh(from: context)
             SyncCoordinator.shared.completeSyncOperation()
             return true
          }
@@ -866,8 +921,8 @@ final class SupabaseSyncService {
             try await apply(remoteSnapshot: mergedRemoteSnapshot, in: context, ownerUserID: userID)
             hasHydratedActiveUser = true
             NotificationManager.shared.scheduleRefresh()
-         WidgetSnapshotService.shared.writeSnapshot(from: context)
-         LiveActivityService.shared.refresh(from: context)
+            WidgetSnapshotService.shared.writeSnapshot(from: context)
+            LiveActivityService.shared.refresh(from: context)
             SyncCoordinator.shared.completeSyncOperation()
             return true
          }
@@ -927,7 +982,7 @@ final class SupabaseSyncService {
          }
 
          SyncCoordinator.shared.beginSyncOperation(phase: .preparingLocalData)
-         let context = ModelContext(modelContainer)
+         let context = modelContainer.mainContext
          var didRepairTags = repairDuplicateTags(in: context, ownerUserID: userID)
          let didRepairToDos = repairDuplicateToDos(in: context, ownerUserID: userID)
          var localSnapshot = try fetchLocalSnapshot(in: context, ownerUserID: userID)
@@ -969,12 +1024,12 @@ final class SupabaseSyncService {
       }
    }
 
-   private func pullRemoteSnapshot(for userID: UUID) async {
+   private func pullRemoteSnapshot(for userID: UUID, showsRemoteChangeFeedback: Bool = false) async {
       guard activeUserID == userID, let modelContainer else { return }
 
       do {
          SyncCoordinator.shared.beginSyncOperation(phase: .loadingRemoteChanges)
-         let context = ModelContext(modelContainer)
+         let context = modelContainer.mainContext
          let localSnapshot = try fetchLocalSnapshot(in: context, ownerUserID: userID)
          let remoteSnapshot = try await fetchRemoteSnapshot(for: userID)
          let didApplyRemoteTombstones = applyRemoteTombstones(remoteSnapshot, to: localSnapshot, in: context)
@@ -987,7 +1042,14 @@ final class SupabaseSyncService {
          defer { isApplyingRemoteSnapshot = false }
 
          SyncCoordinator.shared.updateSyncPhase(.applyingRemoteChanges)
-         try await apply(remoteSnapshot: remoteSnapshot, in: context, ownerUserID: userID)
+         let applyResult = try await apply(remoteSnapshot: remoteSnapshot, in: context, ownerUserID: userID)
+         if showsRemoteChangeFeedback, applyResult.appliedToDoCount > 0 {
+            SyncCoordinator.shared.showTransientFeedback(
+               title: String(localized: "toDō updated"),
+               message: remoteChangeFeedbackMessage(for: applyResult.appliedToDoCount),
+               style: .success
+            )
+         }
          NotificationManager.shared.scheduleRefresh()
          WidgetSnapshotService.shared.writeSnapshot(from: context)
          LiveActivityService.shared.refresh(from: context)
@@ -1043,12 +1105,22 @@ final class SupabaseSyncService {
          .execute()
          .value
 
-      return try await SupabaseRemoteSnapshot(
-         tags: tags,
-         toDos: toDos,
-         nanoDos: nanoDos,
-         toDoTags: toDoTags,
-         tombstones: tombstones
+      let resolvedToDos = try await toDos
+      let resolvedTags = try await tags
+      let resolvedNanoDos = try await nanoDos
+      let resolvedToDoTags = try await toDoTags
+      let resolvedTombstones = try await tombstones
+
+      Self.logSync(
+         "Supabase remote snapshot loaded: tags=\(resolvedTags.count), todos=\(resolvedToDos.count), nanodos=\(resolvedNanoDos.count), todo_tags=\(resolvedToDoTags.count), tombstones=\(resolvedTombstones.count), todoStates=\(remoteToDoStateSummary(resolvedToDos))"
+      )
+
+      return SupabaseRemoteSnapshot(
+         tags: resolvedTags,
+         toDos: resolvedToDos,
+         nanoDos: resolvedNanoDos,
+         toDoTags: resolvedToDoTags,
+         tombstones: resolvedTombstones
       )
    }
 
@@ -1097,6 +1169,25 @@ final class SupabaseSyncService {
          !$0.isResolved && $0.userID == ownerUserID
       }
       return LocalSnapshot(tags: tags, toDos: toDos, nanoDos: nanoDos, conflicts: conflicts)
+   }
+
+   private func fetchTags(in context: ModelContext, ownerUserID: UUID?) throws -> [Tag] {
+      try context.fetch(FetchDescriptor<Tag>()).filter { $0.ownerUserID == ownerUserID }
+   }
+
+   private func fetchToDos(in context: ModelContext, ownerUserID: UUID?) throws -> [ToDo] {
+      try context.fetch(FetchDescriptor<ToDo>()).filter { $0.ownerUserID == ownerUserID }
+   }
+
+   private func fetchNanoDos(in context: ModelContext, ownerUserID: UUID?) throws -> [NanoDo] {
+      try context.fetch(FetchDescriptor<NanoDo>()).filter { $0.ownerUserID == ownerUserID }
+   }
+
+   private func fetchUnresolvedConflicts(in context: ModelContext, userID: UUID?) throws -> [SyncConflict] {
+      try context.fetch(FetchDescriptor<SyncConflict>()).filter {
+         !$0.isResolved && $0.userID == userID
+      }
+      .sorted { $0.createdAt > $1.createdAt }
    }
 
    @discardableResult
@@ -1248,7 +1339,7 @@ final class SupabaseSyncService {
       }
 
       if didChange {
-         AppLog.info("Copied local ToDos into ToDo Sync scope for user \(userID).", logger: AppLog.sync)
+         AppLog.info("Copied local toDōs into toDō Sync scope for user \(userID).", logger: AppLog.sync)
       }
       return didChange
    }
@@ -1289,7 +1380,7 @@ final class SupabaseSyncService {
 
    @discardableResult
    private func repairDuplicateTags(in context: ModelContext, ownerUserID: UUID?) -> Bool {
-      let tags = (try? context.fetch(FetchDescriptor<Tag>()).filter { $0.ownerUserID == ownerUserID }) ?? []
+      let tags = (try? fetchTags(in: context, ownerUserID: ownerUserID)) ?? []
       guard tags.count > 1 else { return false }
 
       let grouped = Dictionary(grouping: tags, by: \.displayName)
@@ -1332,7 +1423,7 @@ final class SupabaseSyncService {
 
    @discardableResult
    private func repairDuplicateToDos(in context: ModelContext, ownerUserID: UUID?) -> Bool {
-      let toDos = (try? context.fetch(FetchDescriptor<ToDo>()).filter { $0.ownerUserID == ownerUserID }) ?? []
+      let toDos = (try? fetchToDos(in: context, ownerUserID: ownerUserID)) ?? []
       guard toDos.count > 1 else { return false }
 
       let grouped = Dictionary(grouping: toDos, by: semanticDuplicateKey(for:))
@@ -1519,7 +1610,8 @@ final class SupabaseSyncService {
       return didChange
    }
 
-   private func apply(remoteSnapshot: SupabaseRemoteSnapshot, in context: ModelContext, ownerUserID: UUID) async throws {
+   @discardableResult
+   private func apply(remoteSnapshot: SupabaseRemoteSnapshot, in context: ModelContext, ownerUserID: UUID) async throws -> RemoteApplyResult {
       let localSnapshot = try fetchLocalSnapshot(in: context, ownerUserID: ownerUserID)
       let localTagsByCloudID = firstLocalRecordByCloudID(localSnapshot.tags)
       let localToDosByCloudID = firstLocalRecordByCloudID(localSnapshot.toDos)
@@ -1537,6 +1629,9 @@ final class SupabaseSyncService {
          !tombstonedToDoIDs.contains($0.todoID)
          && !tombstonedTagIDs.contains($0.tagID)
       }
+      Self.logSync(
+         "Supabase applying snapshot: nonTombstonedTags=\(activeTagRecords.count), nonTombstonedToDos=\(activeToDoRecords.count), nonTombstonedNanoDos=\(activeNanoDoRecords.count), nonTombstonedToDoTags=\(activeToDoTagRecords.count), todoStates=\(remoteToDoStateSummary(activeToDoRecords))"
+      )
 
       var syncedTagsByCloudID: [UUID: Tag] = [:]
       for record in activeTagRecords {
@@ -1614,8 +1709,8 @@ final class SupabaseSyncService {
             )
             if didRecordConflict {
                SyncCoordinator.shared.showTransientFeedback(
-                  title: "Sync Needs Review",
-                  message: "A ToDo changed in two places. Review it in Settings.",
+                  title: String(localized: "Choose a Version"),
+                  message: String(localized: "A toDō changed on more than one device. Review it in Settings."),
                   style: .warning
                )
             }
@@ -1659,10 +1754,12 @@ final class SupabaseSyncService {
       await Task.yield()
 
       let groupedTagIDsByToDoID = Dictionary(grouping: activeToDoTagRecords, by: \.todoID)
-      let activeToDoRecordsByID = Dictionary(uniqueKeysWithValues: activeToDoRecords.map { ($0.id, $0) })
-      for (toDoID, toDo) in syncedToDosByCloudID where remoteAppliedToDoIDs.contains(toDoID) {
+      let activeToDoRecordsByID = Dictionary(activeToDoRecords.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+      var linkedTagCount = 0
+      for (toDoID, toDo) in syncedToDosByCloudID {
          let remoteTags = groupedTagIDsByToDoID[toDoID, default: []]
             .compactMap { syncedTagsByCloudID[$0.tagID] }
+         linkedTagCount += remoteTags.count
          toDo.setSelectedTags(remoteTags)
          if let record = activeToDoRecordsByID[toDoID] {
             let remoteUpdatedAt = remoteTimestamp(createdAt: record.createdAt, updatedAt: record.updatedAt)
@@ -1670,6 +1767,7 @@ final class SupabaseSyncService {
             toDo.lastSyncedUpdatedAt = remoteUpdatedAt
          }
       }
+      Self.logSync("Supabase linked remote tags locally: todos=\(syncedToDosByCloudID.count), linkedTags=\(linkedTagCount), bodyApplied=\(remoteAppliedToDoIDs.count)")
 
       await Task.yield()
 
@@ -1711,6 +1809,18 @@ final class SupabaseSyncService {
       }
 
       try context.save()
+      return RemoteApplyResult(appliedToDoCount: remoteAppliedToDoIDs.count)
+   }
+
+   private func remoteChangeFeedbackMessage(for appliedToDoCount: Int) -> String {
+      if appliedToDoCount == 1 {
+         return String(localized: "Synced from another device.")
+      }
+
+      return String(
+         format: String(localized: "%@ updates synced."),
+         AppLocalization.numberString(appliedToDoCount)
+      )
    }
 
    @discardableResult
@@ -1747,8 +1857,17 @@ final class SupabaseSyncService {
       updatedAt ?? createdAt ?? .distantPast
    }
 
+   private func remoteToDoStateSummary(_ records: [SupabaseToDoRecord]) -> String {
+      let counts = Dictionary(grouping: records, by: \.lifecycleState)
+         .mapValues(\.count)
+
+      return ToDoState.allCases
+         .map { "\($0.rawValue)=\(counts[$0.rawValue, default: 0])" }
+         .joined(separator: ",")
+   }
+
    private func shouldApplyRemote(localUpdatedAt: Date, remoteCreatedAt: Date?, remoteUpdatedAt: Date?) -> Bool {
-      remoteTimestamp(createdAt: remoteCreatedAt, updatedAt: remoteUpdatedAt) >= localUpdatedAt
+      remoteTimestamp(createdAt: remoteCreatedAt, updatedAt: remoteUpdatedAt) > localUpdatedAt
    }
 
    private func shouldUploadLocal(localUpdatedAt: Date, remoteCreatedAt: Date?, remoteUpdatedAt: Date?) -> Bool {
@@ -1800,9 +1919,9 @@ final class SupabaseSyncService {
       remoteSnapshot: SupabaseRemoteSnapshot
    ) async throws -> LocalUploadResult {
       let defaultTagNames = Set(TagManagementView.defaultTagNames)
-      let remoteTagsByID = Dictionary(uniqueKeysWithValues: remoteSnapshot.tags.map { ($0.id, $0) })
-      let remoteToDosByID = Dictionary(uniqueKeysWithValues: remoteSnapshot.toDos.map { ($0.id, $0) })
-      let remoteNanoDosByID = Dictionary(uniqueKeysWithValues: remoteSnapshot.nanoDos.map { ($0.id, $0) })
+      let remoteTagsByID = Dictionary(remoteSnapshot.tags.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+      let remoteToDosByID = Dictionary(remoteSnapshot.toDos.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
+      let remoteNanoDosByID = Dictionary(remoteSnapshot.nanoDos.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
       let conflictedToDoIDs = Set(snapshot.conflicts.compactMap(\.recordID))
 
       let tagPayloads = snapshot.tags.compactMap { tag -> SupabaseTagUpsertPayload? in
@@ -1908,45 +2027,15 @@ final class SupabaseSyncService {
    }
 
    private func insertMissingToDoTagPairs(localSnapshot: LocalSnapshot, remoteSnapshot: SupabaseRemoteSnapshot) async throws {
-      let localPairs = Set(localSnapshot.toDos.flatMap { toDo in
-         guard let toDoID = toDo.cloudID else { return [SupabaseToDoTagUpsertPayload]() }
-         return toDo.effectiveTags.compactMap { tag in
-            guard let tagID = tag.cloudID else { return nil }
-            return SupabaseToDoTagUpsertPayload(todoID: toDoID, tagID: tagID)
-         }
-      })
-      let remotePairs = Set(remoteSnapshot.toDoTags.map {
-         SupabaseToDoTagUpsertPayload(todoID: $0.todoID, tagID: $0.tagID)
-      })
-
-      let pairsToInsert = Array(localPairs.subtracting(remotePairs))
-      if !pairsToInsert.isEmpty {
-         try await supabase
-            .from("todo_tags")
-            .upsert(pairsToInsert, onConflict: "todo_id,tag_id")
-            .execute()
-      }
+      let pairsToInsert = localToDoTagPairs(from: localSnapshot).subtracting(remoteToDoTagPairs(from: remoteSnapshot))
+      try await upsertToDoTagPairs(Array(pairsToInsert))
    }
 
    private func reconcileToDoTags(localSnapshot: LocalSnapshot, remoteSnapshot: SupabaseRemoteSnapshot) async throws {
-      let localPairs = Set(localSnapshot.toDos.flatMap { toDo in
-         guard let toDoID = toDo.cloudID else { return [SupabaseToDoTagUpsertPayload]() }
-         return toDo.effectiveTags.compactMap { tag in
-            guard let tagID = tag.cloudID else { return nil }
-            return SupabaseToDoTagUpsertPayload(todoID: toDoID, tagID: tagID)
-         }
-      })
-      let remotePairs = Set(remoteSnapshot.toDoTags.map {
-         SupabaseToDoTagUpsertPayload(todoID: $0.todoID, tagID: $0.tagID)
-      })
+      let localPairs = localToDoTagPairs(from: localSnapshot)
+      let remotePairs = remoteToDoTagPairs(from: remoteSnapshot)
 
-      let pairsToInsert = Array(localPairs.subtracting(remotePairs))
-      if !pairsToInsert.isEmpty {
-         try await supabase
-            .from("todo_tags")
-            .upsert(pairsToInsert, onConflict: "todo_id,tag_id")
-            .execute()
-      }
+      try await upsertToDoTagPairs(Array(localPairs.subtracting(remotePairs)))
 
       for pair in remotePairs.subtracting(localPairs) {
          try await supabase
@@ -1956,6 +2045,31 @@ final class SupabaseSyncService {
             .eq("tag_id", value: pair.tagID)
             .execute()
       }
+   }
+
+   private func localToDoTagPairs(from snapshot: LocalSnapshot) -> Set<SupabaseToDoTagUpsertPayload> {
+      Set(snapshot.toDos.flatMap { toDo in
+         guard let toDoID = toDo.cloudID else { return [SupabaseToDoTagUpsertPayload]() }
+         return toDo.effectiveTags.compactMap { tag in
+            guard let tagID = tag.cloudID else { return nil }
+            return SupabaseToDoTagUpsertPayload(todoID: toDoID, tagID: tagID)
+         }
+      })
+   }
+
+   private func remoteToDoTagPairs(from snapshot: SupabaseRemoteSnapshot) -> Set<SupabaseToDoTagUpsertPayload> {
+      Set(snapshot.toDoTags.map {
+         SupabaseToDoTagUpsertPayload(todoID: $0.todoID, tagID: $0.tagID)
+      })
+   }
+
+   private func upsertToDoTagPairs(_ pairs: [SupabaseToDoTagUpsertPayload]) async throws {
+      guard !pairs.isEmpty else { return }
+
+      try await supabase
+         .from("todo_tags")
+         .upsert(pairs, onConflict: "todo_id,tag_id")
+         .execute()
    }
 
    private func upsertPendingTombstones(for userID: UUID) async throws {
@@ -1999,47 +2113,5 @@ final class SupabaseSyncService {
          .delete()
          .eq("id", value: id)
          .execute()
-   }
-
-   private func deleteMissingRemoteRecords(localSnapshot: LocalSnapshot, remoteSnapshot: SupabaseRemoteSnapshot) async throws {
-      let localTagIDs = Set(localSnapshot.tags.compactMap(\.cloudID))
-      let localToDoIDs = Set(localSnapshot.toDos.compactMap(\.cloudID))
-      let localNanoDoIDs = Set(localSnapshot.nanoDos.compactMap(\.cloudID))
-      let remoteTagsByID = Dictionary(uniqueKeysWithValues: remoteSnapshot.tags.map { ($0.id, $0) })
-      let remoteToDosByID = Dictionary(uniqueKeysWithValues: remoteSnapshot.toDos.map { ($0.id, $0) })
-      let remoteNanoDosByID = Dictionary(uniqueKeysWithValues: remoteSnapshot.nanoDos.map { ($0.id, $0) })
-      let missingNanoDoIDs = Set(remoteSnapshot.nanoDos.map(\.id)).subtracting(localNanoDoIDs)
-      let missingToDoIDs = Set(remoteSnapshot.toDos.map(\.id)).subtracting(localToDoIDs)
-      let missingTagIDs = Set(remoteSnapshot.tags.map(\.id)).subtracting(localTagIDs)
-      var tombstones: [SupabaseTombstoneUpsertPayload] = []
-
-      for nanoDoID in missingNanoDoIDs {
-         guard let record = remoteNanoDosByID[nanoDoID] else { continue }
-         tombstones.append(SupabaseTombstoneUpsertPayload(userID: record.userID, recordTable: .nanoDos, recordID: nanoDoID))
-      }
-
-      for toDoID in missingToDoIDs {
-         guard let record = remoteToDosByID[toDoID] else { continue }
-         tombstones.append(SupabaseTombstoneUpsertPayload(userID: record.userID, recordTable: .toDos, recordID: toDoID))
-      }
-
-      for tagID in missingTagIDs {
-         guard let record = remoteTagsByID[tagID] else { continue }
-         tombstones.append(SupabaseTombstoneUpsertPayload(userID: record.userID, recordTable: .tags, recordID: tagID))
-      }
-
-      try await upsertTombstones(tombstones)
-
-      for nanoDoID in missingNanoDoIDs {
-         try await deleteRemoteRecord(table: .nanoDos, id: nanoDoID)
-      }
-
-      for toDoID in missingToDoIDs {
-         try await deleteRemoteRecord(table: .toDos, id: toDoID)
-      }
-
-      for tagID in missingTagIDs {
-         try await deleteRemoteRecord(table: .tags, id: tagID)
-      }
    }
 }

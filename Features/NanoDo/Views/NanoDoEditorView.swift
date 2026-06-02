@@ -94,7 +94,7 @@ struct NanoDoEditorView: View {
 
     private var visibleOwnerUserID: UUID? {
         guard supabaseAuthStore.effectiveSyncMode == .syncEverywhere else { return nil }
-        return supabaseAuthStore.currentUserID
+        return supabaseAuthStore.scopedOwnerUserID
     }
 
     private func save() {

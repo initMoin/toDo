@@ -17,7 +17,7 @@ struct ArchivesView: View {
             VStack(alignment: .leading, spacing: 24) {
                if isArchivesEmpty {
                   archiveSection("Archives") {
-                     Text("No completed or archived ToDos")
+                     Text("No completed or archived toDōs")
                         .foregroundStyle(AppColor.textSecondary)
                   }
                } else {
@@ -73,13 +73,13 @@ struct ArchivesView: View {
       .appNavigationChrome()
       .toolbar(.hidden, for: .navigationBar)
       .navigationBarBackButtonHidden()
-      .confirmationDialog("Purge all completed and archived ToDos?", isPresented: $isShowingPurgeConfirmation, titleVisibility: .visible) {
+      .confirmationDialog("Purge all completed and archived toDōs?", isPresented: $isShowingPurgeConfirmation, titleVisibility: .visible) {
          Button("Purge Archives", role: .destructive) {
             purgeArchives()
          }
          Button("Cancel", role: .cancel) {}
       } message: {
-         Text("This permanently deletes every completed and archived ToDo.")
+         Text("This permanently deletes every completed and archived toDō.")
       }
       .sheet(item: $editingArchivedToDo) { toDo in
          ToDoView(
@@ -113,7 +113,7 @@ struct ArchivesView: View {
 
    private var visibleOwnerUserID: UUID? {
       guard supabaseAuthStore.effectiveSyncMode == .syncEverywhere else { return nil }
-      return supabaseAuthStore.currentUserID
+      return supabaseAuthStore.scopedOwnerUserID
    }
 
    private var scopedToDos: [ToDo] {
@@ -210,7 +210,7 @@ struct ArchivesView: View {
             VStack(alignment: .leading, spacing: 2) {
                Text("Purge Archives")
                   .font(.appDisplay(18, relativeTo: .headline))
-               Text("Permanently deletes all completed and archived ToDos.")
+               Text("Permanently deletes all completed and archived toDōs.")
                   .font(.appBody(12, relativeTo: .caption))
                   .opacity(0.92)
             }
@@ -255,7 +255,7 @@ struct ArchivesView: View {
          context.delete(toDo)
       }
 
-      persistChanges("Failed to purge archived ToDos")
+      persistChanges("Failed to purge archived toDōs")
    }
 
    private func persistChanges(_ message: String) {
@@ -273,7 +273,7 @@ struct ArchivesView: View {
       withAnimation(AppAnimation.easeStandard) {
          toDo.transition(to: .active)
       }
-      persistChanges("Failed to restore archived ToDo")
+      persistChanges("Failed to restore archived toDō")
    }
 
    private func restoreWithEdits(_ toDo: ToDo) {
@@ -281,7 +281,7 @@ struct ArchivesView: View {
       withAnimation(AppAnimation.easeStandard) {
          toDo.transition(to: .active)
       }
-      persistChanges("Failed to restore archived ToDo for editing")
+      persistChanges("Failed to restore archived toDō for editing")
       editingArchivedToDo = toDo
    }
 
@@ -292,7 +292,7 @@ struct ArchivesView: View {
          toDo.transition(to: .trashed)
       }
       removeCalendarMirrorIfPresent(for: toDo)
-      persistChanges("Failed to delete archived ToDo")
+      persistChanges("Failed to delete archived toDō")
    }
 
    private func removeCalendarMirrorIfPresent(for toDo: ToDo) {

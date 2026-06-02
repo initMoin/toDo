@@ -10,6 +10,8 @@ import SwiftData
 
 @Model
 final class Tag {
+    #Index<Tag>([\.ownerUserID])
+
     static let defaultTagNames = ["personal", "work", "health", "shopping", "ideas"]
 
     var cloudID: UUID? = nil

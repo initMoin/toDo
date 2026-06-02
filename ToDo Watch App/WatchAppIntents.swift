@@ -2,8 +2,8 @@ import AppIntents
 import Foundation
 
 struct CreateWatchToDoIntent: AppIntent {
-   static let title: LocalizedStringResource = "Create toDo"
-   static let description = IntentDescription("Create a toDo quickly.")
+   static let title: LocalizedStringResource = "Create toDō"
+   static let description = IntentDescription("Create a toDō quickly.")
    static let openAppWhenRun = false
 
    @Parameter(title: "Title")
@@ -37,7 +37,7 @@ struct CreateWatchToDoIntent: AppIntent {
    func perform() async throws -> some IntentResult & ProvidesDialog {
       let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !trimmedTitle.isEmpty else {
-         throw $title.needsValueError("What should this toDo be called?")
+         throw $title.needsValueError("What should this toDō be called?")
       }
 
       await MainActor.run {
@@ -55,8 +55,8 @@ struct CreateWatchToDoIntent: AppIntent {
 }
 
 struct WatchToDoIntent: AppIntent {
-   static let title: LocalizedStringResource = "toDo"
-   static let description = IntentDescription("Create a toDo quickly.")
+   static let title: LocalizedStringResource = "toDō"
+   static let description = IntentDescription("Create a toDō quickly.")
    static let openAppWhenRun = false
 
    @Parameter(title: "Title")
@@ -66,7 +66,7 @@ struct WatchToDoIntent: AppIntent {
    var isDueSoon: Bool
 
    static var parameterSummary: some ParameterSummary {
-      Summary("toDo \(\.$title)") {
+      Summary("toDō \(\.$title)") {
          \.$isDueSoon
       }
    }
@@ -84,7 +84,7 @@ struct WatchToDoIntent: AppIntent {
    func perform() async throws -> some IntentResult & ProvidesDialog {
       let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !trimmedTitle.isEmpty else {
-         throw $title.needsValueError("What do you want to toDo?")
+         throw $title.needsValueError("What do you want to toDō?")
       }
 
       let dueDate = isDueSoon ? Date().addingTimeInterval(15 * 60) : nil
@@ -104,12 +104,12 @@ struct WatchToDoIntent: AppIntent {
 }
 
 struct OpenWatchToDoIntent: AppIntent {
-   static let title: LocalizedStringResource = "Open toDo"
-   static let description = IntentDescription("Open toDo.")
+   static let title: LocalizedStringResource = "Open toDō"
+   static let description = IntentDescription("Open toDō.")
    static let openAppWhenRun = true
 
    func perform() async throws -> some IntentResult & ProvidesDialog {
-      .result(dialog: "Opening toDo.")
+      .result(dialog: "Opening toDō.")
    }
 }
 
@@ -118,22 +118,22 @@ struct WatchToDoShortcutsProvider: AppShortcutsProvider {
       AppShortcut(
          intent: WatchToDoIntent(),
          phrases: [
-            "Create a toDo in \(.applicationName)",
-            "Add a toDo in \(.applicationName)",
-            "New toDo in \(.applicationName)"
+            "Create a toDō in \(.applicationName)",
+            "Add a toDō in \(.applicationName)",
+            "New toDō in \(.applicationName)"
          ],
-         shortTitle: "toDo",
+         shortTitle: "toDō",
          systemImageName: "bolt.circle"
       )
 
       AppShortcut(
          intent: CreateWatchToDoIntent(),
          phrases: [
-            "Create toDo in \(.applicationName)",
-            "Add toDo in \(.applicationName)",
+            "Create toDō in \(.applicationName)",
+            "Add toDō in \(.applicationName)",
             "Remind me with \(.applicationName)"
          ],
-         shortTitle: "Create toDo",
+         shortTitle: "Create toDō",
          systemImageName: "checkmark.circle"
       )
 
@@ -141,9 +141,9 @@ struct WatchToDoShortcutsProvider: AppShortcutsProvider {
          intent: OpenWatchToDoIntent(),
          phrases: [
             "Open \(.applicationName)",
-            "Show my toDos in \(.applicationName)"
+            "Show my toDōs in \(.applicationName)"
          ],
-         shortTitle: "Open toDo",
+         shortTitle: "Open toDō",
          systemImageName: "list.bullet"
       )
    }

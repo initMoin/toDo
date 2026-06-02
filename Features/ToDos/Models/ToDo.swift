@@ -38,11 +38,11 @@ enum ToDoReminderIntent: String, CaseIterable, Identifiable, Codable {
    nonisolated var supportingCopy: String {
       switch self {
       case .soft:
-         return String(localized: "Places the ToDo in Notification Center quietly.")
+         return String(localized: "Places the toDō in Notification Center quietly.")
       case .due:
-         return String(localized: "Alerts that the ToDo has reached its due moment.")
+         return String(localized: "Alerts that the toDō has reached its due moment.")
       case .timeSensitive:
-         return String(localized: "Breaks through Focus when the ToDo needs immediate attention.")
+         return String(localized: "Breaks through Focus when the toDō needs immediate attention.")
       }
    }
 }
@@ -150,6 +150,8 @@ enum ToDoLocationReminderTrigger: String, CaseIterable, Identifiable, Codable {
 
 @Model
 final class ToDo {
+   #Index<ToDo>([\.ownerUserID])
+
    static let maxTagSelection = 5
 
    var cloudID: UUID? = nil

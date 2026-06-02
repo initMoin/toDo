@@ -9,6 +9,7 @@ struct ToDoWidgetLiveActivity: Widget {
       ActivityConfiguration(for: ToDoLiveActivityAttributes.self) { context in
          ToDoLiveActivitySurfaceView(context: context)
             .widgetURL(context.attributes.deepLinkURL)
+            .activityBackgroundTint(.clear)
             .activitySystemActionForegroundColor(Color(hex: 0xE9A700))
       } dynamicIsland: { context in
          DynamicIsland {
@@ -17,24 +18,28 @@ struct ToDoWidgetLiveActivity: Widget {
             }
 
             DynamicIslandExpandedRegion(.bottom) {
-               VStack(spacing: 3) {
-                  LiveActivityDueDateTimeText(dueDate: context.state.dueDate, size: 13)
-                     .frame(maxWidth: .infinity, alignment: .leading)
+               HStack(alignment: .center, spacing: 10) {
+                  Image(systemName: "calendar.badge.clock")
+                     .font(.system(size: 16, weight: .semibold))
+                     .foregroundStyle(context.state.accentColor)
+                     .frame(width: 24, height: 24)
 
-                  LiveActivityAnimatedCountdownView(
+                  LiveActivityShortDueDateTimeText(
                      dueDate: context.state.dueDate,
-                     isOverdue: context.state.isOverdue,
-                     size: 18,
-                     weight: .semibold
+                     dateSize: 16,
+                     timeSize: 18,
+                     spacing: 10
                   )
-                  .frame(maxWidth: .infinity, alignment: .center)
+                  .frame(maxWidth: .infinity, alignment: .leading)
                }
+               .padding(.horizontal, 2)
+               .frame(maxWidth: .infinity, alignment: .leading)
             }
          } compactLeading: {
-            Image(systemName: context.state.statusSystemImage)
+            LiveActivityCompactDueDateText(dueDate: context.state.dueDate, size: 12)
                .foregroundStyle(context.state.accentColor)
          } compactTrailing: {
-            LiveActivityCompactCountdownView(dueDate: context.state.dueDate, isOverdue: context.state.isOverdue)
+            LiveActivityShortDueTimeText(dueDate: context.state.dueDate, size: 12)
                .foregroundStyle(Color(hex: 0xEBEBEB))
          } minimal: {
             Image(systemName: context.state.statusSystemImage)
@@ -53,12 +58,15 @@ private struct ToDoLiveActivitySurfaceView: View {
    let context: ActivityViewContext<ToDoLiveActivityAttributes>
 
    var body: some View {
-      switch activityFamily {
-      case .small:
-         ToDoWatchLiveActivityView(context: context)
-      default:
-         ToDoLiveActivityLockScreenView(context: context)
+      Group {
+         switch activityFamily {
+         case .small:
+            ToDoWatchLiveActivityView(context: context)
+         default:
+            ToDoLiveActivityLockScreenView(context: context)
+         }
       }
+      .frame(maxWidth: .infinity, alignment: .leading)
    }
 }
 
@@ -80,38 +88,75 @@ private struct ToDoLiveActivityLockScreenView: View {
    }
 
    private var compactWidthLayout: some View {
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(alignment: .leading, spacing: 10) {
          HStack(alignment: .center, spacing: 8) {
-            statusIcon(size: 20, frame: 28)
+            LiveActivityDueDateTimeText(dueDate: context.state.dueDate, size: 11)
+               .padding(.horizontal, 9)
+               .padding(.vertical, 5)
+               .background(Color.white.opacity(0.10), in: Capsule())
+
+            Spacer(minLength: 6)
+
+            LiveActivityUpdatedText(updatedAt: context.state.updatedAt, size: 10)
+         }
+         .frame(maxWidth: .infinity, alignment: .leading)
+
+         HStack(alignment: .center, spacing: 9) {
+            statusIcon(size: 19, frame: 32)
 
             VStack(alignment: .leading, spacing: 2) {
                Text(context.state.title)
-                  .font(.system(size: 18, weight: .semibold, design: .rounded))
+                  .font(WidgetTypography.title(19, relativeTo: .headline))
                   .foregroundStyle(.white)
                   .lineLimit(1)
                   .minimumScaleFactor(0.82)
 
-               LiveActivityDueDateTimeText(dueDate: context.state.dueDate, size: 12)
+               Text(context.state.statusTitle)
+                  .font(WidgetTypography.accent(10, relativeTo: .caption2))
+                  .foregroundStyle(context.state.accentColor)
+                  .textCase(.uppercase)
+                  .lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
          }
          .frame(maxWidth: .infinity, alignment: .leading)
 
-         LiveActivityAnimatedCountdownView(
+         LiveActivitySegmentedCountdownView(
             dueDate: context.state.dueDate,
             isOverdue: context.state.isOverdue,
-            size: 17,
-            weight: .semibold
+            valueSize: 22,
+            labelSize: 7,
+            spacing: 5
          )
+         .foregroundStyle(.white)
+         .padding(.horizontal, 12)
+         .padding(.vertical, 7)
+         .background(Color.white.opacity(0.10), in: Capsule())
          .frame(maxWidth: .infinity, alignment: .center)
       }
       .padding(.horizontal, 14)
-      .padding(.vertical, 10)
-      .frame(minWidth: 220, idealWidth: 280, maxWidth: 360, alignment: .leading)
+      .padding(.vertical, 12)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+         activityGlassBackground(cornerRadius: 22)
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
    }
 
    private var regularWidthLayout: some View {
       VStack(alignment: .leading, spacing: 12) {
+         HStack(alignment: .center, spacing: 10) {
+            LiveActivityDueDateTimeText(dueDate: context.state.dueDate, size: 14)
+               .padding(.horizontal, 11)
+               .padding(.vertical, 6)
+               .background(Color.white.opacity(0.10), in: Capsule())
+
+            Spacer(minLength: 8)
+
+            LiveActivityUpdatedText(updatedAt: context.state.updatedAt, size: 12)
+         }
+         .frame(maxWidth: .infinity, alignment: .leading)
+
          HStack(alignment: .center, spacing: 10) {
             statusIcon(size: 22, frame: 32)
 
@@ -124,28 +169,36 @@ private struct ToDoLiveActivityLockScreenView: View {
                   .frame(maxWidth: .infinity, alignment: .leading)
 
                Text(context.state.statusTitle)
-                  .font(.custom("CarbonPlusBold", size: 12, relativeTo: .caption))
+                  .font(.custom("Jura-Bold", size: 12, relativeTo: .caption))
                   .foregroundStyle(context.state.accentColor)
                   .textCase(.uppercase)
                   .lineLimit(1)
 
-               LiveActivityDueDateTimeText(dueDate: context.state.dueDate, size: 15)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
          }
          .frame(maxWidth: .infinity, alignment: .leading)
 
-         LiveActivityAnimatedCountdownView(
+         LiveActivitySegmentedCountdownView(
             dueDate: context.state.dueDate,
             isOverdue: context.state.isOverdue,
-            size: 22,
-            weight: .semibold
+            valueSize: 32,
+            labelSize: 9,
+            spacing: 8
          )
+         .foregroundStyle(.white)
+         .padding(.horizontal, 18)
+         .padding(.vertical, 9)
+         .background(Color.white.opacity(0.10), in: Capsule())
          .frame(maxWidth: .infinity, alignment: .center)
       }
       .padding(.horizontal, 22)
       .padding(.vertical, 16)
       .frame(maxWidth: .infinity, alignment: .leading)
+      .background {
+         activityGlassBackground(cornerRadius: 28)
+      }
+      .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
    }
 
    private func statusIcon(size: CGFloat, frame: CGFloat) -> some View {
@@ -153,6 +206,63 @@ private struct ToDoLiveActivityLockScreenView: View {
          .font(.system(size: size, weight: .semibold))
          .foregroundStyle(context.state.accentColor)
          .frame(width: frame, height: frame)
+         .background(Color.white.opacity(0.11), in: Circle())
+         .overlay(Circle().stroke(context.state.accentColor.opacity(0.38), lineWidth: 1))
+   }
+
+   private var lockScreenBackground: some ShapeStyle {
+      LinearGradient(
+         colors: [
+            Color(hex: 0x15191F),
+            context.state.backgroundAccentColor.opacity(0.72),
+            Color(hex: 0x07080A)
+         ],
+         startPoint: .topLeading,
+         endPoint: .bottomTrailing
+      )
+   }
+
+   @ViewBuilder
+   private func activityGlassBackground(cornerRadius: CGFloat) -> some View {
+      let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+
+      if #available(iOSApplicationExtension 26.0, *) {
+         shape
+            .fill(Color.white.opacity(0.08))
+            .overlay {
+               shape
+                  .stroke(Color.white.opacity(0.32), lineWidth: 1)
+            }
+            .glassEffect(
+               .regular.tint(Color.white.opacity(0.12)),
+               in: .rect(cornerRadius: cornerRadius)
+            )
+      } else {
+         shape
+            .fill(lockScreenBackground)
+            .overlay {
+               shape
+                  .stroke(Color.white.opacity(0.12), lineWidth: 1)
+            }
+      }
+   }
+
+   private func statusGlow(size: CGFloat) -> some View {
+      Circle()
+         .fill(
+            RadialGradient(
+               colors: [
+                  context.state.accentColor.opacity(0.18),
+                  context.state.accentColor.opacity(0.04),
+                  .clear
+               ],
+               center: .center,
+               startRadius: 0,
+               endRadius: size / 2
+            )
+         )
+         .frame(width: size, height: size)
+         .allowsHitTesting(false)
    }
 }
 
@@ -177,11 +287,13 @@ private struct ToDoWatchLiveActivityView: View {
          HStack(alignment: .center, spacing: 6) {
             VStack(alignment: .leading, spacing: 2) {
                Text(context.state.watchStatusText)
-                  .font(.custom("CarbonPlusBold", size: 10, relativeTo: .caption2))
+                  .font(.custom("Jura-Bold", size: 10, relativeTo: .caption2))
                   .foregroundStyle(context.state.accentColor)
                   .textCase(.uppercase)
 
                LiveActivityDueDateTimeText(dueDate: context.state.dueDate, size: 10)
+
+               LiveActivityUpdatedText(updatedAt: context.state.updatedAt, size: 9)
             }
 
             Spacer(minLength: 4)
@@ -223,14 +335,14 @@ private struct ToDoDynamicIslandTitleRow: View {
             .font(.system(size: 18, weight: .semibold))
             .foregroundStyle(context.state.accentColor)
             .frame(width: 24, height: 24)
+            .background(context.state.accentColor.opacity(0.18), in: Circle())
 
          Text(context.state.title)
             .font(.custom("CalSans-Regular", size: 17, relativeTo: .headline))
             .foregroundStyle(Color(hex: 0xEBEBEB))
             .lineLimit(1)
-            .minimumScaleFactor(0.82)
-         .frame(maxWidth: .infinity, alignment: .leading)
-         .clipped()
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
       }
       .padding(.horizontal, 2)
    }
@@ -242,17 +354,113 @@ private struct LiveActivityDueDateTimeText: View {
 
    var body: some View {
       if let dueDate {
-         Text("Due \(dueDate.formatted(date: .abbreviated, time: .shortened))")
+         Text("\(String(localized: "Due")) \(dueDate.formatted(date: .abbreviated, time: .shortened))")
             .font(.system(size: size, weight: .semibold, design: .rounded))
             .foregroundStyle(Color(hex: 0xD8D8D8))
             .lineLimit(1)
             .minimumScaleFactor(0.8)
       } else {
-         Text("No Due Date")
+         Text(String(localized: "No Due Date"))
             .font(.system(size: size, weight: .semibold, design: .rounded))
             .foregroundStyle(Color(hex: 0xAFAFAF))
             .lineLimit(1)
       }
+   }
+}
+
+private struct LiveActivityShortDueDateTimeText: View {
+   let dueDate: Date?
+   let dateSize: CGFloat
+   let timeSize: CGFloat
+   let spacing: CGFloat
+
+   var body: some View {
+      if let dueDate {
+         HStack(alignment: .firstTextBaseline, spacing: spacing) {
+            Text(LiveActivityShortDueFormatter.dateText(for: dueDate))
+               .font(.system(size: dateSize, weight: .semibold, design: .rounded))
+               .foregroundStyle(Color(hex: 0xEBEBEB, opacity: 0.76))
+               .monospacedDigit()
+
+            Text(LiveActivityShortDueFormatter.timeText(for: dueDate))
+               .font(.system(size: timeSize, weight: .bold, design: .rounded))
+               .foregroundStyle(Color(hex: 0xEBEBEB))
+               .monospacedDigit()
+         }
+         .lineLimit(1)
+         .minimumScaleFactor(0.78)
+      } else {
+         Text("--")
+            .font(.system(size: timeSize, weight: .bold, design: .rounded))
+            .foregroundStyle(Color(hex: 0xAFAFAF))
+            .monospacedDigit()
+      }
+   }
+}
+
+private struct LiveActivityCompactDueDateText: View {
+   let dueDate: Date?
+   let size: CGFloat
+
+   var body: some View {
+      Text(dueDate.map(LiveActivityShortDueFormatter.compactDateText(for:)) ?? "--")
+         .font(.system(size: size, weight: .semibold, design: .rounded))
+         .monospacedDigit()
+         .lineLimit(1)
+         .minimumScaleFactor(0.72)
+   }
+}
+
+private struct LiveActivityShortDueTimeText: View {
+   let dueDate: Date?
+   let size: CGFloat
+
+   var body: some View {
+      Text(dueDate.map(LiveActivityShortDueFormatter.timeText(for:)) ?? "--")
+         .font(.system(size: size, weight: .semibold, design: .rounded))
+         .monospacedDigit()
+         .lineLimit(1)
+         .minimumScaleFactor(0.72)
+   }
+}
+
+private enum LiveActivityShortDueFormatter {
+   static func dateText(for date: Date) -> String {
+      let formatter = DateFormatter()
+      formatter.locale = Locale(identifier: "en_US_POSIX")
+      formatter.dateFormat = "M/d/yy"
+      return formatter.string(from: date)
+   }
+
+   static func timeText(for date: Date) -> String {
+      let formatter = DateFormatter()
+      formatter.locale = Locale(identifier: "en_US_POSIX")
+      formatter.dateFormat = Calendar.autoupdatingCurrent.component(.minute, from: date) == 0 ? "ha" : "h:mma"
+      return formatter.string(from: date).lowercased()
+   }
+
+   static func compactDateText(for date: Date) -> String {
+      let formatter = DateFormatter()
+      formatter.locale = Locale(identifier: "en_US_POSIX")
+      formatter.dateFormat = "M/d"
+      return formatter.string(from: date)
+   }
+}
+
+private struct LiveActivityUpdatedText: View {
+   let updatedAt: Date
+   let size: CGFloat
+
+   var body: some View {
+      Text("\(String(localized: "Updated")) \(formattedUpdatedText)")
+         .font(.system(size: size, weight: .semibold, design: .rounded))
+         .foregroundStyle(Color(hex: 0xEBEBEB, opacity: 0.68))
+         .lineLimit(1)
+         .minimumScaleFactor(0.74)
+   }
+
+   private var formattedUpdatedText: String {
+      "\(LiveActivityShortDueFormatter.dateText(for: updatedAt)) @ \(LiveActivityShortDueFormatter.timeText(for: updatedAt))"
    }
 }
 
@@ -280,6 +488,81 @@ private struct LiveActivityAnimatedCountdownView: View {
    }
 }
 
+private struct LiveActivitySegmentedCountdownView: View {
+   let dueDate: Date?
+   let isOverdue: Bool
+   let valueSize: CGFloat
+   let labelSize: CGFloat
+   let spacing: CGFloat
+
+   var body: some View {
+      TimelineView(.periodic(from: .now, by: 1)) { timeline in
+         if let dueDate {
+            let components = countdownComponents(now: timeline.date, dueDate: dueDate)
+            HStack(alignment: .firstTextBaseline, spacing: spacing) {
+               countdownMetric(value: "\(components.days)", label: String(localized: "days"))
+               countdownSeparator
+               countdownMetric(value: twoDigit(components.hours), label: String(localized: "hours"))
+               countdownSeparator
+               countdownMetric(value: twoDigit(components.minutes), label: String(localized: "minutes"))
+               countdownSeparator
+               countdownMetric(value: twoDigit(components.seconds), label: String(localized: "seconds"))
+            }
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+         } else {
+            Text("--")
+               .font(.system(size: valueSize, weight: .bold, design: .rounded))
+               .monospacedDigit()
+         }
+      }
+   }
+
+   private var countdownSeparator: some View {
+      Text(":")
+         .font(.system(size: max(valueSize - 4, 10), weight: .bold, design: .rounded))
+         .foregroundStyle(Color(hex: 0xEBEBEB, opacity: 0.58))
+         .baselineOffset(labelSize + 1)
+   }
+
+   private func countdownMetric(value: String, label: String) -> some View {
+      VStack(spacing: 1) {
+         Text(value)
+            .font(.system(size: valueSize, weight: .bold, design: .rounded))
+            .foregroundStyle(Color(hex: 0xEBEBEB))
+            .monospacedDigit()
+
+         Text(label)
+            .font(.system(size: labelSize, weight: .semibold, design: .rounded))
+            .foregroundStyle(Color(hex: 0xEBEBEB, opacity: 0.64))
+            .lineLimit(1)
+            .minimumScaleFactor(0.6)
+      }
+      .frame(minWidth: max(valueSize * 1.25, 26), alignment: .center)
+   }
+
+   private func countdownComponents(now: Date, dueDate: Date) -> CountdownComponents {
+      let interval = max(isOverdue ? now.timeIntervalSince(dueDate) : dueDate.timeIntervalSince(now), 0)
+      let totalSeconds = Int(interval.rounded(.down))
+      let days = totalSeconds / 86_400
+      let hours = (totalSeconds % 86_400) / 3_600
+      let minutes = (totalSeconds % 3_600) / 60
+      let seconds = totalSeconds % 60
+      return CountdownComponents(days: days, hours: hours, minutes: minutes, seconds: seconds)
+   }
+
+   private func twoDigit(_ value: Int) -> String {
+      String(format: "%02d", value)
+   }
+
+   private struct CountdownComponents {
+      let days: Int
+      let hours: Int
+      let minutes: Int
+      let seconds: Int
+   }
+}
+
 private struct LiveActivityDueTimeView: View {
    let dueDate: Date?
    let isOverdue: Bool
@@ -294,51 +577,6 @@ private struct LiveActivityDueTimeView: View {
       } else {
          Text("--")
       }
-   }
-}
-
-private struct LiveActivitySegmentedCountdownView: View {
-   let dueDate: Date?
-   let isOverdue: Bool
-   let size: CGFloat
-
-   var body: some View {
-      TimelineView(.periodic(from: .now, by: 1)) { timeline in
-         let components = countdownComponents(now: timeline.date)
-         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(components.hours)
-               .foregroundStyle(.white)
-            Text(":")
-               .foregroundStyle(Color(hex: 0xAFAFAF))
-            Text(components.minutes)
-               .foregroundStyle(.white)
-            Text(":")
-               .foregroundStyle(Color(hex: 0xAFAFAF))
-            Text(components.seconds)
-               .foregroundStyle(Color(hex: 0xAFAFAF))
-         }
-         .font(.system(size: size, weight: .bold, design: .rounded))
-         .monospacedDigit()
-         .frame(maxWidth: .infinity, alignment: .center)
-      }
-   }
-
-   private func countdownComponents(now: Date) -> (hours: String, minutes: String, seconds: String) {
-      guard let dueDate else {
-         return ("--", "--", "--")
-      }
-
-      let interval = max(isOverdue ? now.timeIntervalSince(dueDate) : dueDate.timeIntervalSince(now), 0)
-      let totalSeconds = Int(interval.rounded(.down))
-      let hours = totalSeconds / 3600
-      let minutes = (totalSeconds % 3600) / 60
-      let seconds = totalSeconds % 60
-
-      return (
-         String(format: "%02d", hours),
-         String(format: "%02d", minutes),
-         String(format: "%02d", seconds)
-      )
    }
 }
 
@@ -372,11 +610,7 @@ private struct LiveActivityCompactCountdownView: View {
 
 private extension ToDoLiveActivityAttributes.ContentState {
    var statusTitle: String {
-      isOverdue ? "Overdue" : "Time-Sensitive"
-   }
-
-   var shortStatusTitle: String {
-      isOverdue ? "Due" : "Now"
+      isOverdue ? String(localized: "Overdue") : String(localized: "Time-Sensitive")
    }
 
    var statusSystemImage: String {
@@ -387,8 +621,12 @@ private extension ToDoLiveActivityAttributes.ContentState {
       isOverdue ? Color(hex: 0xD40000) : Color(hex: 0xE9A700)
    }
 
+   var backgroundAccentColor: Color {
+      isOverdue ? Color(hex: 0x4A0505) : Color(hex: 0x05356F)
+   }
+
    var watchStatusText: String {
-      isOverdue ? "Overdue" : "Due Soon"
+      isOverdue ? String(localized: "Overdue") : String(localized: "Due Soon")
    }
 }
 

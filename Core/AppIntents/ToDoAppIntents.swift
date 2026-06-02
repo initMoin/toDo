@@ -3,7 +3,7 @@ import Foundation
 import SwiftData
 
 struct ToDoAppEntity: AppEntity, Identifiable {
-   static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "ToDo")
+   static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "toDō")
    static let defaultQuery = ToDoEntityQuery()
 
    let id: String
@@ -35,7 +35,9 @@ struct ToDoEntityQuery: EntityStringQuery {
 
       return toDos.compactMap { toDo in
          let identifier = ToDoIntentStore.persistentIdentifierString(for: toDo)
-         guard requestedIdentifiers.contains(identifier) else { return nil }
+         guard requestedIdentifiers.contains(identifier),
+               ToDoIntentStore.isVisibleInCurrentScope(toDo)
+         else { return nil }
          return ToDoAppEntity(from: toDo, id: identifier)
       }
    }
@@ -50,6 +52,7 @@ struct ToDoEntityQuery: EntityStringQuery {
       let context = try ToDoIntentStore.modelContext()
       let toDos = try context.fetch(activeToDoDescriptor())
       return toDos
+         .filter(ToDoIntentStore.isVisibleInCurrentScope(_:))
          .filter { $0.task.localizedLowercase.contains(searchTerm) }
          .prefix(10)
          .map { ToDoAppEntity(from: $0) }
@@ -59,6 +62,7 @@ struct ToDoEntityQuery: EntityStringQuery {
    func suggestedEntities() async throws -> [ToDoAppEntity] {
       let context = try ToDoIntentStore.modelContext()
       return try context.fetch(activeToDoDescriptor())
+         .filter(ToDoIntentStore.isVisibleInCurrentScope(_:))
          .prefix(10)
          .map { ToDoAppEntity(from: $0) }
    }
@@ -81,14 +85,14 @@ extension ToDoAppEntity {
    @MainActor
    init(from toDo: ToDo, id: String? = nil) {
       self.id = id ?? ToDoIntentStore.persistentIdentifierString(for: toDo)
-      title = toDo.task.isEmpty ? "Untitled ToDo" : toDo.task
+      title = toDo.task.isEmpty ? "Untitled toDō" : toDo.task
       dueDate = toDo.dueDate
    }
 }
 
 struct CreateToDoIntent: AppIntent {
-   static let title: LocalizedStringResource = "Create ToDo"
-   static let description = IntentDescription("Create a new ToDo quickly.")
+   static let title: LocalizedStringResource = "Create toDō"
+   static let description = IntentDescription("Create a new toDō quickly.")
    static let openAppWhenRun = false
 
    @Parameter(title: "Title")
@@ -123,14 +127,15 @@ struct CreateToDoIntent: AppIntent {
    func perform() async throws -> some IntentResult & ProvidesDialog {
       let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !trimmedTitle.isEmpty else {
-         throw $title.needsValueError("What should this ToDo be called?")
+         throw $title.needsValueError("What should this toDō be called?")
       }
 
       let context = try ToDoIntentStore.modelContext()
       let toDo = ToDo(
          task: trimmedTitle,
          dueDate: dueDate,
-         reminderIntent: dueDate == nil ? .soft : (isTimeSensitive ? .timeSensitive : .due)
+         reminderIntent: dueDate == nil ? .soft : (isTimeSensitive ? .timeSensitive : .due),
+         ownerUserID: ToDoIntentStore.visibleOwnerUserID
       )
       context.insert(toDo)
       try context.save()
@@ -149,11 +154,11 @@ struct CreateToDoIntent: AppIntent {
 }
 
 struct CompleteToDoIntent: AppIntent {
-   static let title: LocalizedStringResource = "Complete ToDo"
-   static let description = IntentDescription("Mark an active ToDo as done.")
+   static let title: LocalizedStringResource = "Complete toDō"
+   static let description: IntentDescription = IntentDescription("Mark an active toDō as done.")
    static let openAppWhenRun = false
 
-   @Parameter(title: "ToDo")
+   @Parameter(title: "toDō")
    var toDo: ToDoAppEntity
 
    static var parameterSummary: some ParameterSummary {
@@ -171,8 +176,11 @@ struct CompleteToDoIntent: AppIntent {
       let context = try ToDoIntentStore.modelContext()
       let toDos = try context.fetch(FetchDescriptor<ToDo>())
 
-      guard let target = toDos.first(where: { ToDoIntentStore.persistentIdentifierString(for: $0) == toDo.id }) else {
-         return .result(dialog: "That ToDo could not be found.")
+      guard let target = toDos.first(where: {
+         ToDoIntentStore.persistentIdentifierString(for: $0) == toDo.id
+            && ToDoIntentStore.isVisibleInCurrentScope($0)
+      }) else {
+         return .result(dialog: "That toDō could not be found.")
       }
 
       target.transition(to: .done)
@@ -193,8 +201,8 @@ struct CompleteToDoIntent: AppIntent {
 }
 
 struct CreateTimeSensitiveToDoIntent: AppIntent {
-   static let title: LocalizedStringResource = "Create Time-Sensitive ToDo"
-   static let description = IntentDescription("Create a ToDo that should be treated as time-sensitive.")
+   static let title: LocalizedStringResource = "Create Time-Sensitive toDō"
+   static let description = IntentDescription("Create a toDō that should be treated as time-sensitive.")
    static let openAppWhenRun = false
 
    @Parameter(title: "Title")
@@ -223,14 +231,15 @@ struct CreateTimeSensitiveToDoIntent: AppIntent {
    func perform() async throws -> some IntentResult & ProvidesDialog {
       let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
       guard !trimmedTitle.isEmpty else {
-         throw $title.needsValueError("What should this time-sensitive ToDo be called?")
+         throw $title.needsValueError("What should this time-sensitive toDō be called?")
       }
 
       let context = try ToDoIntentStore.modelContext()
       let toDo = ToDo(
          task: trimmedTitle,
          dueDate: dueDate,
-         reminderIntent: .timeSensitive
+         reminderIntent: .timeSensitive,
+         ownerUserID: ToDoIntentStore.visibleOwnerUserID
       )
       context.insert(toDo)
       try context.save()
@@ -244,79 +253,80 @@ struct CreateTimeSensitiveToDoIntent: AppIntent {
       }
       SyncCoordinator.shared.scheduleLocalSync()
 
-      return .result(dialog: "Created time-sensitive ToDo \(trimmedTitle).")
+      return .result(dialog: "Created time-sensitive toDō \(trimmedTitle).")
    }
 }
 
 struct OpenToDoIntent: AppIntent {
-   static let title: LocalizedStringResource = "Open ToDo"
-   static let description = IntentDescription("Open ToDo to review your list.")
+   static let title: LocalizedStringResource = "Open toDō"
+   static let description = IntentDescription("Open toDō to review your list.")
    static let openAppWhenRun = true
 
    @MainActor
    func perform() async throws -> some IntentResult & ProvidesDialog {
       NavigationCoordinator.shared.listRoute = .all
-      return .result(dialog: "Opening ToDo.")
+      return .result(dialog: "Opening toDō.")
    }
 }
 
 struct OpenTodayToDosIntent: AppIntent {
-   static let title: LocalizedStringResource = "Show Today’s ToDos"
-   static let description = IntentDescription("Open ToDo and show active ToDos due today.")
+   static let title: LocalizedStringResource = "Show Today’s toDōs"
+   static let description = IntentDescription("Open toDō and show active toDōs due today.")
    static let openAppWhenRun = true
 
    @MainActor
    func perform() async throws -> some IntentResult & ProvidesDialog {
       NavigationCoordinator.shared.listRoute = .today
-      return .result(dialog: "Showing today’s ToDos.")
+      return .result(dialog: "Showing today’s toDōs.")
    }
 }
 
 struct OpenOverdueToDosIntent: AppIntent {
-   static let title: LocalizedStringResource = "Show Overdue ToDos"
-   static let description = IntentDescription("Open ToDo and show active overdue ToDos.")
+   static let title: LocalizedStringResource = "Show Overdue toDōs"
+   static let description = IntentDescription("Open toDō and show active overdue toDōs.")
    static let openAppWhenRun = true
 
    @MainActor
    func perform() async throws -> some IntentResult & ProvidesDialog {
       NavigationCoordinator.shared.listRoute = .overdue
-      return .result(dialog: "Showing overdue ToDos.")
+      return .result(dialog: "Showing overdue toDōs.")
    }
 }
 
 struct OpenDueToDosIntent: AppIntent {
-   static let title: LocalizedStringResource = "Show Due ToDos"
-   static let description = IntentDescription("Open ToDo and show active ToDos with due dates.")
+   static let title: LocalizedStringResource = "Show Due toDōs"
+   static let description = IntentDescription("Open toDō and show active toDōs with due dates.")
    static let openAppWhenRun = true
 
    @MainActor
    func perform() async throws -> some IntentResult & ProvidesDialog {
       NavigationCoordinator.shared.listRoute = .due
-      return .result(dialog: "Showing due ToDos.")
+      return .result(dialog: "Showing due toDōs.")
    }
 }
 
 struct OpenTimeSensitiveToDosIntent: AppIntent {
-   static let title: LocalizedStringResource = "Show Time-Sensitive ToDos"
-   static let description = IntentDescription("Open ToDo and show active time-sensitive ToDos.")
+   static let title: LocalizedStringResource = "Show Time-Sensitive toDōs"
+   static let description = IntentDescription("Open toDō and show active time-sensitive toDōs.")
    static let openAppWhenRun = true
 
    @MainActor
    func perform() async throws -> some IntentResult & ProvidesDialog {
       NavigationCoordinator.shared.listRoute = .timeSensitive
-      return .result(dialog: "Showing time-sensitive ToDos.")
+      return .result(dialog: "Showing time-sensitive toDōs.")
    }
 }
 
 struct SummarizeToDosIntent: AppIntent {
-   static let title: LocalizedStringResource = "Summarize ToDos"
-   static let description = IntentDescription("Summarize local ToDo patterns and current task pressure.")
+   static let title: LocalizedStringResource = "Summarize toDōs"
+   static let description = IntentDescription("Summarize local toDō patterns and current task pressure.")
    static let openAppWhenRun = false
 
    @MainActor
    func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<String> {
       let context = try ToDoIntentStore.modelContext()
       let toDos = try context.fetch(FetchDescriptor<ToDo>())
+         .filter(ToDoIntentStore.isVisibleInCurrentScope(_:))
       let active = toDos.filter(\.isActive)
       let completed = toDos.filter { $0.lifecycleState == .done }
       let overdue = active.filter(\.isLate)
@@ -334,7 +344,7 @@ struct SummarizeToDosIntent: AppIntent {
       let focusPressureScore = min((overdue.count * 4) + (timeSensitive.count * 3) + (dueToday.count * 2) + active.count, 100)
 
       let summary = [
-         String(localized: "ToDo summary:"),
+         String(localized: "toDō summary:"),
          String(format: String(localized: "%@ active."), AppLocalization.numberString(active.count)),
          String(format: String(localized: "%@ overdue."), AppLocalization.numberString(overdue.count)),
          String(format: String(localized: "%@ due today."), AppLocalization.numberString(dueToday.count)),
@@ -353,17 +363,17 @@ enum ToDoFocusFilterMode: String, AppEnum {
    case timeSensitiveOnly
    case dueOnly
 
-   static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "ToDo Focus")
+   static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "toDō Focus")
    static let caseDisplayRepresentations: [Self: DisplayRepresentation] = [
-      .all: "All ToDos",
+      .all: "All toDōs",
       .timeSensitiveOnly: "Time-Sensitive Only",
-      .dueOnly: "Due ToDos Only"
+      .dueOnly: "Due toDōs Only"
    ]
 }
 
 struct SetToDoFocusFilterIntent: SetFocusFilterIntent {
-   static let title: LocalizedStringResource = "Set ToDo Focus Filter"
-   static let description = IntentDescription("Choose which ToDo notifications and app surfaces should be active during a Focus.")
+   static let title: LocalizedStringResource = "Set toDō Focus Filter"
+   static let description = IntentDescription("Choose which toDō notifications and app surfaces should be active during a Focus.")
 
    @Parameter(title: "Mode")
    var mode: ToDoFocusFilterMode?
@@ -417,11 +427,11 @@ private extension ToDoFocusFilterMode {
    var displayTitle: String {
       switch self {
       case .all:
-         return "All ToDos"
+         return "All toDōs"
       case .timeSensitiveOnly:
          return "Time-Sensitive Only"
       case .dueOnly:
-         return "Due ToDos Only"
+         return "Due toDōs Only"
       }
    }
 }
@@ -431,32 +441,32 @@ struct ToDoShortcutsProvider: AppShortcutsProvider {
       AppShortcut(
          intent: CreateToDoIntent(),
          phrases: [
-            "Create a ToDo in \(.applicationName)",
-            "Add a ToDo in \(.applicationName)",
+            "Create a toDō in \(.applicationName)",
+            "Add a toDō in \(.applicationName)",
             "Remind me with \(.applicationName)"
          ],
-         shortTitle: "Create ToDo",
+         shortTitle: "Create toDō",
          systemImageName: "checkmark.circle"
       )
 
       AppShortcut(
          intent: CreateTimeSensitiveToDoIntent(),
          phrases: [
-            "Create a time-sensitive ToDo in \(.applicationName)",
-            "Add a time-sensitive ToDo in \(.applicationName)",
-            "Create an urgent ToDo in \(.applicationName)"
+            "Create a time-sensitive toDō in \(.applicationName)",
+            "Add a time-sensitive toDō in \(.applicationName)",
+            "Create an urgent toDō in \(.applicationName)"
          ],
-         shortTitle: "Urgent ToDo",
+         shortTitle: "Urgent toDō",
          systemImageName: "exclamationmark.circle"
       )
 
       AppShortcut(
          intent: CompleteToDoIntent(),
          phrases: [
-            "Complete a ToDo in \(.applicationName)",
-            "Mark a ToDo done in \(.applicationName)"
+            "Complete a toDō in \(.applicationName)",
+            "Mark a toDō done in \(.applicationName)"
          ],
-         shortTitle: "Complete ToDo",
+         shortTitle: "Complete toDō",
          systemImageName: "checkmark.circle.fill"
       )
 
@@ -464,17 +474,17 @@ struct ToDoShortcutsProvider: AppShortcutsProvider {
          intent: OpenToDoIntent(),
          phrases: [
             "Open \(.applicationName)",
-            "Show my ToDos in \(.applicationName)"
+            "Show my toDōs in \(.applicationName)"
          ],
-         shortTitle: "Open ToDo",
+         shortTitle: "Open toDō",
          systemImageName: "list.bullet"
       )
 
       AppShortcut(
          intent: OpenTodayToDosIntent(),
          phrases: [
-            "Show today's ToDos in \(.applicationName)",
-            "Open today's ToDos in \(.applicationName)"
+            "Show today's toDōs in \(.applicationName)",
+            "Open today's toDōs in \(.applicationName)"
          ],
          shortTitle: "Today",
          systemImageName: "calendar"
@@ -483,8 +493,8 @@ struct ToDoShortcutsProvider: AppShortcutsProvider {
       AppShortcut(
          intent: OpenOverdueToDosIntent(),
          phrases: [
-            "Show overdue ToDos in \(.applicationName)",
-            "Open overdue ToDos in \(.applicationName)"
+            "Show overdue toDōs in \(.applicationName)",
+            "Open overdue toDōs in \(.applicationName)"
          ],
          shortTitle: "Overdue",
          systemImageName: "exclamationmark.circle"
@@ -493,8 +503,8 @@ struct ToDoShortcutsProvider: AppShortcutsProvider {
       AppShortcut(
          intent: OpenDueToDosIntent(),
          phrases: [
-            "Show due ToDos in \(.applicationName)",
-            "Open due ToDos in \(.applicationName)"
+            "Show due toDōs in \(.applicationName)",
+            "Open due toDōs in \(.applicationName)"
          ],
          shortTitle: "Due",
          systemImageName: "bell"
@@ -503,9 +513,9 @@ struct ToDoShortcutsProvider: AppShortcutsProvider {
       AppShortcut(
          intent: OpenTimeSensitiveToDosIntent(),
          phrases: [
-            "Show time-sensitive ToDos in \(.applicationName)",
-            "Open time-sensitive ToDos in \(.applicationName)",
-            "Show urgent ToDos in \(.applicationName)"
+            "Show time-sensitive toDōs in \(.applicationName)",
+            "Open time-sensitive toDōs in \(.applicationName)",
+            "Show urgent toDōs in \(.applicationName)"
          ],
          shortTitle: "Time-Sensitive",
          systemImageName: "clock.badge.exclamationmark"
@@ -514,9 +524,9 @@ struct ToDoShortcutsProvider: AppShortcutsProvider {
       AppShortcut(
          intent: SummarizeToDosIntent(),
          phrases: [
-            "Summarize my ToDos in \(.applicationName)",
-            "Show my ToDo summary in \(.applicationName)",
-            "Check my ToDo stats in \(.applicationName)"
+            "Summarize my toDōs in \(.applicationName)",
+            "Show my toDō summary in \(.applicationName)",
+            "Check my toDō stats in \(.applicationName)"
          ],
          shortTitle: "Summarize",
          systemImageName: "chart.bar.doc.horizontal"

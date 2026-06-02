@@ -36,7 +36,7 @@ final class CalendarIntegrationService {
          event = EKEvent(eventStore: eventStore)
       }
 
-      event.title = toDo.task.isEmpty ? "ToDo" : toDo.task
+      event.title = toDo.task.isEmpty ? "toDō" : toDo.task
       event.notes = calendarNotes(for: toDo)
       event.startDate = dueDate
       event.endDate = max(dueDate.addingTimeInterval(30 * 60), dueDate.addingTimeInterval(60))
@@ -63,11 +63,11 @@ final class CalendarIntegrationService {
 
       switch (notes.isEmpty, recurrence) {
       case (true, nil):
-         return "Created by ToDo."
+         return "Created by toDō."
       case (false, nil):
          return notes
       case (true, .some(let recurrence)):
-         return "Created by ToDo. \(recurrence)."
+         return "Created by toDō. \(recurrence)."
       case (false, .some(let recurrence)):
          return "\(notes)\n\n\(recurrence)."
       }

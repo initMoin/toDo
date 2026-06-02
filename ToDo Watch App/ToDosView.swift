@@ -1,6 +1,7 @@
 @preconcurrency import Combine
 import AuthenticationServices
 import SwiftUI
+import WatchKit
 import WatchConnectivity
 
 enum WatchAppColor {
@@ -42,6 +43,11 @@ extension WatchToDoItem {
       guard !isDone, let dueDate else { return false }
       return dueDate < .now
    }
+
+   func isDueForInAppReminder(at date: Date) -> Bool {
+      guard lifecycleState == .active, !isDone, let dueDate else { return false }
+      return dueDate <= date
+   }
 }
 
 extension Font {
@@ -54,7 +60,7 @@ extension Font {
    }
 
    static func watchAccent(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-      .custom("CarbonPlusBold", size: size, relativeTo: textStyle)
+      .custom("Jura-Bold", size: size, relativeTo: textStyle)
    }
 
    static func watchBody(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
@@ -62,15 +68,15 @@ extension Font {
    }
 
    static func watchBodyStrong(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-      .custom("CarbonPlusRegular", size: size, relativeTo: textStyle)
+      .custom("Jura-Regular", size: size, relativeTo: textStyle)
    }
 
    private static func watchBodyFontName(for textStyle: Font.TextStyle) -> String {
       switch textStyle {
       case .caption, .caption2, .footnote:
-         return "CarbonPlusRegular"
+         return "Jura-Regular"
       default:
-         return "CarbonPlusLight"
+         return "Jura-Light"
       }
    }
 }
@@ -249,6 +255,10 @@ final class WatchToDoStore: NSObject, ObservableObject, WCSessionDelegate {
       Array(items.filter(\.isDone).sorted { $0.updatedAt > $1.updatedAt }.prefix(4))
    }
 
+   var doneItems: [WatchToDoItem] {
+      items.filter(\.isDone).sorted { $0.updatedAt > $1.updatedAt }
+   }
+
    var canOpenOnPhone: Bool {
       isCompanionAppInstalled && isPhoneReachable
    }
@@ -357,6 +367,10 @@ final class WatchToDoStore: NSObject, ObservableObject, WCSessionDelegate {
       selectedItem = item
    }
 
+   func clearSelection() {
+      selectedItem = nil
+   }
+
    func create(task: String, dueDate: Date?, isTimeSensitive: Bool) {
       send(action: WatchToDoAction(
          type: .create,
@@ -366,12 +380,49 @@ final class WatchToDoStore: NSObject, ObservableObject, WCSessionDelegate {
       ))
    }
 
+   func updateTask(_ task: String, for item: WatchToDoItem) {
+      let trimmedTask = task.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !trimmedTask.isEmpty, trimmedTask != item.task else { return }
+
+      send(action: WatchToDoAction(
+         type: .updateTask,
+         item: item,
+         task: trimmedTask
+      ))
+   }
+
    func complete(_ item: WatchToDoItem) {
       send(action: WatchToDoAction(type: .complete, item: item))
    }
 
    func reopen(_ item: WatchToDoItem) {
       send(action: WatchToDoAction(type: .reopen, item: item))
+   }
+
+   func archive(_ item: WatchToDoItem) {
+      send(action: WatchToDoAction(type: .archive, item: item))
+      if selectedItem?.id == item.id {
+         selectedItem = nil
+      }
+   }
+
+   func trash(_ item: WatchToDoItem) {
+      send(action: WatchToDoAction(type: .trash, item: item))
+      if selectedItem?.id == item.id {
+         selectedItem = nil
+      }
+   }
+
+   func completeNanoDo(_ nanoDo: WatchNanoDoItem, in item: WatchToDoItem) {
+      send(action: WatchToDoAction(type: .completeNanoDo, item: item, nanoDo: nanoDo))
+   }
+
+   func reopenNanoDo(_ nanoDo: WatchNanoDoItem, in item: WatchToDoItem) {
+      send(action: WatchToDoAction(type: .reopenNanoDo, item: item, nanoDo: nanoDo))
+   }
+
+   func deleteNanoDo(_ nanoDo: WatchNanoDoItem, in item: WatchToDoItem) {
+      send(action: WatchToDoAction(type: .deleteNanoDo, item: item, nanoDo: nanoDo))
    }
 
    func setDueDate(_ dueDate: Date?, for item: WatchToDoItem, isTimeSensitive: Bool? = nil) {
@@ -414,7 +465,7 @@ final class WatchToDoStore: NSObject, ObservableObject, WCSessionDelegate {
       }
 
       guard session.isReachable else {
-         statusText = "Open ToDo on iPhone"
+         statusText = "Open toDō on iPhone"
          return
       }
 
@@ -595,7 +646,7 @@ final class WatchToDoStore: NSObject, ObservableObject, WCSessionDelegate {
             lastUpdated = snapshot.generatedAt
 
             authStore?.applyPhoneAuthState(snapshot.authState)
-            statusText = snapshot.items.isEmpty ? "No ToDos" : "Updated"
+            statusText = snapshot.items.isEmpty ? "No toDōs" : "Updated"
          case .authState:
             guard let authState = try WatchBridgeCodec.decodePayload(WatchAuthState.self, from: envelope.payload) else {
                return
@@ -709,8 +760,11 @@ struct ToDosView: View {
    @StateObject private var authStore = WatchAuthStore()
    @State private var navigationPath: [WatchRoute] = []
    @State private var didApplyScreenshotPresentation = false
+   @State private var reminderNow = Date()
+   @State private var dismissedDueReminderIDs = Set<String>()
 
    private let autoRefreshTimer = Timer.publish(every: 3600, on: .main, in: .common).autoconnect()
+   private let inAppReminderTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
    var body: some View {
       NavigationStack(path: $navigationPath) {
@@ -722,7 +776,7 @@ struct ToDosView: View {
                Button {
                   navigationPath.append(.newToDo)
                } label: {
-                  Label("New ToDo", systemImage: "plus")
+                  Label("New toDō", systemImage: "plus")
                      .font(.watchBodyStrong(14, relativeTo: .subheadline))
                      .frame(maxWidth: .infinity)
                }
@@ -733,12 +787,12 @@ struct ToDosView: View {
                } else {
                   VStack(alignment: .leading, spacing: 6) {
                      ForEach(store.toDoItems) { item in
-                        Button {
-                           store.select(item)
-                        } label: {
-                           WatchToDoRow(item: item, accent: WatchAppColor.actionPrimary)
-                        }
-                        .buttonStyle(.plain)
+                        WatchToDoRowActionButton(
+                           item: item,
+                           accent: WatchAppColor.actionPrimary,
+                           onOpen: { store.select(item) },
+                           onToggleDone: { item.isDone ? store.reopen(item) : store.complete(item) }
+                        )
                      }
                   }
                }
@@ -748,10 +802,11 @@ struct ToDosView: View {
                } label: {
                   VStack(spacing: 6) {
                      Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(WatchAppColor.main)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 16)
+                        .padding(.top, 18)
+                        .padding(.bottom, 8)
 
                      Text(lastUpdatedLabel)
                         .font(.watchBody(10, relativeTo: .caption2))
@@ -773,26 +828,118 @@ struct ToDosView: View {
             case .newToDo:
                CaptureToDoView(store: store)
             case .settings:
-               WatchAccountView(authStore: authStore, store: store)
+               WatchAccountView(
+                  authStore: authStore,
+                  store: store,
+                  openDoneToDos: { navigationPath.append(.doneToDos) }
+               )
+            case .doneToDos:
+               WatchDoneToDosView(store: store)
             }
-         }
-         .navigationDestination(item: $store.selectedItem) { item in
-            WatchToDoDetailView(item: item, store: store)
          }
          .onReceive(autoRefreshTimer) { _ in
             store.requestRefresh()
          }
+         .onReceive(inAppReminderTimer) { date in
+            reminderNow = date
+         }
          .onChange(of: scenePhase) { oldPhase, newPhase in
             if newPhase == .active {
+               reminderNow = Date()
                store.requestRefresh()
             }
          }
       }
       .tint(WatchAppColor.actionPrimary)
+      .overlay {
+         if let item = store.selectedItem {
+            Color.black.opacity(0.28)
+               .ignoresSafeArea()
+               .onTapGesture {
+                  store.clearSelection()
+               }
+               .transition(.opacity)
+
+            VStack {
+               Spacer(minLength: 0)
+
+               WatchToDoDetailView(
+                  item: item,
+                  store: store,
+                  onClose: { store.clearSelection() }
+               )
+               .frame(maxWidth: .infinity)
+               .background(WatchAppColor.surfaceElevated, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+               .overlay(
+                  RoundedRectangle(cornerRadius: 28, style: .continuous)
+                     .stroke(WatchAppColor.border, lineWidth: 1)
+               )
+               .shadow(color: .black.opacity(0.45), radius: 18, y: -8)
+               .padding(.horizontal, 8)
+               .padding(.bottom, 2)
+               .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+         }
+      }
+      .animation(.spring(response: 0.34, dampingFraction: 0.86), value: store.selectedItem?.id)
+      .overlay(alignment: .bottom) {
+         if let item = activeInAppReminder {
+            WatchDueReminderBanner(
+               item: item,
+               now: reminderNow,
+               onOpen: { openInAppReminder(item) },
+               onDone: { completeInAppReminder(item) },
+               onSnooze: { snoozeInAppReminder(item) },
+               onDismiss: { dismissInAppReminder(item) }
+            )
+            .padding(.horizontal, 4)
+            .padding(.bottom, 4)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+         }
+      }
+      .animation(.spring(response: 0.34, dampingFraction: 0.84), value: activeInAppReminder?.id)
+      .onChange(of: activeInAppReminder?.id) { _, newValue in
+         guard newValue != nil else { return }
+         WKInterfaceDevice.current().play(.notification)
+      }
       .task {
          store.configure(authStore: authStore)
          applyScreenshotPresentationIfNeeded()
       }
+   }
+
+   private var activeInAppReminder: WatchToDoItem? {
+      guard !isRunningForScreenshots else { return nil }
+      return store.toDoItems
+         .filter { item in
+            item.isDueForInAppReminder(at: reminderNow) && !dismissedDueReminderIDs.contains(item.id)
+         }
+         .sorted { lhs, rhs in
+            if lhs.isTimeSensitive != rhs.isTimeSensitive {
+               return lhs.isTimeSensitive && !rhs.isTimeSensitive
+            }
+            return (lhs.dueDate ?? .distantPast) < (rhs.dueDate ?? .distantPast)
+         }
+         .first
+   }
+
+   private func openInAppReminder(_ item: WatchToDoItem) {
+      dismissedDueReminderIDs.insert(item.id)
+      store.select(item)
+   }
+
+   private func completeInAppReminder(_ item: WatchToDoItem) {
+      dismissedDueReminderIDs.insert(item.id)
+      store.complete(item)
+   }
+
+   private func snoozeInAppReminder(_ item: WatchToDoItem) {
+      dismissedDueReminderIDs.insert(item.id)
+      store.snooze(item, seconds: 15 * 60)
+   }
+
+   private func dismissInAppReminder(_ item: WatchToDoItem) {
+      dismissedDueReminderIDs.insert(item.id)
    }
 
    private var isRunningForScreenshots: Bool {
@@ -843,7 +990,7 @@ struct ToDosView: View {
                .font(.watchDisplay(28, relativeTo: .title2))
                .foregroundStyle(WatchAppColor.textPrimary)
 
-            Text("\(store.toDoItems.count) ToDos")
+            Text("\(store.toDoItems.count) toDōs")
                .font(.watchBodyStrong(11, relativeTo: .caption2))
                .foregroundStyle(WatchAppColor.textSecondary)
          }
@@ -915,7 +1062,7 @@ struct ToDosView: View {
             .font(.watchDisplay(20, relativeTo: .headline))
             .foregroundStyle(WatchAppColor.textPrimary)
 
-         Text("Start with your first ToDo.")
+         Text("Start with your first toDō.")
             .font(.watchBody(13, relativeTo: .caption))
             .foregroundStyle(WatchAppColor.textSecondary)
       }
@@ -932,4 +1079,5 @@ struct ToDosView: View {
 private enum WatchRoute: Hashable {
    case newToDo
    case settings
+   case doneToDos
 }

@@ -16,7 +16,28 @@ enum AppLocalization {
     }
 
     nonisolated static var displayLocale: Locale {
-        Locale(identifier: languageCode)
+        switch languageCode {
+        case "ar":
+            return Locale(identifier: "ar_SA@numbers=arab")
+        case "ur":
+            return Locale(identifier: "ur_PK@numbers=arabext")
+        case "hi":
+            return Locale(identifier: "hi_IN@numbers=deva")
+        case "th":
+            return Locale(identifier: "th_TH@numbers=thai")
+        case "es":
+            return Locale(identifier: "es_ES")
+        case "it":
+            return Locale(identifier: "it_IT")
+        case "ja":
+            return Locale(identifier: "ja_JP")
+        case "ms":
+            return Locale(identifier: "ms_MY")
+        case "zh-Hans":
+            return Locale(identifier: "zh_Hans_CN")
+        default:
+            return Locale(identifier: languageCode)
+        }
     }
 
     nonisolated static var displayCalendar: Calendar {
@@ -94,7 +115,7 @@ enum AppTimeSource: String, CaseIterable, Identifiable {
         case .location:
             return String(localized: "Location")
         case .system:
-            return String(localized: "System")
+            return String(localized: "Device")
         }
     }
 }

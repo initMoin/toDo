@@ -4,6 +4,85 @@ import Combine
 import CoreLocation
 import MapKit
 
+struct ToDoLifecycleActionBar: View {
+   let isDone: Bool
+   var includesTrash = true
+   let onArchive: () -> Void
+   let onTrash: () -> Void
+   let onToggleDone: () -> Void
+
+   var body: some View {
+      if #available(iOS 26, *) {
+         GlassEffectContainer(spacing: 16) {
+            controls
+         }
+         .frame(maxWidth: .infinity, alignment: .center)
+         .padding(.horizontal, 20)
+      } else {
+         controls
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(AppColor.surfaceElevated, in: Capsule())
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 18)
+      }
+   }
+
+   private var controls: some View {
+      HStack(spacing: 14) {
+         lifecycleActionButton(
+            systemName: "archivebox.fill",
+            accessibilityLabel: "Archive toDō",
+            foreground: AppColor.onAction,
+            background: AppColor.actionPrimary,
+            action: onArchive
+         )
+
+         if includesTrash {
+            lifecycleActionButton(
+               systemName: "trash.fill",
+               accessibilityLabel: "Move toDō to trash",
+               foreground: AppColor.onAction,
+               background: AppColor.actionDestructive,
+               action: onTrash
+            )
+         }
+
+         lifecycleActionButton(
+            systemName: isDone ? "arrow.uturn.backward" : "checkmark",
+            accessibilityLabel: isDone ? "Mark toDō active" : "Mark toDō done",
+            foreground: AppColor.onAction,
+            background: isDone ? AppColor.actionPrimary : AppColor.actionSuccess,
+            action: onToggleDone
+         )
+      }
+   }
+
+   private func lifecycleActionButton(
+      systemName: String,
+      accessibilityLabel: LocalizedStringKey,
+      foreground: Color,
+      background: Color,
+      action: @escaping () -> Void
+   ) -> some View {
+      Button(action: action) {
+         Image(systemName: systemName)
+            .font(.appBodyStrong(19, relativeTo: .headline))
+            .foregroundStyle(foreground)
+            .frame(width: 46, height: 46)
+            .background {
+               if #unavailable(iOS 26) {
+                  Circle().fill(background)
+               }
+            }
+            .appInteractiveCircleGlass(tint: background)
+            .contentShape(Circle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(accessibilityLabel)
+   }
+}
+
 struct TagPillFlowLayout: Layout {
    var spacing: CGFloat
    var rowSpacing: CGFloat
@@ -166,12 +245,17 @@ struct ToDoDueDateCalendar: View {
             .foregroundStyle(dayTextColor(isSelected: isSelected, isToday: isToday))
             .frame(width: 34, height: 34)
             .background {
-               Circle()
-                  .fill(isSelected ? AppColor.main : Color.clear)
+               if #unavailable(iOS 26.0) {
+                  Circle()
+                     .fill(isSelected ? AppColor.main : Color.clear)
+               }
             }
+            .appInteractiveCircleGlass(tint: isSelected ? AppColor.main : AppColor.surfaceMuted)
             .overlay {
-               Circle()
-                  .stroke(isToday && !isSelected ? AppColor.main : Color.clear, lineWidth: 1.5)
+               if #unavailable(iOS 26.0) {
+                  Circle()
+                     .stroke(isToday && !isSelected ? AppColor.main : Color.clear, lineWidth: 1.5)
+               }
             }
             .contentShape(Circle())
       }
@@ -227,6 +311,7 @@ struct ToDoDueDateCalendar: View {
 
 struct NanoDoRowView: View {
    @Bindable var nanoDo: NanoDo
+   var allowsTextEditing = true
    let onDelete: () -> Void
 
    var body: some View {
@@ -249,29 +334,47 @@ struct NanoDoRowView: View {
             .buttonStyle(.plain)
             .accessibilityLabel(nanoDo.isDone ? "Mark nanoDo active" : "Mark nanoDo done")
 
-            TextField("NanoDo", text: Binding(
-               get: { nanoDo.task },
-               set: {
-                  nanoDo.task = $0
-                  nanoDo.markUpdated()
-                  SyncCoordinator.shared.scheduleLocalSync()
-               }
-            ))
-            .font(.appDisplay(18, relativeTo: .headline))
-            .foregroundStyle(nanoDo.isDone ? AppColor.textSecondary : AppColor.textPrimary)
-            .strikethrough(nanoDo.isDone, color: AppColor.textSecondary.opacity(0.6))
-
-            Button(role: .destructive) {
-               onDelete()
-            } label: {
-               Image(systemName: "trash")
-                  .font(.appDisplay(14, relativeTo: .subheadline))
-                  .frame(width: 30, height: 30)
+            if allowsTextEditing {
+               TextField("NanoDo", text: Binding(
+                  get: { nanoDo.task },
+                  set: {
+                     nanoDo.task = $0
+                     nanoDo.markUpdated()
+                     SyncCoordinator.shared.scheduleLocalSync()
+                  }
+               ))
+               .font(.appDisplay(18, relativeTo: .headline))
+               .foregroundStyle(nanoDo.isDone ? AppColor.textSecondary : AppColor.textPrimary)
+               .strikethrough(nanoDo.isDone, color: AppColor.textSecondary.opacity(0.6))
+            } else {
+               Text(nanoDo.task)
+                  .font(.appDisplay(18, relativeTo: .headline))
+                  .foregroundStyle(nanoDo.isDone ? AppColor.textSecondary : AppColor.textPrimary)
+                  .strikethrough(nanoDo.isDone, color: AppColor.textSecondary.opacity(0.6))
+                  .fixedSize(horizontal: false, vertical: true)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(AppColor.actionDestructive)
-            .background(AppColor.surface, in: Circle())
-            .accessibilityLabel("Delete nanoDo")
+
+            Spacer(minLength: 0)
+
+            if allowsTextEditing {
+               Button(role: .destructive) {
+                  onDelete()
+               } label: {
+                  Image(systemName: "trash")
+                     .font(.appDisplay(14, relativeTo: .subheadline))
+                     .frame(width: 30, height: 30)
+               }
+               .buttonStyle(.plain)
+               .foregroundStyle(AppColor.actionDestructive)
+               .background {
+                  if #unavailable(iOS 26.0) {
+                     Circle()
+                        .fill(AppColor.surface)
+                  }
+               }
+               .appInteractiveCircleGlass(tint: AppColor.surface)
+               .accessibilityLabel("Delete nanoDo")
+            }
          }
 
          HStack(spacing: 10) {
@@ -321,12 +424,77 @@ struct NanoDoRowView: View {
          .font(.appBodyStrong(12, relativeTo: .caption))
       }
       .padding(12)
+      .frame(maxWidth: .infinity, alignment: .leading)
       .background(AppColor.main.opacity(nanoDo.isDone ? 0.09 : 0.16), in: .rect(cornerRadius: 18))
       .overlay(
          RoundedRectangle(cornerRadius: 18, style: .continuous)
             .stroke(AppColor.main.opacity(nanoDo.isDone ? 0.16 : 0.28), lineWidth: 1)
       )
       .opacity(nanoDo.isDone ? 0.72 : 1)
+   }
+}
+
+struct SwipeableNanoDoRow: View {
+   @Bindable var nanoDo: NanoDo
+   let onDelete: () -> Void
+   @State private var dragOffset: CGFloat = 0
+
+   private let actionWidth: CGFloat = 66
+
+   var body: some View {
+      ZStack(alignment: .trailing) {
+         Button(role: .destructive) {
+            close()
+            onDelete()
+         } label: {
+            Image(systemName: "trash")
+               .font(.appDisplay(19, relativeTo: .headline))
+               .foregroundStyle(AppColor.onAction)
+               .frame(width: 54, height: 54)
+               .background {
+                  if #unavailable(iOS 26.0) {
+                     Circle()
+                        .fill(AppColor.actionDestructive)
+                  }
+               }
+               .appInteractiveCircleGlass(tint: AppColor.actionDestructive)
+         }
+         .buttonStyle(.plain)
+         .accessibilityLabel("Delete nanoDo")
+
+         NanoDoRowView(nanoDo: nanoDo, allowsTextEditing: false) {
+            onDelete()
+         }
+         .frame(maxWidth: .infinity, alignment: .leading)
+         .offset(x: dragOffset)
+         .gesture(
+            DragGesture(minimumDistance: 12)
+               .onChanged { value in
+                  let proposed = value.translation.width
+                  dragOffset = min(0, max(-actionWidth, proposed))
+               }
+               .onEnded { value in
+                  if value.translation.width < -(actionWidth + 26) {
+                     close()
+                     onDelete()
+                  } else if value.translation.width < -24 {
+                     reveal()
+                  } else {
+                     close()
+                  }
+               }
+         )
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .animation(AppAnimation.easeFast, value: dragOffset)
+   }
+
+   private func reveal() {
+      dragOffset = -actionWidth
+   }
+
+   private func close() {
+      dragOffset = 0
    }
 }
 

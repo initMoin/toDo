@@ -21,34 +21,34 @@ enum NotificationDebugScenario: String, CaseIterable, Identifiable, Sendable {
    var title: String {
       switch self {
       case .dueSoon:
-         return "Due Reminder"
+         return String(localized: "Due Reminder")
       case .overdue:
-         return "Overdue"
+         return String(localized: "Overdue")
       case .recurring:
-         return "Recurring"
+         return String(localized: "Recurring")
       case .quiet:
-         return "Quiet"
+         return String(localized: "Quiet")
       case .timeSensitive:
-         return "Time-Sensitive"
+         return String(localized: "Time-Sensitive")
       case .syncRefresh:
-         return "Sync Refresh"
+         return String(localized: "Sync Refresh")
       }
    }
 
    var body: String {
       switch self {
       case .dueSoon:
-         return "Tests the normal due-reminder notification path."
+         return String(localized: "Tests the normal due-reminder notification path.")
       case .overdue:
-         return "Tests urgent overdue reminder copy and metadata."
+         return String(localized: "Tests urgent overdue reminder copy and metadata.")
       case .recurring:
-         return "Tests recurring reminder copy and metadata."
+         return String(localized: "Tests recurring reminder copy and metadata.")
       case .quiet:
-         return "Tests a passive notification that should avoid sound."
+         return String(localized: "Tests a passive notification that should avoid sound.")
       case .timeSensitive:
-         return "Tests a Time Sensitive reminder."
+         return String(localized: "Tests a Time Sensitive reminder.")
       case .syncRefresh:
-         return "Tests the silent sync-refresh payload shape."
+         return String(localized: "Checks whether changes from another device can wake toDō.")
       }
    }
 
@@ -172,7 +172,7 @@ struct NotificationContentBuilder {
 
    static func debugContent(
       for scenario: NotificationDebugScenario,
-      toDoTitle: String = "Review ToDo",
+      toDoTitle: String = String(localized: "Review toDō"),
       toDoIdentifier: String? = nil,
       toDoCloudIdentifier: UUID? = nil
    ) -> UNMutableNotificationContent {
@@ -181,23 +181,23 @@ struct NotificationContentBuilder {
 
       switch scenario {
       case .dueSoon:
-         title = "ToDo: due"
+         title = String(localized: "toDō: due")
          body = toDoTitle
       case .overdue:
-         title = "ToDo: overdue"
+         title = String(localized: "toDō: overdue")
          body = toDoTitle
       case .recurring:
-         title = "ToDo: repeating"
+         title = String(localized: "toDō: repeating")
          body = toDoTitle
       case .quiet:
-         title = "ToDo reminder"
+         title = String(localized: "toDō reminder")
          body = toDoTitle
       case .timeSensitive:
-         title = "Time-sensitive ToDo"
+         title = String(localized: "Time-sensitive toDō")
          body = toDoTitle
       case .syncRefresh:
-         title = "ToDo Sync"
-         body = "Changes are ready on your other devices."
+         title = String(localized: "toDō Sync")
+         body = String(localized: "Changes are ready on your other devices.")
       }
 
       let content = content(

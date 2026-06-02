@@ -51,6 +51,44 @@ struct ToDoModelTests {
       #expect(toDo.recurrenceSummary == nil)
    }
 
+   @Test func finiteRecurrenceRequiresPositiveCount() {
+      let toDo = ToDo(
+         task: "Repeat twice",
+         dueDate: Date(),
+         recurrenceUnit: .weeks,
+         recurrenceInterval: 1,
+         recurrenceMode: .finite,
+         recurrenceCount: 0
+      )
+
+      #expect(!toDo.isRecurring)
+      #expect(toDo.recurrenceSummary == nil)
+
+      toDo.recurrenceCount = 2
+
+      #expect(toDo.isRecurring)
+      #expect(toDo.recurrenceSummary == "Every 1 week for 2 additional times")
+   }
+
+   @Test func continuousRecurrenceIgnoresCountButRequiresPositiveInterval() {
+      let toDo = ToDo(
+         task: "Keep checking",
+         dueDate: Date(),
+         recurrenceUnit: .hours,
+         recurrenceInterval: 0,
+         recurrenceMode: .continuous,
+         recurrenceCount: nil
+      )
+
+      #expect(!toDo.isRecurring)
+      #expect(toDo.recurrenceSummary == nil)
+
+      toDo.recurrenceInterval = 3
+
+      #expect(toDo.isRecurring)
+      #expect(toDo.recurrenceSummary == "Every 3 hours continuously")
+   }
+
    @Test func updatedAtTracksDomainMutations() {
       let createdAt = Date(timeIntervalSinceReferenceDate: 100)
       let updatedAt = Date(timeIntervalSinceReferenceDate: 200)

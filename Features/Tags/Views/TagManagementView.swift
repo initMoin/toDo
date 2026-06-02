@@ -3,6 +3,7 @@ import SwiftData
 
 struct TagManagementView: View {
     static let defaultTagNames = Tag.defaultTagNames
+    private static let maxTagCharacterCount = 23
 
     @Environment(\.modelContext) private var context
     @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
@@ -53,7 +54,7 @@ struct TagManagementView: View {
                 .padding(.top, 86)
                 .padding(.bottom, 8)
             }
-            
+
             pinnedTitleHeader
         }
         .scrollIndicators(.hidden)
@@ -71,7 +72,7 @@ struct TagManagementView: View {
             Button("Cancel", role: .cancel) {
             }
         } message: {
-            Text("This removes all existing tags and clears tag links on ToDos and nanoDos.")
+            Text("This removes all existing tags and clears tag links on toDōs and nanoDos.")
         }
         .confirmationDialog("Final confirmation required", isPresented: $isShowingResetTagsFinalConfirmation, titleVisibility: .visible) {
             Button("Yes, Reset Everything", role: .destructive) {
@@ -90,7 +91,7 @@ struct TagManagementView: View {
     }
 
     private var pinnedTitleHeader: some View {
-        AppSettingsDetailHeader(title: "Tag Management") {
+        AppSettingsDetailHeader(title: "Manage Tags") {
             Button {
                 if isSearchVisible {
                     isSearchFieldFocused = false
@@ -101,7 +102,7 @@ struct TagManagementView: View {
                     withAnimation(.snappy(duration: 0.24, extraBounce: 0.02)) {
                         isSearchVisible = true
                     }
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         isSearchFieldFocused = true
                     }
                 }
@@ -136,6 +137,11 @@ struct TagManagementView: View {
                         .autocorrectionDisabled()
                         .focused($isNewTagFieldFocused)
                         .font(.appAccent(21, relativeTo: .subheadline))
+                        .onChange(of: newTagName) { _, value in
+                            if value.count > Self.maxTagCharacterCount {
+                                newTagName = String(value.prefix(Self.maxTagCharacterCount))
+                            }
+                        }
 
                     Button {
                         handleTagFieldAction()
@@ -248,7 +254,7 @@ struct TagManagementView: View {
 
     private var visibleOwnerUserID: UUID? {
         guard supabaseAuthStore.effectiveSyncMode == .syncEverywhere else { return nil }
-        return supabaseAuthStore.currentUserID
+        return supabaseAuthStore.scopedOwnerUserID
     }
 
     private var scopedTags: [Tag] {
@@ -271,32 +277,9 @@ struct TagManagementView: View {
     }
 
     private var sortedTags: [Tag] {
-        switch sortOption {
-        case .name:
-            return scopedTags.sorted { lhs, rhs in
-                let compare = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
-                if compare == .orderedSame {
-                    return lhs.createdAt > rhs.createdAt
-                }
-                return isSortAscending ? compare == .orderedAscending : compare == .orderedDescending
-            }
-        case .created:
-            return scopedTags.sorted { lhs, rhs in
-                if lhs.createdAt == rhs.createdAt {
-                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                }
-                return isSortAscending ? lhs.createdAt < rhs.createdAt : lhs.createdAt > rhs.createdAt
-            }
-        case .linked:
-            let usageCounts = usageCountsByTagID()
-            return scopedTags.sorted { lhs, rhs in
-                let leftCount = usageCounts[lhs.id, default: 0]
-                let rightCount = usageCounts[rhs.id, default: 0]
-                if leftCount == rightCount {
-                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                }
-                return isSortAscending ? leftCount < rightCount : leftCount > rightCount
-            }
+        let usageCounts = sortOption == .linked ? usageCountsByTagID() : [:]
+        return TagSortOption.sortedTags(scopedTags, option: sortOption, isAscending: isSortAscending) { tag in
+            usageCounts[tag.id, default: 0]
         }
     }
 
@@ -514,20 +497,29 @@ struct TagManagementView: View {
         .animation(AppAnimation.easeStandard, value: isDuplicateHighlight)
     }
 
-    private func usageCountsByTagID() -> [PersistentIdentifier: Int] {
-        var counts: [PersistentIdentifier: Int] = [:]
-        for toDo in scopedToDos {
-            for tag in toDo.effectiveTags {
-                counts[tag.id, default: 0] += 1
-            }
-        }
-        for nanoDo in scopedNanoDos {
-            if let tagID = nanoDo.tag?.id {
-                counts[tagID, default: 0] += 1
-            }
-        }
-        return counts
-    }
+//    private func usageCountsByTagID() -> [PersistentIdentifier: Int] {
+//        var counts: [PersistentIdentifier: Int] = [:]
+//        for toDo in scopedToDos {
+//            for tag in toDo.effectiveTags {
+//                counts[tag.id, default: 0] += 1
+//            }
+//        }
+//        for nanoDo in scopedNanoDos {
+//            if let tagID = nanoDo.tag?.id {
+//                counts[tagID, default: 0] += 1
+//            }
+//        }
+//        return counts
+//    }
+
+   private func usageCountsByTagID() -> [PersistentIdentifier: Int] {
+      let toDoIDs = scopedToDos.flatMap { $0.effectiveTags.map(\.id) }
+      let nanoDoIDs = scopedNanoDos.compactMap { $0.tag?.id }
+      let allIDs = toDoIDs + nanoDoIDs
+      let grouped = Dictionary(grouping: allIDs, by: { $0 })
+
+      return grouped.mapValues { $0.count }
+   }
 
     private func handleTagFieldAction() {
         if isDuplicateTagEntry {
@@ -662,15 +654,22 @@ struct TagManagementView: View {
         .appBaseTypography()
     }
 
-    private func defaultTagUsageCountsByNormalizedName() -> [String: Int] {
-        var counts: [String: Int] = [:]
-        for toDo in scopedToDos {
-            for tag in toDo.effectiveTags {
-                counts[Tag.normalizeName(tag.name), default: 0] += 1
-            }
-        }
-        return counts
-    }
+//    private func defaultTagUsageCountsByNormalizedName() -> [String: Int] {
+//        var counts: [String: Int] = [:]
+//        for toDo in scopedToDos {
+//            for tag in toDo.effectiveTags {
+//                counts[Tag.normalizeName(tag.name), default: 0] += 1
+//            }
+//        }
+//        return counts
+//    }
+
+   private func defaultTagUsageCountsByNormalizedName() -> [String: Int] {
+      let names = scopedToDos.flatMap { $0.effectiveTags.map { Tag.normalizeName($0.name) } }
+      let grouped = Dictionary(grouping: names, by: { $0 })
+
+      return grouped.mapValues { $0.count }
+   }
 
     private func resetAllTagsToDefault() {
         for toDo in scopedToDos {
@@ -770,24 +769,30 @@ private struct TagManagementToolbarButtonStyle: ButtonStyle {
     var isToggled: Bool
     var size: CGFloat = 30
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
 
     func makeBody(configuration: Configuration) -> some View {
         let isActive = isEnabled && (isToggled || configuration.isPressed)
-        let foreground = isActive ? AppColor.iconCircle : AppColor.onAction
-        let background = isActive ? AppColor.onAction : AppColor.iconCircle
+        let foreground = AppColor.headerControlForeground(for: colorScheme)
+        let background = AppColor.headerControlBackground(for: colorScheme)
         let border = isActive ? AppColor.border : AppColor.border
 
         return configuration.label
             .foregroundStyle(foreground)
             .frame(width: size, height: size)
-            .background(
-                Circle()
-                    .fill(background.opacity(isEnabled ? 1 : 0.3))
-            )
-            .overlay(
-                Circle()
-                    .stroke(border.opacity(isEnabled ? 1 : 0.4), lineWidth: 1)
-            )
+            .background {
+                if #unavailable(iOS 26.0) {
+                    Circle()
+                        .fill(background.opacity(isEnabled ? (isActive ? 0.28 : 1) : 0.3))
+                }
+            }
+            .appInteractiveCircleGlass(tint: background.opacity(isEnabled ? (isActive ? 0.28 : 1) : 0.3))
+            .overlay {
+                if #unavailable(iOS 26.0) {
+                    Circle()
+                        .stroke(border.opacity(isEnabled ? 1 : 0.4), lineWidth: 1)
+                }
+            }
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
             .animation(AppAnimation.easeFast, value: configuration.isPressed)
             .animation(AppAnimation.easeStandard, value: isToggled)

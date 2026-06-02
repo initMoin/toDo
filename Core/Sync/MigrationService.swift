@@ -147,17 +147,17 @@ final class MigrationService {
     private func summary(for direction: SyncMigrationDirection) -> String {
         switch direction {
         case .deviceOnlyToICloud:
-            return String(localized: "Move local ToDos into iCloud sync for Apple devices.")
+            return String(localized: "Move local toDōs into iCloud sync for Apple devices.")
         case .deviceOnlyToSyncEverywhere:
-            return String(localized: "Adopt local ToDos into ToDo Sync for cross-platform access.")
+            return String(localized: "Adopt local toDōs into toDō Sync for cross-platform access.")
         case .iCloudToSyncEverywhere:
-            return String(localized: "Copy your iCloud-backed ToDos into ToDo Sync for Android and web access.")
+            return String(localized: "Copy your iCloud-backed toDōs into toDō Sync for Android and web access.")
         case .iCloudToDeviceOnly:
-            return String(localized: "Stop syncing with iCloud and keep your ToDos on this device.")
+            return String(localized: "Stop syncing with iCloud and keep your toDōs on this device.")
         case .syncEverywhereToDeviceOnly:
-            return String(localized: "Copy your latest synced ToDos into device-only storage and step away from account sync.")
+            return String(localized: "Copy your latest synced toDōs into device-only storage and step away from account sync.")
         case .syncEverywhereToICloud:
-            return String(localized: "Move your ToDo Sync data into iCloud sync for Apple-only use.")
+            return String(localized: "Move your toDō Sync data into iCloud sync for Apple-only use.")
         }
     }
 
@@ -285,9 +285,9 @@ final class MigrationService {
 
     private func materializeDeviceOnlySnapshot(from userID: UUID, in modelContainer: ModelContainer) throws {
         let context = ModelContext(modelContainer)
-        let ownedTags = try context.fetch(FetchDescriptor<Tag>()).filter { $0.ownerUserID == userID }
-        let ownedToDos = try context.fetch(FetchDescriptor<ToDo>()).filter { $0.ownerUserID == userID }
-        let ownedNanoDos = try context.fetch(FetchDescriptor<NanoDo>()).filter { $0.ownerUserID == userID }
+        let ownedTags = try fetchTags(in: context, ownerUserID: userID)
+        let ownedToDos = try fetchToDos(in: context, ownerUserID: userID)
+        let ownedNanoDos = try fetchNanoDos(in: context, ownerUserID: userID)
 
         guard ownedTags.isEmpty == false || ownedToDos.isEmpty == false || ownedNanoDos.isEmpty == false else {
             return
@@ -367,39 +367,54 @@ final class MigrationService {
     }
 
     private func fetchScopedTags(in context: ModelContext, mode: SyncMode, userID: UUID?) throws -> [Tag] {
-        let allTags = try context.fetch(FetchDescriptor<Tag>())
-        return allTags.filter { tag in
-            switch mode {
-            case .syncEverywhere:
-                return tag.ownerUserID == userID
-            case .deviceOnly, .iCloud:
-                return tag.ownerUserID == nil
-            }
-        }
+        try fetchTags(in: context, ownerUserID: scopedOwnerUserID(for: mode, userID: userID))
     }
 
     private func fetchScopedToDos(in context: ModelContext, mode: SyncMode, userID: UUID?) throws -> [ToDo] {
-        let allToDos = try context.fetch(FetchDescriptor<ToDo>())
-        return allToDos.filter { toDo in
-            switch mode {
-            case .syncEverywhere:
-                return toDo.ownerUserID == userID
-            case .deviceOnly, .iCloud:
-                return toDo.ownerUserID == nil
-            }
-        }
+        try fetchToDos(in: context, ownerUserID: scopedOwnerUserID(for: mode, userID: userID))
     }
 
     private func fetchScopedNanoDos(in context: ModelContext, mode: SyncMode, userID: UUID?) throws -> [NanoDo] {
-        let allNanoDos = try context.fetch(FetchDescriptor<NanoDo>())
-        return allNanoDos.filter { nanoDo in
-            switch mode {
-            case .syncEverywhere:
-                return nanoDo.ownerUserID == userID
-            case .deviceOnly, .iCloud:
-                return nanoDo.ownerUserID == nil
-            }
+        try fetchNanoDos(in: context, ownerUserID: scopedOwnerUserID(for: mode, userID: userID))
+    }
+
+    private func scopedOwnerUserID(for mode: SyncMode, userID: UUID?) -> UUID? {
+        switch mode {
+        case .syncEverywhere:
+            return userID
+        case .deviceOnly, .iCloud:
+            return nil
         }
+    }
+
+    private func fetchTags(in context: ModelContext, ownerUserID: UUID?) throws -> [Tag] {
+        let ownerID = ownerUserID
+        let descriptor = FetchDescriptor<Tag>(
+            predicate: #Predicate<Tag> { tag in
+                tag.ownerUserID == ownerID
+            }
+        )
+        return try context.fetch(descriptor)
+    }
+
+    private func fetchToDos(in context: ModelContext, ownerUserID: UUID?) throws -> [ToDo] {
+        let ownerID = ownerUserID
+        let descriptor = FetchDescriptor<ToDo>(
+            predicate: #Predicate<ToDo> { toDo in
+                toDo.ownerUserID == ownerID
+            }
+        )
+        return try context.fetch(descriptor)
+    }
+
+    private func fetchNanoDos(in context: ModelContext, ownerUserID: UUID?) throws -> [NanoDo] {
+        let ownerID = ownerUserID
+        let descriptor = FetchDescriptor<NanoDo>(
+            predicate: #Predicate<NanoDo> { nanoDo in
+                nanoDo.ownerUserID == ownerID
+            }
+        )
+        return try context.fetch(descriptor)
     }
 
     private func clearScopedData(in context: ModelContext, mode: SyncMode, userID: UUID?) throws {

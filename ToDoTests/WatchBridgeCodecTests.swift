@@ -18,7 +18,7 @@ struct WatchBridgeCodecTests {
          createdAt: Date(timeIntervalSinceReferenceDate: 800),
          updatedAt: Date(timeIntervalSinceReferenceDate: 1_000)
       )
-      
+
       let trashedItem = WatchToDoItem(
          id: "local-2",
          cloudID: UUID(),
@@ -53,7 +53,7 @@ struct WatchBridgeCodecTests {
       #expect(WatchBridgeCodec.decodeKind(from: envelope) == .snapshot)
       #expect(decoded == snapshot)
       #expect(decoded.items.count == 2)
-      
+
       let decodedTrashed = try #require(decoded.items.first(where: { $0.id == "local-2" }))
       #expect(decodedTrashed.lifecycleState == .trashed)
       #expect(decodedTrashed.trashedAt != nil)
@@ -99,4 +99,3 @@ struct WatchBridgeCodecTests {
       #expect(decoded.cloudID == cloudID)
    }
 }
-

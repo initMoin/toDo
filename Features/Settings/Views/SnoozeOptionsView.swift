@@ -34,7 +34,7 @@ struct SnoozeOptionsView: View {
                      VStack(alignment: .leading, spacing: 3) {
                         Text("Reset Snooze Options")
                            .font(.appBodyStrong(15, relativeTo: .subheadline))
-                        Text("Restore every unit to the default preset values.")
+                        Text("Restores the original snooze choices.")
                            .font(.appBody(12, relativeTo: .caption))
                            .foregroundStyle(AppColor.textSecondary)
                      }
@@ -211,7 +211,7 @@ private struct SnoozeValueEditorSheet: View {
             )
             .focused($isFocused)
 
-         Text("This option will appear in the \(unit.title.lowercased()) snooze menu.")
+         Text("Adds this choice to \(unit.title.lowercased()) snooze.")
             .font(.appBody(13, relativeTo: .footnote))
             .foregroundStyle(AppColor.textSecondary)
 
@@ -250,7 +250,7 @@ private struct SnoozeValueEditorSheet: View {
       .padding(20)
       .background(AppColor.surface)
       .onAppear {
-         DispatchQueue.main.async {
+         Task { @MainActor in
             isFocused = true
          }
       }

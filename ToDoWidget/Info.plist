@@ -4,10 +4,8 @@
 <dict>
 	<key>UIAppFonts</key>
 	<array>
-		<string>carbonplus-light.otf</string>
 		<string>CalSans-Regular.ttf</string>
-		<string>carbonplus-regular.otf</string>
-		<string>carbonplus-bold.otf</string>
+		<string>Jura-Variable.ttf</string>
 	</array>
 	<key>NSExtension</key>
 	<dict>

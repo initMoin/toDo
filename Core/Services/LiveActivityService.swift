@@ -7,11 +7,19 @@ final class LiveActivityService {
    static let shared = LiveActivityService()
 
    private var scheduledEndTasks: [String: Task<Void, Never>] = [:]
+   private var pushToStartTokenTask: Task<Void, Never>?
+   private var updateTokenTasks: [String: Task<Void, Never>] = [:]
 
    private init() {}
 
+   func startObservingPushTokens() {
+      observePushToStartTokenIfNeeded()
+      observeExistingActivityTokens()
+   }
+
    func refresh(from context: ModelContext, preferredToDo: ToDo? = nil) {
       guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+         AppLog.info("Live Activity refresh skipped: activities are disabled.", logger: AppLog.liveActivity)
          endAllActivities()
          return
       }
@@ -20,7 +28,7 @@ final class LiveActivityService {
          let toDos = try context.fetch(FetchDescriptor<ToDo>())
          refresh(using: toDos, preferredToDo: preferredToDo)
       } catch {
-         AppLog.error("Failed to refresh ToDo Live Activity: \(error)", logger: AppLog.liveActivity)
+         AppLog.error("Failed to refresh toDō Live Activity: \(error)", logger: AppLog.liveActivity)
       }
    }
 
@@ -36,7 +44,8 @@ final class LiveActivityService {
    }
 
    private func refresh(using toDos: [ToDo], preferredToDo: ToDo?) {
-      let validCandidates = liveActivityCandidates(from: toDos)
+      let scopedToDos = scopedToDos(toDos)
+      let validCandidates = liveActivityCandidates(from: scopedToDos)
       let activities = Activity<ToDoLiveActivityAttributes>.activities
       let currentIdentifier = activities.first?.attributes.toDoIdentifier
 
@@ -45,6 +54,7 @@ final class LiveActivityService {
          preferredIdentifier: preferredToDo.flatMap(Self.identifierIfLiveActivityEligible(for:)),
          currentIdentifier: currentIdentifier
       ) else {
+         AppLog.info("Live Activity refresh ended all activities: candidates=\(toDos.count), scoped=\(scopedToDos.count), eligible=0.", logger: AppLog.liveActivity)
          endAllActivities()
          return
       }
@@ -58,8 +68,10 @@ final class LiveActivityService {
       }
 
       if let matchingActivity {
+         AppLog.info("Live Activity updating \(identifier) due \(candidate.dueDate?.description ?? "none").", logger: AppLog.liveActivity)
          update(matchingActivity, with: content)
       } else {
+         AppLog.info("Live Activity starting \(identifier) due \(candidate.dueDate?.description ?? "none").", logger: AppLog.liveActivity)
          startActivity(for: candidate, identifier: identifier, content: content)
       }
       scheduleEnd(for: identifier, dueDate: candidate.dueDate)
@@ -109,8 +121,20 @@ final class LiveActivityService {
          }
    }
 
+   private func scopedToDos(_ toDos: [ToDo]) -> [ToDo] {
+      let ownerUserID = SyncCoordinator.shared.effectiveSyncMode == .syncEverywhere
+         ? SupabaseAuthStore.shared.scopedOwnerUserID
+         : nil
+
+      return toDos.filter { $0.ownerUserID == ownerUserID }
+   }
+
    private static func isLiveActivityEligible(_ toDo: ToDo) -> Bool {
       guard let dueDate = toDo.dueDate else { return false }
+      if SyncCoordinator.shared.effectiveSyncMode == .syncEverywhere,
+         toDo.cloudID == nil {
+         return false
+      }
       return toDo.lifecycleState == .active
          && toDo.reminderIntent == .timeSensitive
          && dueDate > .now
@@ -140,13 +164,15 @@ final class LiveActivityService {
             relevanceScore: relevanceScore(for: toDo)
          )
 
-         _ = try Activity.request(
+         let activity = try Activity.request(
             attributes: attributes,
             content: activityContent,
-            pushType: nil
+            pushType: .token
          )
+         observeUpdateToken(for: activity)
+         AppLog.info("Live Activity start request accepted for \(identifier).", logger: AppLog.liveActivity)
       } catch {
-         AppLog.error("Failed to start ToDo Live Activity: \(error)", logger: AppLog.liveActivity)
+         AppLog.error("Failed to start toDō Live Activity: \(error)", logger: AppLog.liveActivity)
       }
    }
 
@@ -174,8 +200,50 @@ final class LiveActivityService {
    private func end(_ activity: Activity<ToDoLiveActivityAttributes>) {
       scheduledEndTasks[activity.attributes.toDoIdentifier]?.cancel()
       scheduledEndTasks[activity.attributes.toDoIdentifier] = nil
+      AppLog.info("Live Activity ending \(activity.attributes.toDoIdentifier).", logger: AppLog.liveActivity)
+      let activityID = activity.id
+      updateTokenTasks[activityID]?.cancel()
+      updateTokenTasks[activityID] = nil
       Task {
+         await SupabaseAuthStore.shared.deactivateLiveActivityToken(activityID: activityID)
          await activity.end(nil, dismissalPolicy: .immediate)
+      }
+   }
+
+   private func observePushToStartTokenIfNeeded() {
+      guard pushToStartTokenTask == nil else { return }
+
+      pushToStartTokenTask = Task {
+         for await tokenData in Activity<ToDoLiveActivityAttributes>.pushToStartTokenUpdates {
+            let token = Self.hexToken(from: tokenData)
+            await SupabaseAuthStore.shared.syncLiveActivityToken(
+               token: token,
+               tokenType: .pushToStart
+            )
+         }
+      }
+   }
+
+   private func observeExistingActivityTokens() {
+      for activity in Activity<ToDoLiveActivityAttributes>.activities {
+         observeUpdateToken(for: activity)
+      }
+   }
+
+   private func observeUpdateToken(for activity: Activity<ToDoLiveActivityAttributes>) {
+      guard updateTokenTasks[activity.id] == nil else { return }
+
+      updateTokenTasks[activity.id] = Task {
+         for await tokenData in activity.pushTokenUpdates {
+            let token = Self.hexToken(from: tokenData)
+            await SupabaseAuthStore.shared.syncLiveActivityToken(
+               token: token,
+               tokenType: .update,
+               activityID: activity.id,
+               toDoIdentifier: activity.attributes.toDoIdentifier,
+               toDoCloudIdentifier: activity.attributes.toDoCloudIdentifier
+            )
+         }
       }
    }
 
@@ -227,11 +295,15 @@ final class LiveActivityService {
       let now = Date()
       let dueDate = toDo.dueDate
       return ToDoLiveActivityAttributes.ContentState(
-         title: toDo.task.isEmpty ? "Untitled ToDo" : toDo.task,
+         title: toDo.task.isEmpty ? "Untitled toDō" : toDo.task,
          dueDate: dueDate,
          isOverdue: dueDate.map { $0 < now } ?? false,
          isTimeSensitive: toDo.reminderIntent == .timeSensitive,
          updatedAt: toDo.syncUpdatedAt
       )
+   }
+
+   private static func hexToken(from data: Data) -> String {
+      data.map { String(format: "%02x", $0) }.joined()
    }
 }

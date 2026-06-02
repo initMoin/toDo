@@ -84,7 +84,7 @@ struct AccessoryRectangularToDoWidgetView: View {
                .foregroundStyle(.secondary)
                .lineLimit(1)
          } else {
-            Text("No active ToDos")
+            Text("No active toDōs")
                .font(.system(size: 12, weight: .semibold, design: .rounded))
                .lineLimit(1)
 

@@ -36,6 +36,17 @@ struct TagSectionKey: Hashable {
    let title: String
 }
 
+enum ToDoCompletionAnimationPhase: Equatable {
+   case none
+   case striking
+   case grayscale
+   case dissolving
+
+   var isAnimating: Bool {
+      self != .none
+   }
+}
+
 struct LiquidGlassPanelBackground: View {
    let tint: Color
    let cornerRadius: CGFloat
@@ -143,20 +154,15 @@ struct ToDoRowView: View {
    let isDetailSelected: Bool
    let hasSyncConflict: Bool
    let showsCompletedState: Bool
-   let isExpanded: Bool
+   let completionAnimationPhase: ToDoCompletionAnimationPhase
    let onToggleDone: (Bool) -> Void
    let onToggleSelection: () -> Void
-   let onEdit: () -> Void
    let isTransitioningCompletion: Bool
 
    var body: some View {
       VStack(alignment: .leading, spacing: 0) {
          primaryRowContent
             .zIndex(1)
-            .padding(.bottom, isExpanded ? 8 : 0)
-
-         expandedDetailsContainer
-            .zIndex(0)
       }
       .padding(.vertical, 8)
       .padding(.horizontal, 12)
@@ -171,11 +177,12 @@ struct ToDoRowView: View {
             .inset(by: 2)
             .stroke(timeSensitiveBorderColor, lineWidth: timeSensitiveBorderWidth)
       )
+      .saturation(rowSaturation)
       .compositingGroup()
       .animation(AppAnimation.easeFast, value: isSelected)
       .animation(AppAnimation.easeStandard, value: isTransitioningCompletion)
       .animation(AppAnimation.easeStandard, value: showsCompletedState)
-      .animation(AppAnimation.snappySection, value: isExpanded)
+      .animation(AppAnimation.easeStandard, value: completionAnimationPhase)
    }
 
    private var primaryRowContent: some View {
@@ -198,11 +205,14 @@ struct ToDoRowView: View {
 
          VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-               Text(toDo.task)
-                  .font(.appDisplay(22, relativeTo: .headline))
-                  .foregroundStyle(taskTextColor)
-                  .frame(maxWidth: .infinity, alignment: .leading)
-                  .background(firstLineHeightProbe)
+               AnimatedCompletionTaskText(
+                  text: toDo.task,
+                  isCompleted: showsCompletedState,
+                  phase: completionAnimationPhase,
+                  textColor: taskTextColor,
+                  lineColor: taskTextColor.opacity(0.72),
+                  firstLineHeightProbe: AnyView(firstLineHeightProbe)
+               )
 
                if let primaryTag {
                   HStack(spacing: 6) {
@@ -240,22 +250,38 @@ struct ToDoRowView: View {
             }
 
             if hasMetadata {
-               HStack(spacing: 12) {
-                  if nanoDoCount > 0 {
-                     nanoDoCountBadge
+               HStack(spacing: 7) {
+                  if let dueDate = toDo.dueDate {
+                     metadataChip(
+                        systemName: "calendar",
+                        text: AppLocalization.dateString(dueDate),
+                        tint: dueDateChipTint,
+                        foreground: dueDateChipForeground
+                     )
+                     .accessibilityLabel(String(format: String(localized: "Due %@"), AppLocalization.dateString(dueDate)))
                   }
 
-                  if toDo.dueDate != nil {
-                     Image(systemName: "calendar")
-                        .accessibilityLabel("Has due date")
+                  if nanoDoCount > 0 {
+                     metadataChip(
+                        systemName: "smallcircle.filled.circle",
+                        text: nanoDoChipText,
+                        tint: nanoDoBadgeFill,
+                        foreground: nanoDoBadgeTextColor
+                     )
+                     .accessibilityLabel(String(format: String(localized: "%@ nano tasks"), AppLocalization.numberString(nanoDoCount)))
                   }
 
                   if isTimeSensitiveReminder {
-                     Image(systemName: "clock.fill")
-                        .foregroundStyle(timeSensitiveIndicatorColor)
+                     metadataChip(
+                        systemName: "clock.fill",
+                        text: toDo.reminderIntent.title,
+                        tint: timeSensitiveChipTint,
+                        foreground: timeSensitiveChipForeground
+                     )
                         .accessibilityLabel("Time-sensitive reminder")
                   }
                }
+               .lineLimit(1)
                .font(.appBody(12, relativeTo: .caption))
                .foregroundStyle(metadataColor)
             }
@@ -263,103 +289,9 @@ struct ToDoRowView: View {
       }
    }
 
-   private var expandedDetailsContainer: some View {
-      expandedDetails
-         .fixedSize(horizontal: false, vertical: true)
-         .frame(maxWidth: .infinity)
-         .offset(y: isExpanded ? 0 : -15)
-         .frame(height: isExpanded ? nil : 0, alignment: .top)
-         .clipped()
-         .opacity(isExpanded ? 1 : 0)
-   }
-
-   private var expandedDetails: some View {
-      VStack(alignment: .leading, spacing: 12) {
-         VStack(alignment: .leading, spacing: 8) {
-            if let dueDate = toDo.dueDate {
-               expandedDetailRow(
-                  systemName: "calendar",
-                  title: "Due",
-                  value: AppLocalization.dateTimeString(dueDate)
-               )
-            }
-
-            expandedDetailRow(
-               systemName: reminderIntentSystemName,
-               title: "Reminder",
-               value: toDo.reminderIntent.title
-            )
-
-            if let recurrenceSummary = toDo.recurrenceSummary {
-               expandedDetailRow(
-                  systemName: "arrow.clockwise",
-                  title: "Repeat",
-                  value: recurrenceSummary
-               )
-            }
-
-            if !effectiveTags.isEmpty {
-               expandedDetailRow(
-                  systemName: "tag",
-                  title: "Tags",
-                  value: effectiveTags.map(\.displayName).joined(separator: " • ")
-               )
-            }
-         }
-
-         if !toDo.nanoDos.isEmpty {
-            expandedLongformSection(title: "NanoDos", systemName: "smallcircle.filled.circle") {
-               VStack(alignment: .leading, spacing: 7) {
-                  ForEach(toDo.nanoDos) { nanoDo in
-                     HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Image(systemName: "arrow.right.circle"/*nanoDo.isDone ? "checkmark.circle.fill" : "circle"*/)
-                           .font(.appBodyStrong(11, relativeTo: .caption))
-                           .foregroundStyle(nanoDo.isDone ? AppColor.secondary : AppColor.textSecondary)
-
-                        Text(nanoDo.task)
-                           .font(.appBodyStrong(14, relativeTo: .footnote))
-                           .foregroundStyle(expandedValueColor)
-                           .strikethrough(nanoDo.isDone, color: expandedValueColor.opacity(0.4))
-                     }
-                  }
-               }
-            }
-         }
-
-         if !trimmedNotes.isEmpty {
-            expandedLongformSection(title: "Notes", systemName: "note.text") {
-               Text(trimmedNotes)
-                  .font(.appBody(14, relativeTo: .footnote))
-                  .foregroundStyle(expandedValueColor)
-                  .fixedSize(horizontal: false, vertical: true)
-            }
-         }
-
-         HStack {
-            Spacer(minLength: 0)
-
-            Button(action: onEdit) {
-               Image(systemName: "arrow.up.right.circle.fill")
-                  .font(.appBodyStrong(23, relativeTo: .caption))
-                  .foregroundStyle(/*expandedActionColor*/AppColor.actionNeutral)
-                  .frame(width: 28, height: 28)
-            }
-            .buttonStyle(.plain)
-         }
-      }
-      .padding(12)
-      .background(
-         expandedPanelBackground,
-         in: .rect(cornerRadius: 16)
-      )
-      .padding(.leading, leadingCircleSymbolSize + 12)
-      .padding(.top, 4)
-      .contentTransition(.opacity)
-   }
-
    private var taskTextColor: Color {
       if isDetailSelected {
-         return AppColor.textPrimary
+         return AppColor.onAction
       }
       guard isOverdueStylingActive else { return AppColor.textPrimary }
       return AppColor.white
@@ -367,7 +299,7 @@ struct ToDoRowView: View {
 
    private var metadataColor: Color {
       if isDetailSelected {
-         return AppColor.textPrimary.opacity(0.68)
+         return AppColor.onAction.opacity(0.78)
       }
       guard isOverdueStylingActive else { return AppColor.textSecondary }
       return AppColor.white.opacity(0.86)
@@ -375,7 +307,7 @@ struct ToDoRowView: View {
 
    private var tagTextColor: Color {
       if isDetailSelected {
-         return AppColor.textPrimary
+         return AppColor.actionPrimary
       }
       guard isOverdueStylingActive else { return AppColor.textPrimary }
       return overdueAccentColor
@@ -383,7 +315,7 @@ struct ToDoRowView: View {
 
    private var tagBackgroundColor: Color {
       if isDetailSelected {
-         return AppColor.surfaceElevated.opacity(0.5)
+         return AppColor.onAction.opacity(0.92)
       }
       guard isOverdueStylingActive else { return AppColor.surfaceMuted }
       return AppColor.white
@@ -398,29 +330,33 @@ struct ToDoRowView: View {
    }
 
    private var rowBackgroundColor: Color {
+      if completionAnimationPhase == .dissolving {
+         return AppColor.surface
+      }
+      if completionAnimationPhase == .grayscale {
+         return AppColor.surfaceMuted.opacity(0.74)
+      }
       if isSelectionMode && isSelected {
          return isOverdueStylingActive ? overdueSurfaceColor : AppColor.actionSecondary.opacity(0.1)
       }
       if isDetailSelected {
-         return AppColor.main
+         return AppColor.actionPrimary
       }
       return isOverdueStylingActive ? overdueSurfaceColor : AppColor.surfaceElevated
    }
 
    private var rowOpacity: Double {
+      if completionAnimationPhase == .dissolving {
+         return 0.04
+      }
       if isDetailSelected {
          return 1
       }
-      guard showsCompletedState else { return 1 }
-      return isExpanded ? 0.64 : 0.22
+      return showsCompletedState || completionAnimationPhase.isAnimating ? 0.72 : 1
    }
 
-   private var expandedPanelBackground: Color {
-      AppColor.surfaceElevated
-   }
-
-   private var expandedActionColor: Color {
-      AppColor.secondary
+   private var rowSaturation: Double {
+      completionAnimationPhase == .none ? 1 : 0
    }
 
    private var overdueSurfaceColor: Color {
@@ -493,10 +429,6 @@ struct ToDoRowView: View {
       isTimeSensitiveReminder && !showsCompletedState ? 2 : 0
    }
 
-   private var trimmedNotes: String {
-      toDo.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-   }
-
    private var nanoDoCount: Int {
       toDo.nanoDos.count
    }
@@ -517,21 +449,56 @@ struct ToDoRowView: View {
       toDo.nanoDos.filter(\.isDone).count
    }
 
-   private var nanoDoCountBadge: some View {
-      ZStack {
-         Circle()
-            .fill(nanoDoBadgeFill)
-            .frame(width: 20, height: 20)
-            .overlay(
-               Circle()
-                  .stroke(AppColor.border, lineWidth: 0.8)
-            )
+   private func metadataChip(systemName: String, text: String, tint: Color, foreground: Color) -> some View {
+      HStack(spacing: 5) {
+         Image(systemName: systemName)
+            .font(.appBodyStrong(10, relativeTo: .caption2))
 
-         Text(AppLocalization.numberString(nanoDoCount))
-            .font(.appBody(10, relativeTo: .caption2))
-            .foregroundStyle(nanoDoBadgeTextColor)
+         Text(text)
+            .font(.appAccent(11, relativeTo: .caption2))
       }
-      .accessibilityLabel(String(format: String(localized: "%@ nano tasks"), AppLocalization.numberString(nanoDoCount)))
+      .foregroundStyle(foreground)
+      .padding(.horizontal, 8)
+      .padding(.vertical, 4)
+      .background(
+         Capsule()
+            .fill(tint)
+      )
+   }
+
+   private var dueDateChipTint: Color {
+      if isOverdueStylingActive {
+         return AppColor.white
+      }
+      return AppColor.actionPrimary.opacity(0.14)
+   }
+
+   private var dueDateChipForeground: Color {
+      if isOverdueStylingActive {
+         return overdueAccentColor
+      }
+      return AppColor.textPrimary
+   }
+
+   private var nanoDoChipText: String {
+      if completedNanoDoCount > 0 {
+         return "\(AppLocalization.numberString(completedNanoDoCount))/\(AppLocalization.numberString(nanoDoCount))"
+      }
+      return AppLocalization.numberString(nanoDoCount)
+   }
+
+   private var timeSensitiveChipTint: Color {
+      if isOverdueStylingActive {
+         return AppColor.white.opacity(0.22)
+      }
+      return AppColor.actionDestructive.opacity(0.12)
+   }
+
+   private var timeSensitiveChipForeground: Color {
+      if isOverdueStylingActive {
+         return AppColor.white
+      }
+      return AppColor.actionDestructive
    }
 
    private var nanoDoBadgeFill: Color {
@@ -553,62 +520,54 @@ struct ToDoRowView: View {
       return overdueAccentColor
    }
 
-   private var reminderIntentSystemName: String {
-      switch toDo.reminderIntent {
-      case .soft:
-         return "bell.badge"
-      case .due:
-         return "bell"
-      case .timeSensitive:
-         return "exclamationmark.circle"
-      }
-   }
+}
 
-   private func expandedDetailRow(systemName: String, title: String, value: String) -> some View {
-      HStack(alignment: .center, spacing: 8) {
-         Image(systemName: systemName)
-            .font(.appBodyStrong(14, relativeTo: .caption))
-            .foregroundStyle(expandedLabelColor)
-            .frame(width: 14, alignment: .center)
+private struct AnimatedCompletionTaskText: View {
+   let text: String
+   let isCompleted: Bool
+   let phase: ToDoCompletionAnimationPhase
+   let textColor: Color
+   let lineColor: Color
+   let firstLineHeightProbe: AnyView
 
-         Text(LocalizedStringKey(title))
-            .font(.appSubtitle(12, relativeTo: .caption))
-            .foregroundStyle(expandedLabelColor)
-            .frame(width: 56, alignment: .leading)
+   @State private var strikeProgress: CGFloat = 0
 
-         Spacer(minLength: 10)
-
-         Text(value)
-            .font(.appBodyStrong(14, relativeTo: .footnote))
-            .foregroundStyle(expandedValueColor)
-            .multilineTextAlignment(.trailing)
-      }
-   }
-
-   private func expandedLongformSection<Content: View>(title: String, systemName: String, @ViewBuilder content: () -> Content) -> some View {
-      VStack(alignment: .leading, spacing: 7) {
-         HStack(spacing: 8) {
-            Image(systemName: systemName)
-               .font(.appBodyStrong(14, relativeTo: .caption))
-               .foregroundStyle(expandedLabelColor)
-               .frame(width: 14, alignment: .center)
-
-            Text(LocalizedStringKey(title))
-               .font(.appSubtitle(14, relativeTo: .caption))
-               .foregroundStyle(expandedLabelColor)
+   var body: some View {
+      Text(text)
+         .font(.appDisplay(22, relativeTo: .headline))
+         .foregroundStyle(textColor)
+         .frame(maxWidth: .infinity, alignment: .leading)
+         .background(firstLineHeightProbe)
+         .overlay(alignment: .leading) {
+            GeometryReader { proxy in
+               Capsule(style: .continuous)
+                  .fill(lineColor)
+                  .frame(width: proxy.size.width * strikeProgress, height: 2.2)
+                  .offset(y: max(0, proxy.size.height * 0.53))
+            }
+            .allowsHitTesting(false)
          }
-
-         content()
-            .padding(.leading, 22)
-      }
-   }
-
-   private var expandedLabelColor: Color {
-      AppColor.textSecondary
-   }
-
-   private var expandedValueColor: Color {
-      AppColor.textPrimary
+         .onAppear {
+            strikeProgress = isCompleted || phase != .none ? 1 : 0
+         }
+         .onChange(of: phase) { _, newPhase in
+            switch newPhase {
+            case .striking:
+               strikeProgress = 0
+               withAnimation(.linear(duration: 0.52)) {
+                  strikeProgress = 1
+               }
+            case .none:
+               strikeProgress = isCompleted ? 1 : 0
+            case .grayscale, .dissolving:
+               strikeProgress = 1
+            }
+         }
+         .onChange(of: isCompleted) { _, newValue in
+            if phase == .none {
+               strikeProgress = newValue ? 1 : 0
+            }
+         }
    }
 }
 
@@ -770,7 +729,7 @@ final class GuidedOnboardingManager: ObservableObject {
       }
    }
 
-   func restartForTesting() {
+   func restart() {
       defaults.set(false, forKey: AppPreferences.Keys.didCompleteOnboarding)
       defaults.set(true, forKey: AppPreferences.Keys.hasCompletedOnboardingOnce)
       highlightedToDoID = nil
@@ -1046,19 +1005,19 @@ struct GuidedOnboardingOverlay: View {
       case .welcome:
          return GuidedOnboardingContent(title: String(localized: "Welcome to toDō"), message: String(localized: "A focused task system designed for clarity, urgency, and momentum. Create what matters. Complete it intentionally. Keep moving."), systemImage: "target", primaryTitle: String(localized: "Begin"))
       case .highlightAddButton:
-         return GuidedOnboardingContent(title: String(localized: "Create your first toDo"), message: String(localized: "Capture something important. A task, reminder, responsibility, or idea."), systemImage: "plus.circle.fill", primaryTitle: nil)
+         return GuidedOnboardingContent(title: String(localized: "Create your first toDō"), message: String(localized: "Capture something important. A task, reminder, responsibility, or idea."), systemImage: "plus.circle.fill", primaryTitle: nil)
       case .openAddView:
          return GuidedOnboardingContent(title: String(localized: "Start simple"), message: String(localized: "Write the task exactly how you think about it."), systemImage: "square.and.pencil", primaryTitle: nil)
       case .enterToDoText:
-         return GuidedOnboardingContent(title: String(localized: "Write the toDo"), message: String(localized: "Use your own words. Submit project proposal, pick up groceries, or call Sarah at 4 PM all work."), systemImage: "text.cursor", primaryTitle: nil)
+         return GuidedOnboardingContent(title: String(localized: "Write the toDō"), message: String(localized: "Use your own words. Submit project proposal, pick up groceries, or call Sarah at 4 PM all work."), systemImage: "text.cursor", primaryTitle: nil)
       case .saveToDo:
-         return GuidedOnboardingContent(title: String(localized: "Save the toDo"), message: String(localized: "toDō keeps your tasks organized and ready to act on."), systemImage: "checkmark.circle.fill", primaryTitle: nil)
+         return GuidedOnboardingContent(title: String(localized: "Save the toDō"), message: String(localized: "toDō keeps your tasks organized and ready to act on."), systemImage: "checkmark.circle.fill", primaryTitle: nil)
       case .creationSuccess:
-         return GuidedOnboardingContent(title: String(localized: "Good."), message: String(localized: "Your first toDo is now active. From here, you can complete, archive, and refine your workflow over time."), systemImage: "checkmark.seal.fill", primaryTitle: String(localized: "Continue"))
+         return GuidedOnboardingContent(title: String(localized: "Good."), message: String(localized: "Your first toDō is now active. From here, you can complete, archive, and refine your workflow over time."), systemImage: "checkmark.seal.fill", primaryTitle: String(localized: "Continue"))
       case .highlightSettings:
          return GuidedOnboardingContent(title: String(localized: "Configure your workflow"), message: String(localized: "Customize how toDō behaves, syncs, and notifies you."), systemImage: "gearshape.fill", primaryTitle: nil)
       case .signInAndSync:
-         return GuidedOnboardingContent(title: String(localized: "Sync across devices"), message: String(localized: "Your toDos already work locally.\n\nSign in if you'd like sync across devices, cloud backup, and future multi-platform access."), systemImage: "arrow.triangle.2.circlepath", primaryTitle: String(localized: "Continue with This Device Only"))
+         return GuidedOnboardingContent(title: String(localized: "Sync across devices"), message: String(localized: "Your toDōs already work on this device.\n\nChoose iCloud for Apple-only sync, toDō Sync for account-based cross-platform sync, or stay local if you prefer no remote copy."), systemImage: "arrow.triangle.2.circlepath", primaryTitle: String(localized: "Continue with This Device Only"))
       case .notificationPermission:
          return GuidedOnboardingContent(title: String(localized: "Stay aware without distraction"), message: String(localized: "toDō can remind you when tasks become important."), systemImage: "bell.fill", primaryTitle: String(localized: "Enable Notifications"))
       case .archiveVsDelete:
@@ -1104,7 +1063,13 @@ struct GuidedOnboardingPrimaryButtonStyle: ButtonStyle {
          .foregroundStyle(AppColor.onAction)
          .padding(.horizontal, 16)
          .padding(.vertical, 14)
-         .background(AppColor.actionPrimary.opacity(configuration.isPressed ? 0.75 : 1), in: .rect(cornerRadius: 18))
+         .background {
+            if #unavailable(iOS 26.0) {
+               RoundedRectangle(cornerRadius: 18, style: .continuous)
+                  .fill(AppColor.actionPrimary.opacity(configuration.isPressed ? 0.75 : 1))
+            }
+         }
+         .appInteractiveRoundedGlass(tint: AppColor.actionPrimary.opacity(configuration.isPressed ? 0.75 : 1), cornerRadius: 18)
    }
 }
 
@@ -1115,6 +1080,12 @@ struct GuidedOnboardingSecondaryButtonStyle: ButtonStyle {
          .foregroundStyle(AppColor.textPrimary)
          .padding(.horizontal, 16)
          .padding(.vertical, 14)
-         .background(AppColor.surfaceMuted.opacity(configuration.isPressed ? 0.65 : 1), in: .rect(cornerRadius: 18))
+         .background {
+            if #unavailable(iOS 26.0) {
+               RoundedRectangle(cornerRadius: 18, style: .continuous)
+                  .fill(AppColor.surfaceMuted.opacity(configuration.isPressed ? 0.65 : 1))
+            }
+         }
+         .appInteractiveRoundedGlass(tint: AppColor.surfaceMuted.opacity(configuration.isPressed ? 0.65 : 1), cornerRadius: 18)
    }
 }

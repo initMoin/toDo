@@ -1,5 +1,8 @@
 import Foundation
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct WidgetFormatting {
    static func compactDue(_ date: Date?) -> String? {
@@ -40,15 +43,15 @@ enum WidgetTypography {
    }
 
    static func body(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-      .custom("CarbonPlusLight", size: size, relativeTo: textStyle)
+      .custom("Jura-Light", size: size, relativeTo: textStyle)
    }
 
    static func bodyStrong(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-      .custom("CarbonPlusRegular", size: size, relativeTo: textStyle)
+      .custom("Jura-Regular", size: size, relativeTo: textStyle)
    }
 
    static func accent(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .subheadline) -> Font {
-      .custom("CarbonPlusBold", size: size, relativeTo: textStyle)
+      .custom("Jura-Bold", size: size, relativeTo: textStyle)
    }
 }
 
@@ -64,15 +67,19 @@ extension Color {
    }
 
    init(light: UInt, dark: UInt, lightOpacity: Double = 1, darkOpacity: Double = 1) {
-      self.init(
-         light: Color(hex: light, opacity: lightOpacity),
-         dark: Color(hex: dark, opacity: darkOpacity)
-      )
-   }
-
-   init(light: Color, dark: Color) {
+      #if canImport(UIKit)
       self.init(uiColor: UIColor { traits in
-         traits.userInterfaceStyle == .dark ? UIColor(dark) : UIColor(light)
+         let hex = traits.userInterfaceStyle == .dark ? dark : light
+         let opacity = traits.userInterfaceStyle == .dark ? darkOpacity : lightOpacity
+         return UIColor(
+            red: CGFloat((hex >> 16) & 0xff) / 255,
+            green: CGFloat((hex >> 8) & 0xff) / 255,
+            blue: CGFloat(hex & 0xff) / 255,
+            alpha: CGFloat(opacity)
+         )
       })
+      #else
+      self.init(hex: light, opacity: lightOpacity)
+      #endif
    }
 }

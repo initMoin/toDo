@@ -43,7 +43,7 @@ struct AccountView: View {
         .sheet(isPresented: $isShowingSyncSettings) {
             SyncSettingsView()
         }
-        .alert("Sync Mode Saved", isPresented: $isShowingRelaunchNotice) {
+        .alert("Sync Choice Saved", isPresented: $isShowingRelaunchNotice) {
             Button("Keep Open", role: .cancel) {}
         } message: {
             Text(relaunchNoticeMessage)
@@ -72,7 +72,7 @@ struct AccountView: View {
 
     private var accountSummarySection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Identity")
+            Text("Account")
                 .font(.appSubtitle(15, relativeTo: .subheadline))
                 .foregroundStyle(AppColor.secondary)
 
@@ -134,13 +134,13 @@ struct AccountView: View {
 
     private var syncOverviewSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Storage & Sync")
+            Text("Where to Save")
                 .font(.appSubtitle(15, relativeTo: .subheadline))
                 .foregroundStyle(AppColor.secondary)
 
             VStack(alignment: .leading, spacing: 14) {
                 syncStatusBlock
-                
+
                 Button {
                     isShowingSyncSettings = true
                 } label: {
@@ -150,11 +150,11 @@ struct AccountView: View {
                             .foregroundStyle(AppColor.actionPrimary)
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Manage Storage & Sync")
+                            Text("Change Where to Save")
                                 .font(.appBodyStrong(15, relativeTo: .subheadline))
                                 .foregroundStyle(AppColor.textPrimary)
 
-                            Text("Choose where ToDo stores and syncs your ToDos: on this device, in iCloud, or through ToDo Sync.")
+                            Text("Choose this device, iCloud, or toDō Sync.")
                                 .font(.appBody(12, relativeTo: .caption))
                                 .foregroundStyle(AppColor.textSecondary)
                         }
@@ -184,7 +184,7 @@ struct AccountView: View {
 
     private var accountActionsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Session")
+            Text("Account Actions")
                 .font(.appSubtitle(15, relativeTo: .subheadline))
                 .foregroundStyle(AppColor.secondary)
 
@@ -199,11 +199,8 @@ struct AccountView: View {
                             .font(.appDisplay(15, relativeTo: .subheadline))
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Refresh Profile")
+                            Text("Refresh Account")
                                 .font(.appBodyStrong(15, relativeTo: .subheadline))
-                            Text("Re-fetch your Supabase profile and session-backed account state.")
-                                .font(.appBody(12, relativeTo: .caption))
-                                .foregroundStyle(AppColor.textSecondary)
                         }
 
                         Spacer(minLength: 0)
@@ -232,7 +229,7 @@ struct AccountView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Sign Out")
                                 .font(.appBodyStrong(15, relativeTo: .subheadline))
-                            Text("End the current Supabase session and return this device to local mode.")
+                            Text("Stops account sync on this device.")
                                 .font(.appBody(12, relativeTo: .caption))
                                 .foregroundStyle(AppColor.textSecondary)
                         }
@@ -259,7 +256,7 @@ struct AccountView: View {
 
     private func errorSection(message: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Auth State")
+            Text("Account Issue")
                 .font(.appSubtitle(15, relativeTo: .subheadline))
                 .foregroundStyle(AppColor.secondary)
 
@@ -288,12 +285,12 @@ struct AccountView: View {
 
     private var syncStatusDetail: String {
         if let pendingMode = syncCoordinator.pendingRestartSyncMode {
-            return "Close and reopen ToDo to finish switching to \(pendingMode.title)."
+            return "Close and reopen toDō when you are ready to use \(pendingMode.title)."
         }
 
         if syncCoordinator.preferredSyncMode == .syncEverywhere,
            !authStore.isAuthenticated {
-            return "\(syncCoordinator.preferredSyncMode.title) is selected. Sign in to activate it; until then, ToDo stays on \(syncCoordinator.effectiveSyncMode.title)."
+            return "\(syncCoordinator.preferredSyncMode.title) is selected. Sign in to activate it; until then, toDō stays on \(syncCoordinator.effectiveSyncMode.title)."
         }
 
         return syncCoordinator.effectiveSyncMode.subtitle
@@ -301,10 +298,10 @@ struct AccountView: View {
 
     private var relaunchNoticeMessage: String {
         if let pendingMode = syncCoordinator.pendingRestartSyncMode {
-            return "ToDo saved this change. Close and reopen the app when you are ready to finish switching to \(pendingMode.title)."
+            return "toDō saved this change. Close and reopen the app when you are ready to finish switching to \(pendingMode.title)."
         }
 
-        return "ToDo saved this change. Close and reopen the app when you are ready to finish the switch."
+        return "toDō saved this change. Close and reopen the app when you are ready to finish the switch."
     }
 
     private var syncStatusBlock: some View {
@@ -380,8 +377,7 @@ struct SyncSettingsView: View {
     @Query private var syncConflicts: [SyncConflict]
     @StateObject private var syncCoordinator = SyncCoordinator.shared
     @State private var pendingSyncMode: SyncMode?
-    @State private var isShowingSyncModeConfirmation = false
-    @State private var isShowingSyncModeFinalConfirmation = false
+    @State private var isShowingSyncModeReview = false
     @State private var isShowingRelaunchNotice = false
     @State private var highlightedMode: SyncMode?
 
@@ -416,39 +412,42 @@ struct SyncSettingsView: View {
         .appNavigationChrome()
         .toolbar(.hidden, for: .navigationBar)
         .navigationBarBackButtonHidden()
-        .confirmationDialog(syncModeConfirmationTitle, isPresented: $isShowingSyncModeConfirmation, titleVisibility: .visible) {
-            Button("Continue") {
-                isShowingSyncModeFinalConfirmation = true
+        .sheet(isPresented: $isShowingSyncModeReview) {
+            if let pendingSyncMode {
+                SyncMigrationReviewSheet(
+                    mode: pendingSyncMode,
+                    currentCountLabel: currentVisibleToDoCountLabel,
+                    doneCountLabel: currentDoneToDoCountLabel,
+                    primaryDescription: syncModePrimaryDescription(for: pendingSyncMode),
+                    destinationDescription: syncModeDestinationDescription(for: pendingSyncMode),
+                    warningMessage: syncModeFinalConfirmationMessage,
+                    transferActionTitle: syncModeTransferActionTitle,
+                    destinationActionTitle: syncModeUseDestinationActionTitle,
+                    hasMigrationPlan: pendingSyncModeHasMigrationPlan,
+                    requiresRelaunch: requiresRelaunchToApply(pendingSyncMode),
+                    onCancel: {
+                        isShowingSyncModeReview = false
+                        self.pendingSyncMode = nil
+                    },
+                    onTransfer: {
+                        confirmSyncModeChange(shouldTransferData: true)
+                        isShowingSyncModeReview = false
+                    },
+                    onUseDestination: {
+                        confirmSyncModeChange(shouldTransferData: false)
+                        isShowingSyncModeReview = false
+                    }
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
             }
-
-            Button("Cancel", role: .cancel) {
+        }
+        .onChange(of: isShowingSyncModeReview) { _, isPresented in
+            if !isPresented {
                 pendingSyncMode = nil
             }
-        } message: {
-            Text(syncModeConfirmationMessage)
         }
-        .alert(syncModeFinalConfirmationTitle, isPresented: $isShowingSyncModeFinalConfirmation) {
-            Button("Cancel", role: .cancel) {
-                pendingSyncMode = nil
-            }
-
-            if pendingSyncModeHasMigrationPlan {
-                Button("Move Current ToDos") {
-                    confirmSyncModeChange(shouldTransferData: true)
-                }
-
-                Button("Start Fresh") {
-                    confirmSyncModeChange(shouldTransferData: false)
-                }
-            } else {
-                Button(syncModeFinalConfirmationActionTitle) {
-                    confirmSyncModeChange(shouldTransferData: true)
-                }
-            }
-        } message: {
-            Text(syncModeFinalConfirmationMessage)
-        }
-        .alert("Sync Mode Saved", isPresented: $isShowingRelaunchNotice) {
+        .alert("Sync Choice Saved", isPresented: $isShowingRelaunchNotice) {
             Button("Later", role: .cancel) {
                 if let mode = syncCoordinator.pendingRestartSyncMode {
                     triggerSuccessHighlight(for: mode)
@@ -490,15 +489,11 @@ struct SyncSettingsView: View {
 
     private var syncOverviewSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Current Setup")
+            Text("Current Choice")
                 .font(.appSubtitle(15, relativeTo: .subheadline))
                 .foregroundStyle(AppColor.secondary)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Choose where ToDo stores and syncs your ToDos.")
-                    .font(.appBodyStrong(16, relativeTo: .body))
-                    .foregroundStyle(AppColor.textPrimary)
-
                 syncStatusBlock
 
                 if !unresolvedSyncConflicts.isEmpty {
@@ -528,11 +523,12 @@ struct SyncSettingsView: View {
 
     private var syncModesSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Modes")
+            Text("Choices")
                 .font(.appSubtitle(15, relativeTo: .subheadline))
                 .foregroundStyle(AppColor.secondary)
 
             VStack(alignment: .leading, spacing: 14) {
+                syncMigrationGuideCard
                 iCloudRecommendationNote
 
                 ForEach(syncCoordinator.availableOptions(isAuthenticated: authStore.isAuthenticated)) { option in
@@ -545,6 +541,56 @@ struct SyncSettingsView: View {
         }
     }
 
+    private var syncMigrationGuideCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 11) {
+                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                    .font(.appDisplay(16, relativeTo: .subheadline))
+                    .foregroundStyle(AppColor.secondary)
+                    .frame(width: 20, height: 20)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Before you switch")
+                        .font(.appBodyStrong(14, relativeTo: .subheadline))
+                        .foregroundStyle(AppColor.textPrimary)
+
+                    Text(syncMigrationGuideMessage)
+                        .font(.appBody(12, relativeTo: .caption))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack(spacing: 8) {
+                syncCountPill(title: String(localized: "Current"), value: currentVisibleToDoCountLabel)
+                syncCountPill(title: String(localized: "Done"), value: currentDoneToDoCountLabel)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(AppColor.secondary.opacity(0.08), in: .rect(cornerRadius: 18))
+        .overlay {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(AppColor.secondary.opacity(0.18), lineWidth: 1)
+        }
+    }
+
+    private func syncCountPill(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.appBodyStrong(10, relativeTo: .caption2))
+                .foregroundStyle(AppColor.textSecondary)
+            Text(value)
+                .font(.appBodyStrong(12, relativeTo: .caption))
+                .foregroundStyle(AppColor.textPrimary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(AppColor.surfaceElevated.opacity(0.72), in: .rect(cornerRadius: 14))
+    }
+
     private var iCloudRecommendationNote: some View {
         HStack(alignment: .top, spacing: 11) {
             Image(systemName: "icloud.fill")
@@ -553,11 +599,11 @@ struct SyncSettingsView: View {
                 .frame(width: 18, height: 18)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Apple-only devices?")
+                Text("Only using Apple devices?")
                     .font(.appBodyStrong(14, relativeTo: .subheadline))
                     .foregroundStyle(AppColor.textPrimary)
 
-                Text("Use Sync with iCloud for Apple-only devices. Use ToDo Sync when you also want Android or web access.")
+                Text("Choose iCloud for Apple-only syncing. Choose toDō Sync for Android or web access too.")
                     .font(.appBody(12, relativeTo: .caption))
                     .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -571,7 +617,7 @@ struct SyncSettingsView: View {
 
     private func errorSection(message: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Sync State")
+            Text("Sync Issue")
                 .font(.appSubtitle(15, relativeTo: .subheadline))
                 .foregroundStyle(AppColor.secondary)
 
@@ -600,11 +646,18 @@ struct SyncSettingsView: View {
 
     private var syncStatusDetail: String {
         if let pendingMode = syncCoordinator.pendingRestartSyncMode {
-            return "Close and reopen ToDo to finish activating \(pendingMode.title)."
+            return String(
+                format: String(localized: "Close and reopen toDō when you are ready to use %@."),
+                pendingMode.title
+            )
         }
 
         if syncCoordinator.preferredSyncMode == .syncEverywhere, !authStore.isAuthenticated {
-            return "\(syncCoordinator.preferredSyncMode.title) is selected. Sign in below to activate it; until then, ToDo stays on \(syncCoordinator.effectiveSyncMode.title)."
+            return String(
+                format: String(localized: "%@ is selected. Sign in below to turn it on; until then, toDō stays with %@."),
+                syncCoordinator.preferredSyncMode.title,
+                syncCoordinator.effectiveSyncMode.title
+            )
         }
 
         return syncCoordinator.effectiveSyncMode.subtitle
@@ -622,14 +675,20 @@ struct SyncSettingsView: View {
 
         if let plan = syncCoordinator.migrationPlan(for: pendingSyncMode) {
             parts.append(plan.summary)
+            parts.append(
+                String(
+                    format: String(localized: "Shown here now: %@."),
+                    currentVisibleToDoCountLabel
+                )
+            )
         }
 
         if requiresRelaunchToApply(pendingSyncMode) {
-            parts.append("This change takes effect after you close and reopen ToDo.")
+            parts.append("This change takes effect after you close and reopen toDō.")
         }
 
         if pendingSyncMode == .syncEverywhere, !authStore.isAuthenticated {
-            parts.append("ToDo will keep you here so you can finish account setup.")
+            parts.append("toDō will keep you here so you can finish account setup.")
         }
 
         return parts.joined(separator: " ")
@@ -642,16 +701,58 @@ struct SyncSettingsView: View {
 
     private var syncModeFinalConfirmationMessage: String {
         guard let pendingSyncMode else { return "" }
-        var parts = [syncModePrimaryDescription(for: pendingSyncMode)]
+        var parts = [
+            syncModePrimaryDescription(for: pendingSyncMode),
+            syncModeDestinationDescription(for: pendingSyncMode)
+        ]
         if pendingSyncModeHasMigrationPlan {
-            parts.append("Choose whether to move the ToDos from your current storage mode into \(pendingSyncMode.title), or start \(pendingSyncMode.title) fresh.")
+            parts.append(
+                String(
+                    format: String(localized: "This device currently shows %@. Choose carefully: copying these toDōs into %@ can create duplicates if the same toDōs already exist there from another device."),
+                    currentVisibleToDoCountLabel,
+                    pendingSyncMode.title
+                )
+            )
+            parts.append(
+                String(
+                    format: String(localized: "If you already used %@ on another device, choose the existing-destination option first."),
+                    pendingSyncMode.title
+                )
+            )
         }
         return parts.joined(separator: " ")
     }
 
+    private var syncModeTransferActionTitle: String {
+        guard let pendingSyncMode else { return String(localized: "Copy Current toDōs") }
+        return String(
+            format: String(localized: "Copy This Device's toDōs to %@"),
+            pendingSyncMode.title
+        )
+    }
+
+    private var syncModeUseDestinationActionTitle: String {
+        guard let pendingSyncMode else { return String(localized: "Use What Is Already There") }
+        switch pendingSyncMode {
+        case .deviceOnly:
+            return String(localized: "Do Not Copy; Keep This Device As Is")
+        case .iCloud:
+            return String(localized: "Do Not Copy; Use iCloud as It Is")
+        case .syncEverywhere:
+            return String(localized: "Do Not Copy; Use toDō Sync as It Is")
+        }
+    }
+
+    private var syncMigrationGuideMessage: String {
+        String(
+            format: String(localized: "This device currently shows %@. iCloud and toDō Sync are separate places, so they may already have toDōs from another device."),
+            currentVisibleToDoCountLabel
+        )
+    }
+
     private var syncModeFinalConfirmationActionTitle: String {
-        guard let pendingSyncMode else { return "Confirm" }
-        return requiresRelaunchToApply(pendingSyncMode) ? "Save Mode" : "Switch"
+        guard let pendingSyncMode else { return String(localized: "Confirm") }
+        return requiresRelaunchToApply(pendingSyncMode) ? String(localized: "Save Mode") : String(localized: "Switch")
     }
 
     private var pendingSyncModeHasMigrationPlan: Bool {
@@ -662,7 +763,7 @@ struct SyncSettingsView: View {
     private var syncStatusBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center, spacing: 12) {
-                Text("Current Sync")
+                Text("Current Choice")
                     .font(.appBody(17, relativeTo: .body))
                     .foregroundStyle(AppColor.textPrimary)
 
@@ -699,11 +800,20 @@ struct SyncSettingsView: View {
 
     private var visibleOwnerUserID: UUID? {
         guard authStore.effectiveSyncMode == .syncEverywhere else { return nil }
-        return authStore.currentUserID
+        return authStore.scopedOwnerUserID
     }
 
     private var scopedToDos: [ToDo] {
         toDos.filter { $0.ownerUserID == visibleOwnerUserID }
+    }
+
+    private var currentVisibleToDoCountLabel: String {
+        AppLocalization.localizedCount(scopedToDos.count, singularKey: "%@ toDō", pluralKey: "%@ toDōs")
+    }
+
+    private var currentDoneToDoCountLabel: String {
+        let count = scopedToDos.filter { $0.lifecycleState == .done }.count
+        return AppLocalization.localizedCount(count, singularKey: "%@ done", pluralKey: "%@ done")
     }
 
     private var unresolvedSyncConflicts: [SyncConflict] {
@@ -720,13 +830,13 @@ struct SyncSettingsView: View {
                 .frame(width: 18, height: 18)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Sync Needs Review")
+                Text("Choose a Version")
                     .font(.appBodyStrong(15, relativeTo: .subheadline))
                     .foregroundStyle(AppColor.textPrimary)
 
                 Text(unresolvedSyncConflicts.count == 1
-                     ? "1 ToDo changed in two places. Choose which version to keep."
-                     : "\(unresolvedSyncConflicts.count) ToDos changed in two places. Choose which versions to keep.")
+                     ? "1 toDō changed in two places. Choose which version to keep."
+                     : "\(unresolvedSyncConflicts.count) toDōs changed in two places. Choose which versions to keep.")
                     .font(.appBody(12, relativeTo: .caption))
                     .foregroundStyle(AppColor.textSecondary)
             }
@@ -795,7 +905,7 @@ struct SyncSettingsView: View {
                         if isEffective {
                             syncModeBadge("Active", foreground: AppColor.white, background: AppColor.actionPrimary)
                         } else if isPending {
-                            syncModeBadge("Needs Relaunch", foreground: AppColor.white, background: AppColor.secondary)
+                            syncModeBadge("Ready After Restart", foreground: AppColor.white, background: AppColor.secondary)
                         } else if !option.isAvailable {
                             syncModeBadge("Unavailable", foreground: AppColor.white, background: AppColor.textSecondary)
                         } else if isPreferred && option.mode == .syncEverywhere && !authStore.isAuthenticated {
@@ -816,13 +926,21 @@ struct SyncSettingsView: View {
             .scaleEffect(isHighlighted ? 1.015 : 1)
             .contentShape(.rect(cornerRadius: 18))
             .containerShape(.rect(cornerRadius: 18))
-            .background(
-                syncModeBackground(isPreferred: isPreferred, isHighlighted: isHighlighted),
-                in: .rect(corners: .concentric, isUniform: true)
+            .background {
+                if #unavailable(iOS 26.0) {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(syncModeBackground(isPreferred: isPreferred, isHighlighted: isHighlighted))
+                }
+            }
+            .appInteractiveRoundedGlass(
+                tint: syncModeBackground(isPreferred: isPreferred, isHighlighted: isHighlighted),
+                cornerRadius: 18
             )
             .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(isHighlighted ? AppColor.tertiary.opacity(0.55) : Color.clear, lineWidth: 1.5)
+                if #unavailable(iOS 26.0) {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(isHighlighted ? AppColor.tertiary.opacity(0.55) : Color.clear, lineWidth: 1.5)
+                }
             }
         }
         .buttonStyle(.plain)
@@ -856,7 +974,7 @@ struct SyncSettingsView: View {
             return
         }
         pendingSyncMode = mode
-        isShowingSyncModeConfirmation = true
+        isShowingSyncModeReview = true
     }
 
     private func retryPreferredSyncMode(_ mode: SyncMode) {
@@ -867,8 +985,8 @@ struct SyncSettingsView: View {
 
         guard authStore.isAuthenticated else {
             SyncCoordinator.shared.showTransientFeedback(
-                title: "ToDo Sync Selected",
-                message: "Sign in below to activate ToDo Sync.",
+                title: "toDō Sync Selected",
+                message: "Sign in below to activate toDō Sync.",
                 style: .warning
             )
             triggerSuccessHighlight(for: mode)
@@ -919,20 +1037,31 @@ struct SyncSettingsView: View {
     private func syncModePrimaryDescription(for mode: SyncMode) -> String {
         switch mode {
         case .deviceOnly:
-            return "ToDo will keep your ToDos only on this device and stop using remote sync."
+            return "toDō will keep your toDōs only on this device."
         case .iCloud:
-            return "ToDo will use your private iCloud storage to keep Apple devices in step."
+            return "toDō will use iCloud to keep your Apple devices in step."
         case .syncEverywhere:
-            return "ToDo will use ToDo Sync to keep your ToDos available across iPhone, Android, and web."
+            return "toDō Sync keeps your toDōs available across iPhone, Android, and web."
+        }
+    }
+
+    private func syncModeDestinationDescription(for mode: SyncMode) -> String {
+        switch mode {
+        case .deviceOnly:
+            return "This device is separate from iCloud and toDō Sync."
+        case .iCloud:
+            return "iCloud is separate from this device and toDō Sync."
+        case .syncEverywhere:
+            return "toDō Sync is separate from this device and iCloud."
         }
     }
 
     private var relaunchNoticeMessage: String {
         if let pendingMode = syncCoordinator.pendingRestartSyncMode {
-            return "ToDo saved this change. Close and reopen the app when you are ready to activate \(pendingMode.title)."
+            return "toDō saved this choice. Close and reopen the app when you are ready to use \(pendingMode.title)."
         }
 
-        return "ToDo saved this change. Close and reopen the app when you are ready to finish the switch."
+        return "toDō saved this choice. Close and reopen the app when you are ready to finish."
     }
 
     private func syncModeBackground(isPreferred: Bool, isHighlighted: Bool) -> Color {
@@ -957,6 +1086,275 @@ struct SyncSettingsView: View {
                     }
                 }
             }
+        }
+    }
+}
+
+private struct SyncMigrationReviewSheet: View {
+    let mode: SyncMode
+    let currentCountLabel: String
+    let doneCountLabel: String
+    let primaryDescription: String
+    let destinationDescription: String
+    let warningMessage: String
+    let transferActionTitle: String
+    let destinationActionTitle: String
+    let hasMigrationPlan: Bool
+    let requiresRelaunch: Bool
+    let onCancel: () -> Void
+    let onTransfer: () -> Void
+    let onUseDestination: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                currentDataCard
+                destinationCard
+                decisionCard
+                actionButtons
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 22)
+            .padding(.bottom, 28)
+        }
+        .background(AppColor.surface)
+        .appBaseTypography()
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                .font(.appDisplay(28, relativeTo: .title2))
+                .foregroundStyle(AppColor.secondary)
+                .symbolEffect(.pulse.byLayer)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(String(format: String(localized: "Switch to %@?"), mode.title))
+                    .font(.appDisplay(26, relativeTo: .title2))
+                    .foregroundStyle(AppColor.textPrimary)
+
+                Text(primaryDescription)
+                    .font(.appBody(14, relativeTo: .subheadline))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                onCancel()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.appDisplay(13, relativeTo: .caption))
+                    .frame(width: 32, height: 32)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(AppColor.textSecondary)
+            .background {
+                if #unavailable(iOS 26.0) {
+                    Circle()
+                        .fill(AppColor.surfaceMuted)
+                }
+            }
+            .appInteractiveCircleGlass(tint: AppColor.surfaceMuted)
+            .accessibilityLabel("Cancel")
+        }
+    }
+
+    private var currentDataCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Current Choice")
+                .font(.appBodyStrong(14, relativeTo: .subheadline))
+                .foregroundStyle(AppColor.textPrimary)
+
+            HStack(spacing: 10) {
+                metricPill(title: String(localized: "Current"), value: currentCountLabel)
+                metricPill(title: String(localized: "Done"), value: doneCountLabel)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 22))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(AppColor.border, lineWidth: 1)
+        }
+    }
+
+    private var destinationCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: destinationSymbol)
+                .font(.appDisplay(18, relativeTo: .headline))
+                .foregroundStyle(AppColor.actionPrimary)
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(mode.title)
+                    .font(.appBodyStrong(15, relativeTo: .subheadline))
+                    .foregroundStyle(AppColor.textPrimary)
+
+                Text(destinationDescription)
+                    .font(.appBody(13, relativeTo: .caption))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if requiresRelaunch {
+                    Text("Close and reopen toDō to use this choice.")
+                        .font(.appBodyStrong(12, relativeTo: .caption))
+                        .foregroundStyle(AppColor.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.actionPrimary.opacity(0.08), in: .rect(cornerRadius: 20))
+    }
+
+    private var decisionCard: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.appDisplay(17, relativeTo: .headline))
+                .foregroundStyle(AppColor.secondary)
+                .frame(width: 22, height: 22)
+
+            Text(warningMessage)
+                .font(.appBody(13, relativeTo: .caption))
+                .foregroundStyle(AppColor.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColor.secondary.opacity(0.1), in: .rect(cornerRadius: 20))
+    }
+
+    private var actionButtons: some View {
+        VStack(spacing: 10) {
+            if hasMigrationPlan {
+                Button {
+                    onUseDestination()
+                } label: {
+                    actionLabel(
+                        title: destinationActionTitle,
+                        subtitle: String(localized: "Use what is already there first to avoid duplicates."),
+                        systemName: "tray.and.arrow.down.fill"
+                    )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(AppColor.textPrimary)
+                .background {
+                    if #unavailable(iOS 26.0) {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(AppColor.surfaceElevated)
+                    }
+                }
+                .appInteractiveRoundedGlass(tint: AppColor.surfaceElevated, cornerRadius: 20)
+                .overlay {
+                    if #unavailable(iOS 26.0) {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(AppColor.border, lineWidth: 1)
+                    }
+                }
+
+                Button {
+                    onTransfer()
+                } label: {
+                    actionLabel(
+                        title: transferActionTitle,
+                        subtitle: String(localized: "Copy this device's visible toDōs into the new choice."),
+                        systemName: "square.and.arrow.up.fill"
+                    )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(AppColor.textPrimary)
+                .background {
+                    if #unavailable(iOS 26.0) {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(AppColor.secondary.opacity(0.12))
+                    }
+                }
+                .appInteractiveRoundedGlass(tint: AppColor.secondary.opacity(0.12), cornerRadius: 20)
+            } else {
+                Button {
+                    onTransfer()
+                } label: {
+                    actionLabel(
+                        title: requiresRelaunch ? String(localized: "Save Mode") : String(localized: "Switch"),
+                        subtitle: primaryDescription,
+                        systemName: "checkmark.circle.fill"
+                    )
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(AppColor.textPrimary)
+                .background {
+                    if #unavailable(iOS 26.0) {
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(AppColor.actionPrimary.opacity(0.12))
+                    }
+                }
+                .appInteractiveRoundedGlass(tint: AppColor.actionPrimary.opacity(0.12), cornerRadius: 20)
+            }
+
+            Button("Cancel", role: .cancel) {
+                onCancel()
+            }
+            .buttonStyle(.plain)
+            .font(.appBodyStrong(14, relativeTo: .subheadline))
+            .foregroundStyle(AppColor.textSecondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+        }
+    }
+
+    private func metricPill(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.appBodyStrong(10, relativeTo: .caption2))
+                .foregroundStyle(AppColor.textSecondary)
+            Text(value)
+                .font(.appBodyStrong(13, relativeTo: .caption))
+                .foregroundStyle(AppColor.textPrimary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 15))
+    }
+
+    private func actionLabel(title: String, subtitle: String, systemName: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: systemName)
+                .font(.appDisplay(16, relativeTo: .subheadline))
+                .foregroundStyle(AppColor.actionPrimary)
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.appBodyStrong(14, relativeTo: .subheadline))
+                    .foregroundStyle(AppColor.textPrimary)
+
+                Text(subtitle)
+                    .font(.appBody(12, relativeTo: .caption))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(.rect(cornerRadius: 20))
+    }
+
+    private var destinationSymbol: String {
+        switch mode {
+        case .deviceOnly:
+            return "externaldrive.fill"
+        case .iCloud:
+            return "icloud.fill"
+        case .syncEverywhere:
+            return "globe.americas.fill"
         }
     }
 }

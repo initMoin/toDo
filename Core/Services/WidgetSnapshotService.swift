@@ -125,7 +125,7 @@ final class WidgetSnapshotService {
          try write(snapshot)
          WidgetCenter.shared.reloadTimelines(ofKind: ToDoWidgetSharedConstants.widgetKind)
       } catch {
-         AppLog.error("Failed to write ToDo widget snapshot: \(error)", logger: AppLog.widget)
+         AppLog.error("Failed to write toDō widget snapshot: \(error)", logger: AppLog.widget)
       }
    }
 
@@ -139,7 +139,7 @@ final class WidgetSnapshotService {
       let now = Date()
       let calendar = Calendar.current
       let syncMode = SyncCoordinator.shared.effectiveSyncMode
-      let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.currentUserID : nil
+      let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.scopedOwnerUserID : nil
       let focusFilterMode = UserDefaults.standard.string(forKey: AppPreferences.Keys.toDoFocusFilterMode) ?? "all"
       let scopedToDos = toDos.filter { $0.ownerUserID == ownerUserID }
       let activeToDos = scopedToDos.filter { $0.lifecycleState == .active && $0.matchesFocusFilter(modeRawValue: focusFilterMode) }
@@ -152,7 +152,7 @@ final class WidgetSnapshotService {
          return ToDoWidgetItem(
             id: String(describing: toDo.id),
             cloudID: toDo.cloudID,
-            missive: toDo.task.isEmpty ? "Untitled ToDo" : toDo.task,
+            missive: toDo.task.isEmpty ? "Untitled toDō" : toDo.task,
             due: toDo.dueDate,
             isDone: toDo.isDoneState,
             isOverdue: isOverdue,

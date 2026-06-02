@@ -8,8 +8,8 @@ struct ToDoWidget: Widget {
       AppIntentConfiguration(kind: kind, intent: ConfigurationAppIntent.self, provider: ToDoWidgetProvider()) { entry in
          ToDoWidgetEntryView(entry: entry)
       }
-      .configurationDisplayName("ToDo")
-      .description("See and complete pending ToDos.")
+      .configurationDisplayName("toDō")
+      .description("See and complete pending toDōs.")
       .supportedFamilies([
          .systemSmall,
          .systemMedium,

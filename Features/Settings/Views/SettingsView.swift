@@ -23,12 +23,15 @@ struct SettingsView: View {
    @AppStorage(AppPreferences.Keys.mirrorSyncDeletesToDeviceOnly) private var mirrorSyncDeletesToDeviceOnly = true
    @AppStorage(AppPreferences.Keys.appIconBadgePolicy) private var appIconBadgePolicyRaw = AppPreferences.AppIconBadgePolicy.overdue.rawValue
    @AppStorage(AppPreferences.Keys.notificationSoundOption) private var notificationSoundOptionRaw = AppPreferences.NotificationSoundOption.defaultSound.rawValue
+   @AppStorage(AppPreferences.Keys.appTheme) private var appThemeRaw = AppThemeOption.classic.rawValue
+   @AppStorage(AppPreferences.Keys.appAppearanceMode) private var appAppearanceModeRaw = AppPreferences.AppAppearanceMode.system.rawValue
    @AppStorage("trashAutoEmptyInterval") private var trashAutoEmptyIntervalRaw = TrashAutoEmptyInterval.oneMonth.rawValue
 
    @State private var isShowingDeleteUnusedTagsConfirmation = false
    @State private var isSortMenuExpanded = false
    @State private var isDoneSwipeMenuExpanded = false
    @State private var isTimeSourceMenuExpanded = false
+   @State private var notificationSoundPreviewStatus: String?
    @StateObject private var onboardingManager = GuidedOnboardingManager.shared
    @StateObject private var notificationManager = NotificationManager.shared
    @StateObject private var locationTimeZoneService = LocationTimeZoneService()
@@ -43,7 +46,7 @@ struct SettingsView: View {
 
    private var visibleOwnerUserID: UUID? {
       guard authStore.effectiveSyncMode == .syncEverywhere else { return nil }
-      return authStore.currentUserID
+      return authStore.scopedOwnerUserID
    }
 
    private var scopedTags: [Tag] {
@@ -75,7 +78,7 @@ struct SettingsView: View {
       case .iCloud:
          return "Apple"
       case .syncEverywhere:
-         return authStore.isAuthenticated ? String(localized: "ToDo Sync") : authStore.accountStatusLabel
+         return authStore.isAuthenticated ? String(localized: "toDō Sync") : authStore.accountStatusLabel
       }
    }
 
@@ -92,16 +95,13 @@ struct SettingsView: View {
                      }
                   } label: {
                      settingsNavigationRow(
-                        authStore.isAuthenticated ? String(localized: "Profile & Session") : String(localized: "Set Up Account"),
+                        authStore.isAuthenticated ? String(localized: "Account") : String(localized: "Sign In"),
                         detail: accountSummaryDetail
                      )
                      .onboardingSpotlightAnchor(.settingsAccount)
                   }
                   .foregroundStyle(AppColor.textPrimary)
 
-                  Text(String(localized: "Manage your identity and the account connected to this device."))
-                     .font(.appBody(12, relativeTo: .caption))
-                     .foregroundStyle(AppColor.textSecondary)
                }
 
                settingsSection(String(localized: "Sync")) {
@@ -123,8 +123,8 @@ struct SettingsView: View {
                      SyncSettingsView()
                   } label: {
                      settingsNavigationRow(
-                        String(localized: "Storage & Sync"),
-                        detail: syncCoordinator.pendingRestartSyncMode != nil ? String(localized: "Needs relaunch") : syncCoordinator.preferredSyncMode.title
+                        String(localized: "Where to Save"),
+                        detail: syncCoordinator.pendingRestartSyncMode != nil ? String(localized: "Ready after restart") : syncCoordinator.preferredSyncMode.title
                      )
                      .onboardingSpotlightAnchor(.settingsSync)
                   }
@@ -134,8 +134,8 @@ struct SettingsView: View {
                      syncDetailsSettingsScreen
                   } label: {
                      settingsNavigationRow(
-                        String(localized: "Sync Details"),
-                        detail: mirrorSyncDeletesToDeviceOnly ? String(localized: "Mirrors deletes") : String(localized: "Keeps local")
+                        String(localized: "Delete Behavior"),
+                        detail: mirrorSyncDeletesToDeviceOnly ? String(localized: "Match everywhere") : String(localized: "Keep copies")
                      )
                   }
                   .foregroundStyle(AppColor.textPrimary)
@@ -143,10 +143,21 @@ struct SettingsView: View {
 
                settingsSection(String(localized: "Preferences")) {
                   NavigationLink {
+                     themeSettingsScreen
+                  } label: {
+                     settingsNavigationRow(
+                        String(localized: "Appearance"),
+                        detail: resolvedTheme.title,
+                        detailForeground: AppColor.iconAccent
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+
+                  NavigationLink {
                      behaviorSettingsScreen
                   } label: {
                      settingsNavigationRow(
-                        String(localized: "ToDo Behavior"),
+                        String(localized: "List & Time"),
                         detail: resolvedSortOption.title
                      )
                   }
@@ -182,6 +193,15 @@ struct SettingsView: View {
                      )
                   }
                   .foregroundStyle(AppColor.textPrimary)
+
+                  settingsActionRow(
+                     systemName: "sparkles",
+                     title: "Guided Tour",
+                     detail: "Replay the setup guide for creating a toDō, choosing sync, and enabling notifications."
+                  ) {
+                     onboardingManager.restart()
+                     closeView()
+                  }
                }
 
                settingsSection(String(localized: "Data")) {
@@ -190,7 +210,7 @@ struct SettingsView: View {
                   } label: {
                      settingsNavigationRow(
                         String(localized: "Data Controls"),
-                        detail: String(localized: "Maintenance")
+                        detail: String(localized: "Clean up")
                      )
                   }
                   .foregroundStyle(AppColor.textPrimary)
@@ -215,19 +235,6 @@ struct SettingsView: View {
                   }
                   .foregroundStyle(AppColor.textPrimary)
                }
-
-//               #if DEBUG
-//               settingsSection(String(localized: "Developer")) {
-//                  settingsActionRow(
-//                     systemName: "sparkles",
-//                     title: "Run Guided Onboarding",
-//                     detail: "Development-only trigger for testing the first-run guided setup."
-//                  ) {
-//                     onboardingManager.restartForTesting()
-//                     closeView()
-//                  }
-//               }
-//               #endif
 
                madeByBrandView
                   .frame(maxWidth: .infinity)
@@ -272,10 +279,16 @@ struct SettingsView: View {
       }
    }
 
+   private var themeSettingsScreen: some View {
+      ThemeSettingsScreen(
+         appThemeRaw: $appThemeRaw,
+         appAppearanceModeRaw: $appAppearanceModeRaw
+      )
+   }
+
    private var behaviorSettingsScreen: some View {
       SettingsSubmenuContainer(
-         title: "ToDo Behavior",
-         subtitle: "Tune how ToDos are ordered, timed, completed, and mirrored outside the app."
+         title: "List & Time"
       ) {
          settingsSection("List") {
             settingsSortDropdown
@@ -285,7 +298,7 @@ struct SettingsView: View {
             timeSourceDropdown
          }
 
-         settingsSection("Done ToDos") {
+         settingsSection("Done toDōs") {
             doneSwipeActionDropdown
 
             NavigationLink {
@@ -293,7 +306,7 @@ struct SettingsView: View {
             } label: {
                   settingsNavigationRow(
                   "Snooze Options",
-                  detail: String(localized: "Manage presets")
+                  detail: String(localized: "Quick choices")
                )
             }
             .foregroundStyle(AppColor.textPrimary)
@@ -326,8 +339,7 @@ struct SettingsView: View {
 
    private var notificationSettingsScreen: some View {
       SettingsSubmenuContainer(
-         title: "Notifications",
-         subtitle: "Control reminders, time-sensitive alerts, push registration, and the app icon badge."
+         title: "Notifications"
       ) {
          settingsSection("Reminder Alerts") {
             notificationSettingsBlock
@@ -337,17 +349,16 @@ struct SettingsView: View {
 
    private var tagSettingsScreen: some View {
       SettingsSubmenuContainer(
-         title: "Tags",
-         subtitle: "Keep the main ToDo flow light while managing tag behavior and cleanup here."
+         title: "Tags"
       ) {
          settingsSection("Defaults") {
             Toggle(isOn: $createToDoTagsEnabledByDefault) {
                VStack(alignment: .leading, spacing: 4) {
-                  Text("Enable Tags by Default")
+                  Text("Show Tags While Creating")
                      .font(.appBodyStrong(15, relativeTo: .subheadline))
                      .foregroundStyle(AppColor.textPrimary)
 
-                  Text("New ToDos start with tag entry available instead of staying focused only on the task text.")
+                  Text("Show the tag field when creating a toDō.")
                      .font(.appBody(12, relativeTo: .caption))
                      .foregroundStyle(AppColor.textSecondary)
                }
@@ -360,7 +371,7 @@ struct SettingsView: View {
                TagManagementView()
             } label: {
                settingsNavigationRow(
-                  "Tag Management",
+                  "Manage Tags",
                   detail: customTagCountLabel
                )
             }
@@ -368,8 +379,8 @@ struct SettingsView: View {
 
             settingsActionRow(
                systemName: "tag.slash",
-               title: "Delete Unused Tags",
-               detail: "Permanently remove tags that are no longer linked to any ToDo or nanoDo.",
+               title: "Remove Unused Tags",
+               detail: "Deletes tags that are not attached to a toDō or nanoDo.",
                foregroundStyle: AppColor.actionDestructive,
                backgroundStyle: AppColor.actionDestructive.opacity(0.08),
                isDisabled: unusedTagCount == 0
@@ -382,8 +393,7 @@ struct SettingsView: View {
 
    private var syncDetailsSettingsScreen: some View {
       SettingsSubmenuContainer(
-         title: "Sync Details",
-         subtitle: "Advanced sync behavior lives here so the main Settings view stays readable."
+         title: "Delete Behavior"
       ) {
          settingsSection("Local Copies") {
             syncDeletionPreferenceToggle
@@ -393,8 +403,7 @@ struct SettingsView: View {
 
    private var dataControlsSettingsScreen: some View {
       SettingsSubmenuContainer(
-         title: "Data Controls",
-         subtitle: "Maintenance actions are grouped here because they change stored data or app defaults."
+         title: "Data Controls"
       ) {
          settingsSection("Trash") {
             trashAutoEmptyControl
@@ -403,8 +412,8 @@ struct SettingsView: View {
          settingsSection("Preferences") {
             settingsActionRow(
                systemName: "arrow.counterclockwise",
-               title: "Reset Preferences",
-               detail: "Restore sorting and default tag-entry behavior to the app defaults."
+               title: "Reset Choices",
+               detail: "Restores sorting, tag entry, and timing choices."
             ) {
                resetPreferences()
             }
@@ -416,7 +425,7 @@ struct SettingsView: View {
       Toggle(isOn: $mirrorDueDatesToCalendar) {
          VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
-               Text("Mirror Due ToDos to Calendar")
+               Text("Add Due toDōs to Calendar")
                   .font(.appBodyStrong(15, relativeTo: .subheadline))
                   .foregroundStyle(AppColor.textPrimary)
 
@@ -431,7 +440,7 @@ struct SettingsView: View {
                   )
             }
 
-            Text("Active due ToDos appear in Calendar. Completing, archiving, deleting, or removing a due date removes the mirrored event.")
+            Text("Adds due toDōs to Calendar and removes them when they are finished, archived, deleted, or no longer due.")
                .font(.appBody(12, relativeTo: .caption))
                .foregroundStyle(AppColor.textSecondary)
          }
@@ -440,7 +449,7 @@ struct SettingsView: View {
    }
 
    private var trashAutoEmptyControl: some View {
-      VStack(alignment: .leading, spacing: 10) {
+      VStack(alignment: .leading, spacing: 12) {
          Menu {
             ForEach(TrashAutoEmptyInterval.allCases) { interval in
                Button {
@@ -464,7 +473,7 @@ struct SettingsView: View {
          .padding(16)
          .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 18))
 
-         Text("Deleted ToDos will be permanently removed after this much time in the trash.")
+         Text("Deleted toDōs will be permanently removed after this much time in the trash.")
             .font(.appBody(12, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
             .padding(.horizontal, 4)
@@ -559,7 +568,7 @@ struct SettingsView: View {
          HStack(alignment: .center, spacing: 12) {
             Text("Settings")
                .font(.appTitle(34, relativeTo: .largeTitle))
-               .foregroundStyle(colorScheme == .dark ? AppColor.black : AppColor.white)
+               .foregroundStyle(AppColor.headerForeground(for: colorScheme))
                .accessibilityAddTraits(.isHeader)
 
             Spacer(minLength: 12)
@@ -569,9 +578,15 @@ struct SettingsView: View {
             } label: {
                Image(systemName: "xmark")
                   .font(.appBodyStrong(21, relativeTo: .largeTitle))
-                  .foregroundStyle(AppColor.main)
+                  .foregroundStyle(AppColor.headerControlForeground(for: colorScheme))
                   .frame(width: 34, height: 34)
-                  .background(colorScheme == .dark ? AppColor.black : AppColor.white, in: Circle())
+                  .background {
+                     if #unavailable(iOS 26.0) {
+                        Circle()
+                           .fill(AppColor.headerControlBackground(for: colorScheme))
+                     }
+                  }
+                  .appInteractiveCircleGlass(tint: AppColor.headerControlBackground(for: colorScheme))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close settings")
@@ -591,15 +606,15 @@ struct SettingsView: View {
             .font(.appSubtitle(15, relativeTo: .subheadline))
             .foregroundStyle(AppColor.main)
 
-         VStack(alignment: .leading, spacing: 14) {
+         VStack(alignment: .leading, spacing: 18) {
             content()
          }
          .frame(maxWidth: .infinity, alignment: .leading)
-         .padding(16)
-         .containerShape(.rect(cornerRadius: 24))
+         .padding(18)
+         .containerShape(.rect(cornerRadius: 26))
          .background(
             AppColor.surfaceElevated,
-            in: .rect(cornerRadius: 24)
+            in: .rect(cornerRadius: 26)
          )
       }
    }
@@ -610,11 +625,11 @@ struct SettingsView: View {
       detailForeground: Color = AppColor.textSecondary,
       detailFont: Font = .appBodyStrong(17, relativeTo: .body)
    ) -> some View {
-      HStack(spacing: 12) {
+      HStack(spacing: 14) {
          Text(LocalizedStringKey(title))
             .foregroundStyle(AppColor.textPrimary)
 
-         Spacer(minLength: 12)
+         Spacer(minLength: 14)
 
          Text(LocalizedStringKey(detail))
             .font(detailFont)
@@ -624,6 +639,7 @@ struct SettingsView: View {
             .font(.appBodyStrong(11, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
       }
+      .padding(.vertical, 3)
    }
 
    private func settingsStandaloneNavigationButton(
@@ -635,13 +651,16 @@ struct SettingsView: View {
          detail: detail,
          detailForeground: AppColor.textPrimary
       )
-      .padding(16)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .containerShape(.rect(cornerRadius: 24))
-      .background(
-         AppColor.surfaceElevated,
-         in: .rect(cornerRadius: 24)
-      )
+         .padding(16)
+         .frame(maxWidth: .infinity, alignment: .leading)
+         .containerShape(.rect(cornerRadius: 24))
+         .background {
+            if #unavailable(iOS 26.0) {
+               RoundedRectangle(cornerRadius: 24, style: .continuous)
+                  .fill(AppColor.surfaceElevated)
+            }
+         }
+         .appInteractiveRoundedGlass(tint: AppColor.surfaceElevated, cornerRadius: 24)
    }
 
    private var archivedToDos: [ToDo] {
@@ -652,7 +671,7 @@ struct SettingsView: View {
 
    private var archiveCountLabel: String {
       let count = archivedToDos.count
-      return AppLocalization.localizedCount(count, singularKey: "%@ toDo", pluralKey: "%@ toDos")
+      return AppLocalization.localizedCount(count, singularKey: "%@ toDō", pluralKey: "%@ toDōs")
    }
 
    private var unusedTagCount: Int {
@@ -702,6 +721,10 @@ struct SettingsView: View {
       AppPreferences.NotificationSoundOption(rawValue: notificationSoundOptionRaw) ?? .defaultSound
    }
 
+   private var resolvedTheme: AppThemeOption {
+      AppThemeOption(rawValue: appThemeRaw) ?? .classic
+   }
+
    private var notificationAuthorizationStatusLabel: String {
       switch notificationManager.authorizationStatus {
       case .authorized, .provisional, .ephemeral:
@@ -719,24 +742,22 @@ struct SettingsView: View {
       switch notificationManager.authorizationStatus {
       case .authorized, .provisional, .ephemeral:
          return String(
-            format: String(localized: "%@ Due reminders can alert you with quick snooze and mark-done actions. %@. %@"),
-            timeSensitiveStatusCopy,
-            notificationManager.registrationState.statusText,
-            notificationManager.pushReadinessDetail
+            format: String(localized: "%@ Due reminders can play a sound and show quick actions."),
+            timeSensitiveStatusCopy
          )
       case .denied:
-         return String(localized: "Notification access is disabled, so due reminders and push registration are unavailable.")
+         return String(localized: "Notifications are off, so toDō cannot alert you when something is due.")
       case .notDetermined:
-         return String(localized: "Enable notifications to receive due reminders, time-sensitive alerts, and quick snooze actions.")
+         return String(localized: "Enable reminders, sounds, and Time-Sensitive alerts.")
       @unknown default:
-         return String(localized: "Enable notifications to receive due reminders, time-sensitive alerts, and quick snooze actions.")
+         return String(localized: "Enable reminders, sounds, and Time-Sensitive alerts.")
       }
    }
 
    private var notificationActionTitle: String {
       switch notificationManager.authorizationStatus {
       case .authorized, .provisional, .ephemeral:
-         return String(localized: "Refresh Push Registration")
+         return String(localized: "Refresh Reminders")
       case .denied:
          return String(localized: "Open Notification Settings")
       case .notDetermined:
@@ -749,26 +770,26 @@ struct SettingsView: View {
    private var notificationActionDetail: String {
       switch notificationManager.authorizationStatus {
       case .authorized, .provisional, .ephemeral:
-         return String(localized: "Re-register for push notifications, refresh scheduled reminders, and re-check time-sensitive delivery.")
+         return String(localized: "Refresh upcoming reminder alerts.")
       case .denied:
-         return String(localized: "Open system Settings to allow notifications for ToDo.")
+         return String(localized: "Open system Settings to allow notifications for toDō.")
       case .notDetermined:
-         return String(localized: "Allow alerts, sounds, notification actions, and time-sensitive delivery for due reminders.")
+         return String(localized: "Allow reminder alerts, sounds, and Time-Sensitive delivery.")
       @unknown default:
-         return String(localized: "Allow alerts, sounds, notification actions, and time-sensitive delivery for due reminders.")
+         return String(localized: "Allow reminder alerts, sounds, and Time-Sensitive delivery.")
       }
    }
 
    private var timeSensitiveStatusCopy: String {
       switch notificationManager.timeSensitiveSetting {
       case .enabled:
-         return String(localized: "Time-sensitive delivery is enabled.")
+         return String(localized: "Time-Sensitive is allowed.")
       case .disabled:
-         return String(localized: "Time-sensitive delivery is turned off in system settings.")
+         return String(localized: "Time-Sensitive is off in Settings.")
       case .notSupported:
-         return String(localized: "Time-sensitive delivery is unavailable on this device.")
+         return String(localized: "Time-Sensitive is not available here.")
       default:
-         return String(localized: "Time-sensitive delivery follows the system notification settings.")
+         return String(localized: "Time-Sensitive follows device settings.")
       }
    }
 
@@ -814,11 +835,11 @@ struct SettingsView: View {
    private var locationStatusCopy: String {
       switch locationTimeZoneService.authorizationStatus {
       case .authorizedAlways, .authorizedWhenInUse:
-         return String(localized: "Current timezone updates from your location when you refresh it.")
+         return String(localized: "Uses your current timezone when refreshed.")
       case .notDetermined:
          return String(localized: "Using Apple Park until location access is granted.")
       case .denied, .restricted:
-         return String(localized: "Location access is unavailable, so the app stays on Apple Park time.")
+         return String(localized: "Location is off, so toDō stays on Apple Park time.")
       @unknown default:
          return String(localized: "Using Apple Park until location access is available.")
       }
@@ -839,12 +860,12 @@ struct SettingsView: View {
 
    private var syncStatusDetail: String {
       if let pendingMode = syncCoordinator.pendingRestartSyncMode {
-         return String(format: String(localized: "Close and reopen ToDo to finish activating %@."), pendingMode.title)
+         return String(format: String(localized: "Close and reopen toDō when you are ready to use %@."), pendingMode.title)
       }
 
       if syncCoordinator.preferredSyncMode == .syncEverywhere, !authStore.isAuthenticated {
          return String(
-            format: String(localized: "%@ is selected. Open Settings to sign in; until then, ToDo stays on %@."),
+            format: String(localized: "%@ is selected. Sign in to turn it on; until then, toDō stays with %@."),
             syncCoordinator.preferredSyncMode.title,
             syncCoordinator.effectiveSyncMode.title
          )
@@ -926,6 +947,33 @@ struct SettingsView: View {
       }
    }
 
+   private func scheduleNotificationSoundPreview() {
+      notificationSoundPreviewStatus = String(localized: "Sending a sound test...")
+
+      Task {
+         if notificationManager.authorizationStatus == .notDetermined {
+            await notificationManager.requestAuthorizationFlow()
+         }
+
+         switch notificationManager.authorizationStatus {
+         case .authorized, .provisional, .ephemeral:
+            do {
+               try await notificationManager.scheduleSoundPreviewNotification()
+               notificationSoundPreviewStatus = String(localized: "Sound test sent. Make sure the device is not muted.")
+            } catch {
+               notificationSoundPreviewStatus = String(localized: "Could not schedule the sample reminder.")
+               AppLog.error("Failed to schedule notification sound preview: \(error)", logger: AppLog.notifications)
+            }
+         case .denied:
+            notificationSoundPreviewStatus = String(localized: "Notifications are off. Open Settings to allow reminder sounds.")
+         case .notDetermined:
+            notificationSoundPreviewStatus = String(localized: "Allow notifications before testing a sound.")
+         @unknown default:
+            notificationSoundPreviewStatus = String(localized: "Allow notifications before testing a sound.")
+         }
+      }
+   }
+
    private func manualSyncRefresh() {
       guard authStore.effectiveSyncMode == .syncEverywhere,
             let userID = authStore.currentUserID else { return }
@@ -947,13 +995,13 @@ struct SettingsView: View {
       action: @escaping () -> Void
    ) -> some View {
       Button(action: action) {
-         HStack(alignment: contentVerticalAlignment, spacing: 12) {
+         HStack(alignment: contentVerticalAlignment, spacing: 14) {
             Image(systemName: systemName)
-               .font(.appDisplay(15, relativeTo: .subheadline))
+               .font(.appDisplay(16, relativeTo: .subheadline))
                .foregroundStyle(foregroundStyle)
-               .frame(width: 18, height: 18)
+               .frame(width: 22, height: 22)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 5) {
                Text(LocalizedStringKey(title))
                   .font(.appBodyStrong(15, relativeTo: .subheadline))
                   .foregroundStyle(foregroundStyle)
@@ -966,15 +1014,18 @@ struct SettingsView: View {
             Spacer(minLength: 0)
          }
          .frame(maxWidth: .infinity, alignment: .leading)
-         .padding(.horizontal, 14)
-         .padding(.vertical, 12)
-         .contentShape(.rect(cornerRadius: 18))
-         .containerShape(.rect(cornerRadius: 18))
-         .background(
-            backgroundStyle,
-            in: .rect(corners: .concentric, isUniform: true)
-         )
-         .clipShape(.rect(cornerRadius: 18))
+         .padding(.horizontal, 16)
+         .padding(.vertical, 15)
+         .contentShape(.rect(cornerRadius: 20))
+         .containerShape(.rect(cornerRadius: 20))
+         .background {
+            if #unavailable(iOS 26.0) {
+               RoundedRectangle(cornerRadius: 20, style: .continuous)
+                  .fill(backgroundStyle)
+            }
+         }
+         .appInteractiveRoundedGlass(tint: backgroundStyle, cornerRadius: 20)
+         .clipShape(.rect(cornerRadius: 20))
       }
       .buttonStyle(.plain)
       .disabled(isDisabled)
@@ -1010,14 +1061,14 @@ struct SettingsView: View {
    }
 
    private var syncReviewRow: some View {
-      HStack(alignment: .top, spacing: 12) {
+      HStack(alignment: .top, spacing: 14) {
          Image(systemName: "exclamationmark.triangle.fill")
-            .font(.appDisplay(15, relativeTo: .subheadline))
+            .font(.appDisplay(16, relativeTo: .subheadline))
             .foregroundStyle(AppColor.secondary)
-            .frame(width: 18, height: 18)
+            .frame(width: 22, height: 22)
 
-         VStack(alignment: .leading, spacing: 4) {
-            Text("Sync Needs Review")
+         VStack(alignment: .leading, spacing: 5) {
+            Text("Choose a Version")
                .font(.appBodyStrong(15, relativeTo: .subheadline))
                .foregroundStyle(AppColor.textPrimary)
 
@@ -1032,42 +1083,42 @@ struct SettingsView: View {
             .font(.appBodyStrong(11, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
       }
-      .padding(.horizontal, 14)
-      .padding(.vertical, 12)
+      .padding(.horizontal, 16)
+      .padding(.vertical, 15)
       .background(
          AppColor.secondary.opacity(0.1),
          in: .rect(corners: .concentric, isUniform: true)
       )
-      .clipShape(.rect(cornerRadius: 18))
+      .clipShape(.rect(cornerRadius: 20))
    }
 
    private var syncReviewDetail: String {
       let count = unresolvedSyncConflicts.count
       return count == 1
-         ? "1 ToDo changed in two places. Choose which version to keep."
-         : "\(count) ToDos changed in two places. Choose which versions to keep."
+         ? "1 toDō changed in two places. Choose which version to keep."
+         : "\(count) toDōs changed in two places. Choose which versions to keep."
    }
 
    private var syncDeletionPreferenceToggle: some View {
       Toggle(isOn: $mirrorSyncDeletesToDeviceOnly) {
-         VStack(alignment: .leading, spacing: 4) {
-            Text("Mirror Sync Deletes Locally")
+         VStack(alignment: .leading, spacing: 5) {
+            Text("Match Deletes on This Device")
                .font(.appBodyStrong(15, relativeTo: .subheadline))
                .foregroundStyle(AppColor.textPrimary)
 
-            Text("When on, deleting a ToDo while signed in also removes the matching This Device Only copy. Turn it off if you want local backups to survive sign-out.")
+            Text("When on, deleting a synced toDō also removes its copy on this device.")
                .font(.appBody(12, relativeTo: .caption))
                .foregroundStyle(AppColor.textSecondary)
          }
       }
       .tint(AppColor.actionSecondary)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 12)
+      .padding(.horizontal, 16)
+      .padding(.vertical, 15)
       .background(
          AppColor.surfaceMuted,
          in: .rect(corners: .concentric, isUniform: true)
       )
-      .clipShape(.rect(cornerRadius: 18))
+      .clipShape(.rect(cornerRadius: 20))
    }
 
    private var notificationSettingsBlock: some View {
@@ -1115,12 +1166,120 @@ struct SettingsView: View {
             .overlay(AppColor.border.opacity(0.5))
 
          notificationSoundDropdown
+         notificationSoundPreviewButton
+
+         Text("Quiet stays silent. Due and Time-Sensitive can play your selected sound.")
+            .font(.appBody(11, relativeTo: .caption2))
+            .foregroundStyle(AppColor.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
 
          Divider()
             .overlay(AppColor.border.opacity(0.5))
 
          badgePolicyDropdown
       }
+   }
+
+   fileprivate var themePickerBlock: some View {
+      VStack(alignment: .leading, spacing: 18) {
+         VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+               Image(systemName: "paintpalette.fill")
+                  .font(.appDisplay(18, relativeTo: .headline))
+                  .foregroundStyle(AppColor.iconAccent)
+                  .frame(width: 24, height: 24)
+
+               Text("Selected Look")
+                  .font(.appBodyStrong(16, relativeTo: .body))
+                  .foregroundStyle(AppColor.textPrimary)
+            }
+
+            Text(resolvedTheme.title)
+               .font(.appTitle(34, relativeTo: .largeTitle))
+               .foregroundStyle(AppColor.textPrimary)
+
+            Text(resolvedTheme.subtitle)
+               .font(.appBody(13, relativeTo: .footnote))
+               .foregroundStyle(AppColor.textSecondary)
+               .fixedSize(horizontal: false, vertical: true)
+         }
+         .padding(18)
+         .frame(maxWidth: .infinity, alignment: .leading)
+         .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 26))
+         .overlay(alignment: .topTrailing) {
+            HStack(spacing: -6) {
+               Circle().fill(resolvedTheme.palette.main)
+               Circle().fill(resolvedTheme.palette.secondary)
+               Circle().fill(resolvedTheme.palette.tertiary)
+            }
+            .frame(width: 74, height: 24)
+            .padding(18)
+         }
+
+         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+            ForEach(AppThemeOption.allCases) { theme in
+               themeSwatchButton(theme)
+            }
+         }
+      }
+      .animation(AppAnimation.snappyStandard, value: appThemeRaw)
+   }
+
+   fileprivate func themeSwatchButton(_ theme: AppThemeOption) -> some View {
+      let isSelected = theme == resolvedTheme
+      let palette = theme.palette
+
+      return Button {
+         withAnimation(AppAnimation.snappyStandard) {
+            appThemeRaw = theme.rawValue
+         }
+      } label: {
+         VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 5) {
+               Circle().fill(palette.main)
+               Circle().fill(palette.secondary)
+               Circle().fill(palette.tertiary)
+            }
+            .frame(height: 18)
+
+            HStack(spacing: 6) {
+               Text(theme.title)
+                  .font(.appBodyStrong(12, relativeTo: .caption))
+                  .foregroundStyle(AppColor.textPrimary)
+                  .lineLimit(1)
+
+               Spacer(minLength: 0)
+
+               if isSelected {
+                  Image(systemName: "checkmark.circle.fill")
+                     .font(.appBodyStrong(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.iconAccent)
+               }
+            }
+
+            Text(theme.subtitle)
+               .font(.appBody(11, relativeTo: .caption2))
+               .foregroundStyle(AppColor.textSecondary)
+               .lineLimit(2)
+               .multilineTextAlignment(.leading)
+         }
+         .frame(maxWidth: .infinity, alignment: .leading)
+         .padding(12)
+         .background {
+            if #unavailable(iOS 26.0) {
+               RoundedRectangle(cornerRadius: 16, style: .continuous)
+                  .fill(AppColor.surfaceElevated)
+            }
+         }
+         .appInteractiveRoundedGlass(tint: AppColor.surfaceElevated, cornerRadius: 16)
+         .overlay {
+            if #unavailable(iOS 26.0) {
+               RoundedRectangle(cornerRadius: 16, style: .continuous)
+                  .stroke(isSelected ? AppColor.iconAccent : AppColor.border.opacity(0.35), lineWidth: isSelected ? 1.6 : 1)
+            }
+         }
+      }
+      .buttonStyle(.plain)
    }
 
    private var notificationSoundDropdown: some View {
@@ -1140,13 +1299,13 @@ struct SettingsView: View {
          }
       } label: {
          VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: 14) {
                Image(systemName: "speaker.wave.2.fill")
-                  .font(.appDisplay(15, relativeTo: .subheadline))
+                  .font(.appDisplay(16, relativeTo: .subheadline))
                   .foregroundStyle(AppColor.main)
-                  .frame(width: 18, height: 18)
+                  .frame(width: 22, height: 22)
 
-               VStack(alignment: .leading, spacing: 4) {
+               VStack(alignment: .leading, spacing: 5) {
                   Text("Reminder Sound")
                      .font(.appBodyStrong(15, relativeTo: .subheadline))
                      .foregroundStyle(AppColor.textPrimary)
@@ -1173,10 +1332,48 @@ struct SettingsView: View {
                }
             }
          }
+         .padding(.horizontal, 16)
+         .padding(.vertical, 15)
+         .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 20))
       }
       .buttonStyle(.plain)
-      .contentShape(.rect)
+      .contentShape(.rect(cornerRadius: 20))
       .animation(AppAnimation.snappyStandard, value: notificationSoundOptionRaw)
+   }
+
+   private var notificationSoundPreviewButton: some View {
+      Button {
+         scheduleNotificationSoundPreview()
+      } label: {
+         HStack(spacing: 12) {
+            Image(systemName: "speaker.wave.2.circle.fill")
+               .font(.appDisplay(16, relativeTo: .subheadline))
+               .foregroundStyle(AppColor.actionSecondary)
+               .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 5) {
+               Text("Test Sound")
+                  .font(.appBodyStrong(13, relativeTo: .footnote))
+                  .foregroundStyle(AppColor.textPrimary)
+
+               Text(notificationSoundPreviewStatus ?? String(localized: "Plays the sound you selected for reminders."))
+                  .font(.appBody(11, relativeTo: .caption2))
+                  .foregroundStyle(AppColor.textSecondary)
+                  .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "arrow.up.forward.circle")
+               .font(.appBodyStrong(14, relativeTo: .footnote))
+               .foregroundStyle(AppColor.textSecondary)
+         }
+         .padding(.horizontal, 16)
+         .padding(.vertical, 14)
+         .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 20))
+      }
+      .buttonStyle(.plain)
+      .disabled(notificationManager.authorizationStatus == .denied)
    }
 
    private var badgePolicyDropdown: some View {
@@ -1196,13 +1393,13 @@ struct SettingsView: View {
          }
       } label: {
          VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: 14) {
                Image(systemName: "app.badge")
-                  .font(.appDisplay(15, relativeTo: .subheadline))
+                  .font(.appDisplay(16, relativeTo: .subheadline))
                   .foregroundStyle(AppColor.main)
-                  .frame(width: 18, height: 18)
+                  .frame(width: 22, height: 22)
 
-               VStack(alignment: .leading, spacing: 4) {
+               VStack(alignment: .leading, spacing: 5) {
                   Text("App Icon Badge")
                      .font(.appBodyStrong(15, relativeTo: .subheadline))
                      .foregroundStyle(AppColor.textPrimary)
@@ -1229,9 +1426,12 @@ struct SettingsView: View {
                }
             }
          }
+         .padding(.horizontal, 16)
+         .padding(.vertical, 15)
+         .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 20))
       }
       .buttonStyle(.plain)
-      .contentShape(.rect)
+      .contentShape(.rect(cornerRadius: 20))
       .animation(AppAnimation.snappyStandard, value: appIconBadgePolicyRaw)
    }
 
@@ -1329,13 +1529,18 @@ struct SettingsView: View {
          .foregroundStyle(isSelected ? AppColor.onAction : AppColor.textPrimary)
          .padding(.horizontal, 12)
          .padding(.vertical, 8)
-         .background(
-            Capsule()
-               .fill(isSelected ? AppColor.actionSecondary : AppColor.surfaceMuted)
-         )
+         .background {
+            if #unavailable(iOS 26.0) {
+               Capsule()
+                  .fill(isSelected ? AppColor.actionSecondary : AppColor.surfaceMuted)
+            }
+         }
+         .appInteractiveCapsuleGlass(tint: isSelected ? AppColor.actionSecondary : AppColor.surfaceMuted)
          .overlay {
-            Capsule()
-               .stroke(isSelected ? AppColor.actionSecondary : AppColor.border.opacity(0.4), lineWidth: 1)
+            if #unavailable(iOS 26.0) {
+               Capsule()
+                  .stroke(isSelected ? AppColor.actionSecondary : AppColor.border.opacity(0.4), lineWidth: 1)
+            }
          }
       }
       .buttonStyle(.plain)
@@ -1365,7 +1570,7 @@ struct SettingsView: View {
             }
          } label: {
             HStack(alignment: .center, spacing: 12) {
-               Text("Time Based On")
+               Text("Time Zone")
                   .font(.appBody(17, relativeTo: .body))
                   .foregroundStyle(AppColor.textPrimary)
 
@@ -1452,7 +1657,7 @@ struct SettingsView: View {
             }
          } label: {
             HStack(alignment: .center, spacing: 12) {
-               Text("Remove Done ToDo")
+               Text("After Marking Done")
                   .font(.appBody(17, relativeTo: .body))
                   .foregroundStyle(AppColor.textPrimary)
 
@@ -1511,5 +1716,188 @@ struct SettingsView: View {
          .clipped()
          .opacity(isDoneSwipeMenuExpanded ? 1 : 0)
       }
+   }
+}
+
+private struct ThemeSettingsScreen: View {
+   @Environment(\.dismiss) private var dismiss
+   @Binding var appThemeRaw: String
+   @Binding var appAppearanceModeRaw: String
+
+   private var resolvedTheme: AppThemeOption {
+      AppThemeOption(rawValue: appThemeRaw) ?? .classic
+   }
+
+   private var resolvedAppearanceMode: AppPreferences.AppAppearanceMode {
+      AppPreferences.AppAppearanceMode(rawValue: appAppearanceModeRaw) ?? .system
+   }
+
+   var body: some View {
+      SettingsSubmenuContainer(
+         title: "Appearance"
+      ) {
+         appearanceModeBlock
+         themePickerBlock
+      }
+      .preferredColorScheme(preferredAppearanceColorScheme)
+   }
+
+   private var appearanceModeBlock: some View {
+      VStack(alignment: .leading, spacing: 12) {
+         HStack(spacing: 10) {
+            Image(systemName: "circle.lefthalf.filled")
+               .font(.appDisplay(18, relativeTo: .headline))
+               .foregroundStyle(AppColor.iconAccent)
+               .frame(width: 24, height: 24)
+
+            VStack(alignment: .leading, spacing: 4) {
+               Text("Display Mode")
+                  .font(.appBodyStrong(16, relativeTo: .body))
+                  .foregroundStyle(AppColor.textPrimary)
+
+               Text("Use the device setting, or keep toDō light or dark.")
+                  .font(.appBody(12, relativeTo: .caption))
+                  .foregroundStyle(AppColor.textSecondary)
+                  .fixedSize(horizontal: false, vertical: true)
+            }
+         }
+
+         Picker("Display Mode", selection: $appAppearanceModeRaw) {
+            ForEach(AppPreferences.AppAppearanceMode.allCases) { mode in
+               Text(mode.title)
+                  .tag(mode.rawValue)
+            }
+         }
+         .pickerStyle(.segmented)
+         .tint(AppColor.actionPrimary)
+
+         Text(resolvedAppearanceMode.detail)
+            .font(.appBody(12, relativeTo: .caption))
+            .foregroundStyle(AppColor.textSecondary)
+            .contentTransition(.opacity)
+      }
+      .padding(16)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 24))
+      .animation(AppAnimation.snappyStandard, value: appAppearanceModeRaw)
+   }
+
+   private var preferredAppearanceColorScheme: ColorScheme? {
+      switch resolvedAppearanceMode {
+      case .system:
+         return nil
+      case .light:
+         return .light
+      case .dark:
+         return .dark
+      }
+   }
+
+   private var themePickerBlock: some View {
+      VStack(alignment: .leading, spacing: 18) {
+         VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+               Image(systemName: "paintpalette.fill")
+                  .font(.appDisplay(18, relativeTo: .headline))
+                  .foregroundStyle(AppColor.iconAccent)
+                  .frame(width: 24, height: 24)
+
+               Text("Selected Look")
+                  .font(.appBodyStrong(16, relativeTo: .body))
+                  .foregroundStyle(AppColor.textPrimary)
+            }
+
+            Text(resolvedTheme.title)
+               .font(.appTitle(34, relativeTo: .largeTitle))
+               .foregroundStyle(AppColor.textPrimary)
+
+            Text(resolvedTheme.subtitle)
+               .font(.appBody(13, relativeTo: .footnote))
+               .foregroundStyle(AppColor.textSecondary)
+               .fixedSize(horizontal: false, vertical: true)
+         }
+         .padding(18)
+         .frame(maxWidth: .infinity, alignment: .leading)
+         .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 26))
+         .overlay(alignment: .topTrailing) {
+            HStack(spacing: -6) {
+               Circle().fill(resolvedTheme.palette.main)
+               Circle().fill(resolvedTheme.palette.secondary)
+               Circle().fill(resolvedTheme.palette.tertiary)
+            }
+            .frame(width: 74, height: 24)
+            .padding(18)
+         }
+
+         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+            ForEach(AppThemeOption.allCases) { theme in
+               themeSwatchButton(theme)
+            }
+         }
+      }
+   }
+
+   private func themeSwatchButton(_ theme: AppThemeOption) -> some View {
+      let isSelected = theme == resolvedTheme
+      let palette = theme.palette
+
+      return Button {
+         guard !isSelected else {
+            dismiss()
+            return
+         }
+
+         let selectedThemeRaw = theme.rawValue
+         dismiss()
+         Task { @MainActor in
+            appThemeRaw = selectedThemeRaw
+         }
+      } label: {
+         VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 5) {
+               Circle().fill(palette.main)
+               Circle().fill(palette.secondary)
+               Circle().fill(palette.tertiary)
+            }
+            .frame(height: 18)
+
+            HStack(spacing: 6) {
+               Text(theme.title)
+                  .font(.appBodyStrong(12, relativeTo: .caption))
+                  .foregroundStyle(AppColor.textPrimary)
+                  .lineLimit(1)
+
+               Spacer(minLength: 0)
+
+               if isSelected {
+                  Image(systemName: "checkmark.circle.fill")
+                     .font(.appBodyStrong(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.iconAccent)
+               }
+            }
+
+            Text(theme.subtitle)
+               .font(.appBody(11, relativeTo: .caption2))
+               .foregroundStyle(AppColor.textSecondary)
+               .lineLimit(2)
+               .multilineTextAlignment(.leading)
+         }
+         .frame(maxWidth: .infinity, alignment: .leading)
+         .padding(12)
+         .background {
+            if #unavailable(iOS 26.0) {
+               RoundedRectangle(cornerRadius: 16, style: .continuous)
+                  .fill(AppColor.surfaceElevated)
+            }
+         }
+         .appInteractiveRoundedGlass(tint: AppColor.surfaceElevated, cornerRadius: 16)
+         .overlay {
+            if #unavailable(iOS 26.0) {
+               RoundedRectangle(cornerRadius: 16, style: .continuous)
+                  .stroke(isSelected ? AppColor.iconAccent : AppColor.border.opacity(0.35), lineWidth: isSelected ? 1.6 : 1)
+            }
+         }
+      }
+      .buttonStyle(.plain)
    }
 }

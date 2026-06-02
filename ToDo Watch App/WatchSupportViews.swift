@@ -1,16 +1,52 @@
 import SwiftUI
 import AuthenticationServices
 
+private enum WatchLocalization {
+   static var displayLocale: Locale {
+      let identifier = Locale.preferredLanguages.first ?? Locale.current.identifier
+      if identifier.hasPrefix("ar") {
+         return Locale(identifier: "ar_SA@numbers=arab")
+      }
+      if identifier.hasPrefix("ur") {
+         return Locale(identifier: "ur_PK@numbers=arabext")
+      }
+      if identifier.hasPrefix("hi") {
+         return Locale(identifier: "hi_IN@numbers=deva")
+      }
+      if identifier.hasPrefix("th") {
+         return Locale(identifier: "th_TH@numbers=thai")
+      }
+      return Locale(identifier: identifier)
+   }
+
+   static func dateTimeString(_ date: Date) -> String {
+      formatted(date, dateStyle: .medium, timeStyle: .short)
+   }
+
+   static func timeString(_ date: Date) -> String {
+      formatted(date, dateStyle: .none, timeStyle: .short)
+   }
+
+   private static func formatted(_ date: Date, dateStyle: DateFormatter.Style, timeStyle: DateFormatter.Style) -> String {
+      let formatter = DateFormatter()
+      formatter.locale = displayLocale
+      formatter.calendar = .current
+      formatter.dateStyle = dateStyle
+      formatter.timeStyle = timeStyle
+      return formatter.string(from: date)
+   }
+}
+
 struct WatchAccountView: View {
    @ObservedObject var authStore: WatchAuthStore
    @ObservedObject var store: WatchToDoStore
+   let openDoneToDos: () -> Void
 
    var body: some View {
       ScrollView {
          VStack(alignment: .leading, spacing: 12) {
             WatchScreenHeader(
                title: "Settings",
-               subtitle: authStore.authState.title,
                systemImage: "gearshape.fill",
                accent: WatchAppColor.main
             )
@@ -18,7 +54,6 @@ struct WatchAccountView: View {
             syncStatusCard
             accountCard
             settingsCard
-            doneToDosCard
             watchBrandFooter
          }
          .padding(.horizontal, 2)
@@ -110,23 +145,17 @@ struct WatchAccountView: View {
             Label("Snooze Options", systemImage: "zzz")
          }
          .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.secondary))
+
+         Button(action: openDoneToDos) {
+            Label(doneToDosLabel, systemImage: "checkmark.circle.fill")
+         }
+         .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.actionSuccess))
       }
    }
 
-   @ViewBuilder
-   private var doneToDosCard: some View {
-      if !store.recentlyDoneItems.isEmpty {
-         WatchActionGroup(title: "Done", systemImage: "checkmark.circle.fill", accent: WatchAppColor.actionSuccess) {
-            ForEach(store.recentlyDoneItems) { item in
-               Button {
-                  store.select(item)
-               } label: {
-                  WatchToDoRow(item: item, accent: WatchAppColor.actionSuccess)
-               }
-               .buttonStyle(.plain)
-            }
-         }
-      }
+   private var doneToDosLabel: String {
+      let count = store.doneItems.count
+      return count == 1 ? "Done toDō" : "Done toDōs"
    }
 
    private var watchBrandFooter: some View {
@@ -212,13 +241,61 @@ struct WatchAccountView: View {
    }
 }
 
+struct WatchDoneToDosView: View {
+   @ObservedObject var store: WatchToDoStore
+
+   private var doneItems: [WatchToDoItem] {
+      store.doneItems
+   }
+
+   var body: some View {
+      ScrollView {
+         VStack(alignment: .leading, spacing: 12) {
+            WatchScreenHeader(
+               title: "Done",
+               systemImage: "checkmark.circle.fill",
+               accent: WatchAppColor.actionSuccess
+            )
+
+            if doneItems.isEmpty {
+               WatchCard(spacing: 8) {
+                  Image(systemName: "tray")
+                     .font(.watchDisplay(22, relativeTo: .title3))
+                     .foregroundStyle(WatchAppColor.textSecondary)
+
+                  Text("No done toDōs yet.")
+                     .font(.watchBodyStrong(13, relativeTo: .caption))
+                     .foregroundStyle(WatchAppColor.textPrimary)
+               }
+            } else {
+               WatchActionGroup(title: "Recently Done", systemImage: "checkmark.circle.fill", accent: WatchAppColor.actionSuccess) {
+                  ForEach(doneItems) { item in
+                     Button {
+                        store.select(item)
+                     } label: {
+                        WatchToDoRow(item: item, accent: WatchAppColor.actionSuccess)
+                     }
+                     .buttonStyle(.plain)
+                  }
+               }
+            }
+         }
+         .padding(.horizontal, 2)
+         .padding(.bottom, 12)
+      }
+      .navigationTitle("Done")
+      .toolbarBackground(.hidden, for: .navigationBar)
+      .background(WatchAppColor.surface)
+      .tint(WatchAppColor.actionPrimary)
+   }
+}
+
 struct WatchSnoozeOptionsView: View {
    var body: some View {
       ScrollView {
          VStack(alignment: .leading, spacing: 12) {
             WatchScreenHeader(
                title: "Snooze Options",
-               subtitle: "Presets for due ToDos",
                systemImage: "zzz",
                accent: WatchAppColor.secondary
             )
@@ -229,7 +306,7 @@ struct WatchSnoozeOptionsView: View {
                      WatchMetadataRow(
                         systemImage: "timer",
                         title: unit.label(for: value),
-                        value: "Available from any due ToDo",
+                        value: "Available from any due toDō",
                         accent: WatchAppColor.secondary
                      )
                   }
@@ -275,12 +352,12 @@ struct ToDoSection: View {
             .padding(.horizontal, 4)
 
             ForEach(items) { item in
-               Button {
-                  store.select(item)
-               } label: {
-                  WatchToDoRow(item: item, accent: accent)
-               }
-               .buttonStyle(.plain)
+               WatchToDoRowActionButton(
+                  item: item,
+                  accent: accent,
+                  onOpen: { store.select(item) },
+                  onToggleDone: { item.isDone ? store.reopen(item) : store.complete(item) }
+               )
             }
          }
          .padding(.top, 3)
@@ -299,14 +376,13 @@ struct CaptureToDoView: View {
       ScrollView {
          VStack(alignment: .leading, spacing: 12) {
             WatchScreenHeader(
-               title: "New ToDo",
-               subtitle: "Capture one focus at a time.",
+               title: "New toDō",
                systemImage: "plus.circle.fill",
                accent: WatchAppColor.actionPrimary
             )
 
             WatchCard {
-               TextField("What do you want toDo?", text: $task, axis: .vertical)
+               TextField("What do you want toDō?", text: $task, axis: .vertical)
                   .font(.watchDisplay(17, relativeTo: .headline))
                   .foregroundStyle(WatchAppColor.textPrimary)
                   .lineLimit(1...4)
@@ -406,7 +482,7 @@ struct CaptureToDoView: View {
                store.create(task: task, dueDate: dueDate, isTimeSensitive: isTimeSensitive)
                dismiss()
             } label: {
-               Label("Add ToDo", systemImage: "checkmark.circle.fill")
+               Label("Add toDō", systemImage: "checkmark.circle.fill")
                   .font(.watchBodyStrong(14, relativeTo: .subheadline))
                   .frame(maxWidth: .infinity)
             }
@@ -416,7 +492,7 @@ struct CaptureToDoView: View {
          .padding(.horizontal, 2)
          .padding(.bottom, 12)
       }
-      .navigationTitle("New ToDo")
+      .navigationTitle("New toDō")
       .toolbarBackground(.hidden, for: .navigationBar)
       .background(WatchAppColor.surface)
       .tint(WatchAppColor.actionPrimary)
@@ -515,7 +591,7 @@ struct CaptureToDoView: View {
 struct WatchToDoDetailView: View {
    let item: WatchToDoItem
    @ObservedObject var store: WatchToDoStore
-   @Environment(\.dismiss) private var dismiss
+   var onClose: (() -> Void)?
 
    private var todo: WatchToDoItem? {
       store.items.first { $0.id == item.id } ?? item
@@ -525,12 +601,35 @@ struct WatchToDoDetailView: View {
       if let todo = todo {
          ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-               WatchScreenHeader(
-                  title: todo.isDone ? "Done" : "Active",
-                  subtitle: "Focus on one task",
-                  systemImage: todo.isDone ? "checkmark.circle.fill" : "circle",
-                  accent: todo.isDone ? WatchAppColor.actionSuccess : detailAccent(for: todo)
-               )
+               HStack(alignment: .center, spacing: 8) {
+                  Image(systemName: todo.isDone ? "checkmark.circle.fill" : "circle")
+                     .font(.watchBodyStrong(13, relativeTo: .caption))
+                     .foregroundStyle(todo.isDone ? WatchAppColor.actionSuccess : detailAccent(for: todo))
+                     .frame(width: 28, height: 28)
+                     .background(detailAccent(for: todo).opacity(0.16), in: Circle())
+
+                  Text("Your toDō")
+                     .font(.watchDisplay(18, relativeTo: .headline))
+                     .foregroundStyle(WatchAppColor.textPrimary)
+
+                  Spacer(minLength: 0)
+
+                  if let onClose {
+                     Button(action: onClose) {
+                        Image(systemName: "xmark")
+                           .font(.system(size: 12, weight: .bold))
+                           .frame(width: 32, height: 32)
+                     }
+                     .buttonStyle(WatchIconButtonStyle(
+                        fill: WatchAppColor.surfaceElevated,
+                        foreground: WatchAppColor.destructive,
+                        size: 32,
+                        stroke: WatchAppColor.destructive,
+                        strokeWidth: 2.4
+                     ))
+                     .accessibilityLabel("Close")
+                  }
+               }
 
                WatchCard(spacing: 8) {
                   Text(todo.task)
@@ -541,8 +640,8 @@ struct WatchToDoDetailView: View {
                   if let dueDate = todo.dueDate {
                      WatchMetadataRow(
                         systemImage: "calendar",
-                        title: "Due",
-                        value: dueDate.formatted(date: .abbreviated, time: .shortened),
+                        title: String(localized: "Due"),
+                        value: formattedDetailDateTime(dueDate),
                         accent: WatchAppColor.actionPrimary
                      )
                   }
@@ -550,84 +649,93 @@ struct WatchToDoDetailView: View {
                   if todo.isTimeSensitive {
                      WatchMetadataRow(
                         systemImage: "bolt.fill",
-                        title: "Priority",
-                        value: "Time-Sensitive",
+                        title: String(localized: "Priority"),
+                        value: String(localized: "Time-Sensitive"),
                         accent: WatchAppColor.destructive
                      )
                   }
                }
 
-               WatchCard(spacing: 8) {
-                  Button {
-                     todo.isDone ? store.reopen(todo) : store.complete(todo)
-                  } label: {
-                     Label(todo.isDone ? "Reopen" : "Complete",
-                           systemImage: todo.isDone ? "arrow.uturn.backward" : "checkmark.circle.fill")
-                     .frame(maxWidth: .infinity)
+               if !todo.nanoDos.isEmpty {
+                  WatchActionGroup(title: "NanoDos", systemImage: "smallcircle.filled.circle", accent: WatchAppColor.main) {
+                     ForEach(todo.nanoDos) { nanoDo in
+                        WatchNanoDoRow(
+                           nanoDo: nanoDo,
+                           onToggleDone: {
+                              nanoDo.isDone ? store.reopenNanoDo(nanoDo, in: todo) : store.completeNanoDo(nanoDo, in: todo)
+                           },
+                           onDelete: {
+                              store.deleteNanoDo(nanoDo, in: todo)
+                           }
+                        )
+                     }
                   }
-                  .buttonStyle(WatchFilledButtonStyle(fill: todo.isDone ? WatchAppColor.secondary : WatchAppColor.actionSuccess))
+               }
 
+               if store.canOpenOnPhone {
+                  Button {
+                     store.openOnPhone(todo)
+                  } label: {
+                     Label("Open on iPhone", systemImage: "iphone.and.arrow.forward")
+                        .font(.watchBodyStrong(12, relativeTo: .caption))
+                        .frame(maxWidth: .infinity)
+                  }
+                  .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.main))
+                  .accessibilityLabel("Open on iPhone")
+               }
+
+               WatchCard(spacing: 10) {
+                  HStack(spacing: 10) {
+                     Spacer(minLength: 0)
+
+                     Button {
+                        store.archive(todo)
+                     } label: {
+                        Image(systemName: "archivebox")
+                     }
+                     .buttonStyle(WatchIconButtonStyle(fill: WatchAppColor.secondary, symbolSize: 17, symbolWeight: .black))
+                     .accessibilityLabel("Archive")
+
+                     Button {
+                        store.trash(todo)
+                     } label: {
+                        Image(systemName: "trash")
+                     }
+                     .buttonStyle(WatchIconButtonStyle(fill: WatchAppColor.destructive, symbolSize: 17, symbolWeight: .black))
+                     .accessibilityLabel("Trash")
+
+                     Button {
+                        todo.isDone ? store.reopen(todo) : store.complete(todo)
+                     } label: {
+                        Image(systemName: todo.isDone ? "arrow.uturn.backward" : "checkmark")
+                     }
+                     .buttonStyle(WatchIconButtonStyle(fill: todo.isDone ? WatchAppColor.secondary : WatchAppColor.actionSuccess, symbolSize: 17, symbolWeight: .black))
+                     .accessibilityLabel(todo.isDone ? "Mark Active" : "Mark Done")
+
+                     Spacer(minLength: 0)
+                  }
+               }
+
+               HStack(spacing: 8) {
                   if !todo.isDone {
                      NavigationLink {
                         WatchSnoozePickerView(item: todo, store: store)
                      } label: {
-                        Label("Snooze", systemImage: "zzz")
+                        Label("Snooze", systemImage: "clock.arrow.circlepath")
+                           .font(.watchBodyStrong(12, relativeTo: .caption))
+                           .frame(maxWidth: .infinity)
                      }
-                     .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.actionSecondary))
-                  }
-               }
-
-               WatchActionGroup(title: "Schedule", systemImage: "clock", accent: WatchAppColor.actionPrimary) {
-                  if todo.dueDate == nil {
-                     Button {
-                        store.setDueDate(defaultDueDate(), for: todo)
-                     } label: {
-                        Label("Add Due Date", systemImage: "calendar.badge.plus")
-                     }
-                     .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.actionPrimary))
-                  } else {
-                     WatchPickerBlock(title: "Due Date", systemImage: "calendar", height: 118) {
-                        DatePicker(
-                           "Due Date",
-                           selection: Binding(
-                              get: { todo.dueDate ?? defaultDueDate() },
-                              set: { store.setDueDate(merge(date: $0, withTimeFrom: todo.dueDate), for: todo) }
-                           ),
-                           displayedComponents: .date
-                        )
-                        .labelsHidden()
-                        .tint(WatchAppColor.actionPrimary)
-                     }
-
-                     WatchPickerBlock(title: "Due Time", systemImage: "clock", height: 96) {
-                        DatePicker(
-                           "Due Time",
-                           selection: Binding(
-                              get: { todo.dueDate ?? defaultDueDate() },
-                              set: { store.setDueDate(merge(time: $0, withDateFrom: todo.dueDate), for: todo) }
-                           ),
-                           displayedComponents: .hourAndMinute
-                        )
-                        .labelsHidden()
-                        .tint(WatchAppColor.actionPrimary)
-                     }
-
-                     Button {
-                        store.setDueDate(nil, for: todo)
-                     } label: {
-                        Label("Remove Due Date", systemImage: "calendar.badge.minus")
-                     }
-                     .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.textSecondary))
+                     .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.secondary))
                   }
 
-                  Toggle(isOn: Binding(
-                     get: { todo.isTimeSensitive },
-                     set: { store.setDueDate(todo.dueDate, for: todo, isTimeSensitive: $0) }
-                  )) {
-                     Label("Time-Sensitive", systemImage: "bolt.fill")
+                  NavigationLink {
+                     WatchToDoEditView(item: todo, store: store)
+                  } label: {
+                     Label("Edit", systemImage: "arrow.up.right")
                         .font(.watchBodyStrong(12, relativeTo: .caption))
+                        .frame(maxWidth: .infinity)
                   }
-                  .tint(WatchAppColor.destructive)
+                  .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.actionPrimary))
                }
 
                WatchCard(spacing: 6) {
@@ -651,18 +759,275 @@ struct WatchToDoDetailView: View {
                }
                .opacity(0.8)
             }
-            .padding(.horizontal, 2)
-            .padding(.bottom, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 8)
+            .padding(.top, 10)
+            .padding(.bottom, 14)
          }
-         .background(WatchAppColor.surface)
+         .frame(maxWidth: .infinity)
+         .background(WatchAppColor.surfaceElevated)
       } else {
-         Text("ToDo not found.")
+         Text("toDō not found.")
             .font(.watchBody(12, relativeTo: .caption))
       }
    }
 
    private func detailAccent(for item: WatchToDoItem) -> Color {
       item.isOverdue ? WatchAppColor.destructive : (item.isTimeSensitive ? WatchAppColor.destructive : WatchAppColor.actionPrimary)
+   }
+
+   private func formattedDetailDateTime(_ date: Date) -> String {
+      WatchLocalization.dateTimeString(date)
+   }
+}
+
+struct WatchNanoDoRow: View {
+   let nanoDo: WatchNanoDoItem
+   let onToggleDone: () -> Void
+   let onDelete: () -> Void
+
+   var body: some View {
+      HStack(spacing: 8) {
+         Button(action: onToggleDone) {
+            Image(systemName: nanoDo.isDone ? "checkmark.circle.fill" : "circle")
+               .font(.watchDisplay(16, relativeTo: .headline))
+               .frame(width: 28, height: 28)
+         }
+         .buttonStyle(.plain)
+         .foregroundStyle(nanoDo.isDone ? WatchAppColor.actionSuccess : WatchAppColor.textSecondary)
+         .accessibilityLabel(nanoDo.isDone ? "Mark nanoDo active" : "Mark nanoDo done")
+
+         VStack(alignment: .leading, spacing: 2) {
+            Text(nanoDo.task)
+               .font(.watchBodyStrong(13, relativeTo: .caption))
+               .foregroundStyle(nanoDo.isDone ? WatchAppColor.textSecondary : WatchAppColor.textPrimary)
+               .lineLimit(2)
+               .strikethrough(nanoDo.isDone)
+
+            if let dueDate = nanoDo.dueDate {
+               Text(WatchLocalization.dateTimeString(dueDate))
+                  .font(.watchBody(10, relativeTo: .caption2))
+                  .foregroundStyle(WatchAppColor.textSecondary)
+            }
+         }
+
+         Spacer(minLength: 0)
+
+         Button(role: .destructive, action: onDelete) {
+            Image(systemName: "trash")
+               .font(.system(size: 12, weight: .bold))
+               .frame(width: 28, height: 28)
+         }
+         .buttonStyle(.plain)
+         .foregroundStyle(WatchAppColor.destructive)
+         .accessibilityLabel("Delete nanoDo")
+      }
+      .padding(.horizontal, 8)
+      .padding(.vertical, 7)
+      .background(WatchAppColor.surfaceMuted, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+   }
+}
+
+struct WatchDueReminderBanner: View {
+   let item: WatchToDoItem
+   let now: Date
+   let onOpen: () -> Void
+   let onDone: () -> Void
+   let onSnooze: () -> Void
+   let onDismiss: () -> Void
+
+   var body: some View {
+      VStack(alignment: .leading, spacing: 9) {
+         HStack(spacing: 7) {
+            Image(systemName: item.isTimeSensitive ? "bolt.fill" : "bell.badge.fill")
+               .font(.watchBodyStrong(12, relativeTo: .caption))
+               .foregroundStyle(WatchAppColor.onAction)
+               .frame(width: 24, height: 24)
+               .background(WatchAppColor.main, in: Circle())
+
+            VStack(alignment: .leading, spacing: 1) {
+               Text("Due")
+                  .font(.watchBodyStrong(10, relativeTo: .caption2))
+                  .foregroundStyle(WatchAppColor.main)
+
+               Text(dueText)
+                  .font(.watchBodyStrong(11, relativeTo: .caption2))
+                  .foregroundStyle(WatchAppColor.textSecondary)
+            }
+
+            Spacer(minLength: 0)
+
+            Button(action: onDismiss) {
+               Image(systemName: "xmark")
+                  .font(.system(size: 14, weight: .bold))
+                  .frame(width: 34, height: 34)
+                  .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(WatchAppColor.textSecondary)
+            .accessibilityLabel("Dismiss details")
+         }
+
+         Text(item.task)
+            .font(.watchDisplay(16, relativeTo: .headline))
+            .foregroundStyle(WatchAppColor.textPrimary)
+            .lineLimit(2)
+
+         HStack(spacing: 8) {
+            Button(action: onDone) {
+               Image(systemName: "checkmark")
+                  .font(.system(size: 14, weight: .black, design: .rounded))
+                  .frame(width: 32, height: 32)
+            }
+            .buttonStyle(WatchIconButtonStyle(fill: WatchAppColor.actionSuccess, symbolSize: 17, symbolWeight: .black))
+            .accessibilityLabel("Done")
+
+            Button(action: onSnooze) {
+               Image(systemName: "arrow.clockwise")
+                  .font(.system(size: 15, weight: .black, design: .rounded))
+               .frame(width: 32, height: 32)
+            }
+            .buttonStyle(WatchIconButtonStyle(fill: WatchAppColor.white, foreground: WatchAppColor.black, symbolSize: 17, symbolWeight: .black))
+            .accessibilityLabel("Snooze 15 minutes")
+
+            Button(action: onOpen) {
+               Image(systemName: "arrow.up.right")
+                  .font(.system(size: 14, weight: .black, design: .rounded))
+                  .frame(width: 32, height: 32)
+            }
+            .buttonStyle(WatchIconButtonStyle(fill: WatchAppColor.actionPrimary, symbolSize: 17, symbolWeight: .black))
+            .accessibilityLabel("Open toDō")
+         }
+      }
+      .padding(12)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+         RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .fill(WatchAppColor.surfaceElevated)
+            .shadow(color: .black.opacity(0.34), radius: 14, x: 0, y: 8)
+      )
+      .overlay(
+         RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .stroke(item.isTimeSensitive ? WatchAppColor.destructive.opacity(0.75) : WatchAppColor.main.opacity(0.65), lineWidth: 1)
+      )
+   }
+
+   private var dueText: String {
+      guard let dueDate = item.dueDate else { return "" }
+      if dueDate <= now {
+         return dueDate.formatted(date: .omitted, time: .shortened)
+      }
+      return dueDate.formatted(date: .abbreviated, time: .shortened)
+   }
+}
+
+struct WatchToDoEditView: View {
+   let item: WatchToDoItem
+   @ObservedObject var store: WatchToDoStore
+   @Environment(\.dismiss) private var dismiss
+
+   @State private var task: String
+   @State private var dueDate: Date?
+   @State private var isTimeSensitive: Bool
+
+   init(item: WatchToDoItem, store: WatchToDoStore) {
+      self.item = item
+      self.store = store
+      _task = State(initialValue: item.task)
+      _dueDate = State(initialValue: item.dueDate)
+      _isTimeSensitive = State(initialValue: item.isTimeSensitive)
+   }
+
+   var body: some View {
+      ScrollView {
+         VStack(alignment: .leading, spacing: 12) {
+            WatchScreenHeader(
+               title: "Edit toDō",
+               systemImage: "arrow.up.right.circle.fill",
+               accent: WatchAppColor.actionPrimary
+            )
+
+            WatchCard {
+               TextField("toDō", text: $task, axis: .vertical)
+                  .font(.watchDisplay(17, relativeTo: .headline))
+                  .foregroundStyle(WatchAppColor.textPrimary)
+                  .lineLimit(1...4)
+                  .textInputAutocapitalization(.sentences)
+            }
+
+            WatchActionGroup(title: "Schedule", systemImage: "clock", accent: WatchAppColor.actionPrimary) {
+               if dueDate == nil {
+                  Button {
+                     dueDate = defaultDueDate()
+                  } label: {
+                     Label("Add Due Date", systemImage: "calendar.badge.plus")
+                  }
+                  .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.actionPrimary))
+               } else {
+                  WatchPickerBlock(title: "Due Date", systemImage: "calendar", height: 118) {
+                     DatePicker(
+                        "Due Date",
+                        selection: Binding(
+                           get: { dueDate ?? defaultDueDate() },
+                           set: { dueDate = merge(date: $0, withTimeFrom: dueDate) }
+                        ),
+                        displayedComponents: .date
+                     )
+                     .labelsHidden()
+                     .tint(WatchAppColor.actionPrimary)
+                  }
+
+                  WatchPickerBlock(title: "Due Time", systemImage: "clock", height: 96) {
+                     DatePicker(
+                        "Due Time",
+                        selection: Binding(
+                           get: { dueDate ?? defaultDueDate() },
+                           set: { dueDate = merge(time: $0, withDateFrom: dueDate) }
+                        ),
+                        displayedComponents: .hourAndMinute
+                     )
+                     .labelsHidden()
+                     .tint(WatchAppColor.actionPrimary)
+                  }
+
+                  Button {
+                     dueDate = nil
+                     isTimeSensitive = false
+                  } label: {
+                     Label("Remove Due Date", systemImage: "calendar.badge.minus")
+                  }
+                  .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.textSecondary))
+               }
+
+               Toggle(isOn: $isTimeSensitive) {
+                  Label("Time-Sensitive", systemImage: "bolt.fill")
+                     .font(.watchBodyStrong(12, relativeTo: .caption))
+               }
+               .disabled(dueDate == nil)
+               .tint(WatchAppColor.destructive)
+            }
+
+            Button {
+               save()
+            } label: {
+               Label("Save", systemImage: "checkmark.circle.fill")
+                  .font(.watchBodyStrong(14, relativeTo: .subheadline))
+                  .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(WatchProminentButtonStyle())
+            .disabled(task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+         }
+         .padding(.horizontal, 2)
+         .padding(.bottom, 12)
+      }
+      .background(WatchAppColor.surface)
+      .navigationTitle("Edit")
+   }
+
+   private func save() {
+      store.updateTask(task, for: item)
+      store.setDueDate(dueDate, for: item, isTimeSensitive: dueDate == nil ? false : isTimeSensitive)
+      dismiss()
    }
 
    private func merge(date newDay: Date, withTimeFrom base: Date?) -> Date {
@@ -755,17 +1120,42 @@ struct WatchSnoozeView: View {
    }
 }
 
+struct WatchToDoRowActionButton: View {
+   let item: WatchToDoItem
+   let accent: Color
+   let onOpen: () -> Void
+   let onToggleDone: () -> Void
+
+   var body: some View {
+      HStack(spacing: 8) {
+         Button(action: onToggleDone) {
+            Image(systemName: item.isDone ? "arrow.uturn.backward" : "checkmark")
+               .font(.watchBodyStrong(14, relativeTo: .caption))
+               .frame(width: 34, height: 34)
+         }
+         .buttonStyle(WatchIconButtonStyle(
+            fill: item.isDone ? WatchAppColor.secondary : WatchAppColor.actionSuccess,
+            size: 34
+         ))
+         .accessibilityLabel(item.isDone ? "Mark Active" : "Mark Done")
+
+         Button(action: onOpen) {
+            WatchToDoRow(item: item, accent: accent)
+         }
+         .buttonStyle(.plain)
+         .accessibilityLabel(item.task)
+         .accessibilityHint("Opens this toDō.")
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+   }
+}
+
 struct WatchToDoRow: View {
    let item: WatchToDoItem
    let accent: Color
 
    var body: some View {
       HStack(alignment: .center, spacing: 9) {
-         Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle")
-            .font(.watchDisplay(18, relativeTo: .headline))
-            .foregroundStyle(leadingColor)
-            .frame(width: 20, height: 20)
-
          VStack(alignment: .leading, spacing: 3) {
             Text(item.task)
                .font(.watchDisplay(16, relativeTo: .headline))
@@ -796,7 +1186,7 @@ struct WatchToDoRow: View {
             .padding(.top, 5)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(.horizontal, 11)
+      .padding(.horizontal, 12)
       .padding(.vertical, 9)
       .background(rowBackground, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
       .overlay(
@@ -804,19 +1194,6 @@ struct WatchToDoRow: View {
             .stroke(rowBorderColor, lineWidth: rowBorderWidth)
             .padding(item.isTimeSensitive && !item.isDone ? 2 : 0)
       )
-   }
-
-   private var leadingColor: Color {
-      if item.isDone {
-         return WatchAppColor.actionSuccess
-      }
-      if item.isOverdue {
-         return WatchAppColor.white
-      }
-      if item.isTimeSensitive {
-         return WatchAppColor.destructive
-      }
-      return accent
    }
 
    private var rowBackground: Color {
@@ -858,20 +1235,27 @@ struct WatchToDoRow: View {
    private func formattedDueText(_ date: Date) -> String {
       let cal = Calendar.current
       if cal.isDateInToday(date) {
-         return "Today " + date.formatted(date: .omitted, time: .shortened)
+         return String(localized: "Today") + " " + WatchLocalization.timeString(date)
       } else if cal.isDateInTomorrow(date) {
-         return "Tomorrow " + date.formatted(date: .omitted, time: .shortened)
+         return String(localized: "Tomorrow") + " " + WatchLocalization.timeString(date)
       } else {
-         return date.formatted(date: .abbreviated, time: .shortened)
+         return WatchLocalization.dateTimeString(date)
       }
    }
 }
 
 struct WatchScreenHeader: View {
    let title: String
-   let subtitle: String
+   let subtitle: String?
    let systemImage: String
    let accent: Color
+
+   init(title: String, subtitle: String? = nil, systemImage: String, accent: Color) {
+      self.title = title
+      self.subtitle = subtitle
+      self.systemImage = systemImage
+      self.accent = accent
+   }
 
    var body: some View {
       HStack(alignment: .center, spacing: 9) {
@@ -886,10 +1270,12 @@ struct WatchScreenHeader: View {
                .font(.watchDisplay(21, relativeTo: .title3))
                .foregroundStyle(WatchAppColor.textPrimary)
 
-            Text(subtitle)
-               .font(.watchBody(11, relativeTo: .caption2))
-               .foregroundStyle(WatchAppColor.textSecondary)
-               .lineLimit(2)
+            if let subtitle, !subtitle.isEmpty {
+               Text(subtitle)
+                  .font(.watchBody(11, relativeTo: .caption2))
+                  .foregroundStyle(WatchAppColor.textSecondary)
+                  .lineLimit(2)
+            }
          }
       }
       .padding(.top, 3)
@@ -1017,6 +1403,38 @@ struct WatchFilledButtonStyle: ButtonStyle {
                .fill(configuration.isPressed ? fill.opacity(0.74) : fill)
          )
          .scaleEffect(configuration.isPressed ? 0.96 : 1)
+         .animation(.easeInOut(duration: 0.16), value: configuration.isPressed)
+   }
+}
+
+struct WatchIconButtonStyle: ButtonStyle {
+   let fill: Color
+   var foreground: Color = WatchAppColor.onAction
+   var size: CGFloat = 38
+   var symbolSize: CGFloat = 15
+   var symbolWeight: Font.Weight = .semibold
+   var stroke: Color?
+   var strokeWidth: CGFloat = 0
+
+   func makeBody(configuration: Configuration) -> some View {
+      configuration.label
+         .font(.system(size: symbolSize, weight: symbolWeight, design: .rounded))
+         .foregroundStyle(foreground)
+         .frame(width: size, height: size)
+         .background {
+            Circle()
+               .fill(.regularMaterial)
+               .overlay {
+                  Circle()
+                     .fill(configuration.isPressed ? fill.opacity(0.58) : fill.opacity(0.82))
+               }
+         }
+         .overlay {
+            if let stroke, strokeWidth > 0 {
+               Circle().stroke(stroke, lineWidth: strokeWidth)
+            }
+         }
+         .scaleEffect(configuration.isPressed ? 0.93 : 1)
          .animation(.easeInOut(duration: 0.16), value: configuration.isPressed)
    }
 }

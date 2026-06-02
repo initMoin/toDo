@@ -67,4 +67,34 @@ enum TagSortOption: String, CaseIterable, Identifiable {
             return storedDirection ?? resolvedOption(from: rawValue).defaultAscending
         }
     }
+
+    static func sortedTags(
+        _ tags: [Tag],
+        option: TagSortOption,
+        isAscending: Bool,
+        linkedCount: (Tag) -> Int = { $0.linkedTaskCount }
+    ) -> [Tag] {
+        tags.sorted { lhs, rhs in
+            switch option {
+            case .name:
+                let compare = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+                if compare == .orderedSame {
+                    return lhs.createdAt > rhs.createdAt
+                }
+                return isAscending ? compare == .orderedAscending : compare == .orderedDescending
+            case .created:
+                if lhs.createdAt == rhs.createdAt {
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+                return isAscending ? lhs.createdAt < rhs.createdAt : lhs.createdAt > rhs.createdAt
+            case .linked:
+                let leftCount = linkedCount(lhs)
+                let rightCount = linkedCount(rhs)
+                if leftCount == rightCount {
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+                return isAscending ? leftCount < rightCount : leftCount > rightCount
+            }
+        }
+    }
 }

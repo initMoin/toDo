@@ -3,7 +3,6 @@ import SwiftData
 
 struct SettingsSubmenuContainer<Content: View>: View {
    let title: String
-   let subtitle: String
    @ViewBuilder let content: () -> Content
 
    var body: some View {
@@ -12,11 +11,6 @@ struct SettingsSubmenuContainer<Content: View>: View {
 
          ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-               Text(subtitle)
-                  .font(.appBody(13, relativeTo: .footnote))
-                  .foregroundStyle(AppColor.textSecondary)
-                  .fixedSize(horizontal: false, vertical: true)
-
                content()
             }
             .padding(.horizontal, 16)
@@ -45,13 +39,9 @@ struct SyncConflictReviewView: View {
       ScrollView {
          VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
-               Text("Sync Needs Review")
+               Text("Choose a Version")
                   .font(.appTitle(34, relativeTo: .largeTitle))
                   .foregroundStyle(AppColor.textPrimary)
-
-               Text("These ToDos changed on another device while this device had unsynced edits. Choose the version that should continue syncing.")
-                  .font(.appBody(14, relativeTo: .footnote))
-                  .foregroundStyle(AppColor.textSecondary)
             }
 
             if let resolutionErrorMessage {
@@ -80,7 +70,7 @@ struct SyncConflictReviewView: View {
       .background(AppColor.surface)
       .appBaseTypography()
       .appNavigationChrome()
-      .alert("Confirm Sync Choice", isPresented: isShowingPendingResolution) {
+      .alert("Keep This Version?", isPresented: isShowingPendingResolution) {
          Button("Cancel", role: .cancel) {}
          if let pendingResolution {
             Button(pendingResolution.actionTitle) {
@@ -117,7 +107,7 @@ struct SyncConflictReviewView: View {
                .font(.appBodyStrong(16, relativeTo: .body))
                .foregroundStyle(AppColor.textPrimary)
 
-            Text("No ToDos need sync review right now.")
+            Text("No toDōs need sync review right now.")
                .font(.appBody(12, relativeTo: .caption))
                .foregroundStyle(AppColor.textSecondary)
          }
@@ -243,8 +233,8 @@ struct SyncConflictReviewView: View {
                await SyncCoordinator.shared.flushLocalSync(userID: userID)
             }
             SyncCoordinator.shared.showTransientFeedback(
-               title: "Sync Choice Saved",
-               message: "ToDo is syncing the version you selected.",
+               title: "Choice Saved",
+               message: "toDō is sharing the version you selected.",
                style: .success
             )
          } catch {
@@ -276,9 +266,9 @@ struct SyncConflictReviewView: View {
       var message: String {
          switch resolution {
          case .keepDeviceVersion:
-            return "ToDo will keep this device's version and send it back to ToDo Sync."
+            return "toDō will keep this device's version."
          case .useSyncedVersion:
-            return "ToDo will replace this device's version with the synced version."
+            return "toDō will use the version from your other device."
          }
       }
    }

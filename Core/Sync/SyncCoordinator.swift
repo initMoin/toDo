@@ -63,23 +63,23 @@ enum SyncOperationPhase: String, Equatable {
    var detail: String {
       switch self {
       case .activating:
-         return String(localized: "Connecting this device to ToDo Sync.")
+         return String(localized: "Connecting this device to toDō Sync.")
       case .queuedLocalChanges:
-         return String(localized: "ToDo is batching recent changes before sending them.")
+         return String(localized: "toDō is batching recent changes before sending them.")
       case .preparingLocalData:
-         return String(localized: "Checking local ToDos before syncing.")
+         return String(localized: "Checking local toDōs before syncing.")
       case .uploadingPendingDeletes:
          return String(localized: "Sending delete markers so other devices stay consistent.")
       case .loadingRemoteChanges:
-         return String(localized: "Checking your account for newer ToDos.")
+         return String(localized: "Checking your account for newer toDōs.")
       case .cleaningRemoteDuplicates:
-         return String(localized: "Removing duplicated synced ToDos safely.")
+         return String(localized: "Removing duplicated synced toDōs safely.")
       case .applyingRemoteChanges:
-         return String(localized: "Updating this device with synced ToDos.")
+         return String(localized: "Updating this device with synced toDōs.")
       case .sendingLocalChanges:
          return String(localized: "Sending this device's latest changes.")
       case .reconcilingRelationships:
-         return String(localized: "Making sure tags and ToDos stay linked correctly.")
+         return String(localized: "Making sure tags and toDōs stay linked correctly.")
       case .listeningForUpdates:
          return String(localized: "Waiting for changes from your other devices.")
       }
@@ -144,16 +144,21 @@ final class SyncCoordinator: ObservableObject {
 
    func applyPreferredSyncMode(userID: UUID?) async {
       let resolvedMode = resolvedMode(for: preferredSyncMode, userID: userID)
-      guard canApplyWithoutRelaunch(resolvedMode) else { return }
-      _ = await transition(to: resolvedMode, userID: userID)
+      log("Apply preferred mode requested: preferred=\(preferredSyncMode.rawValue), resolved=\(resolvedMode.rawValue), effective=\(effectiveSyncMode.rawValue), userID=\(userID?.uuidString ?? "nil")")
+      guard canApplyWithoutRelaunch(resolvedMode) else {
+         log("Apply preferred mode deferred for relaunch: resolved=\(resolvedMode.rawValue), configuredStore=\(configuredStoreSyncMode.rawValue)")
+         return
+      }
+      let didTransition = await transition(to: resolvedMode, userID: userID)
+      log("Apply preferred mode finished: resolved=\(resolvedMode.rawValue), activated=\(didTransition), effective=\(effectiveSyncMode.rawValue)")
    }
 
    func setPreferredSyncMode(_ mode: SyncMode, userID: UUID?, shouldTransferData: Bool = true) async {
       let sanitizedMode = AppPreferences.sanitizedSyncMode(mode)
       guard sanitizedMode == mode else {
          showFeedback(
-            title: "Sync Unavailable",
-            message: "\(mode.title) is not available on this build of ToDo.",
+            title: String(localized: "Sync Unavailable"),
+            message: String(format: String(localized: "%@ is not available on this build of toDō."), mode.title),
             style: .failure
          )
          return
@@ -177,8 +182,8 @@ final class SyncCoordinator: ObservableObject {
       )
       if !canApplyWithoutRelaunch(resolvedMode) {
          showFeedback(
-            title: "\(sanitizedMode.title) Saved",
-            message: "Relaunch ToDo to finish moving into \(sanitizedMode.title).",
+            title: String(format: String(localized: "%@ Saved"), sanitizedMode.title),
+            message: String(format: String(localized: "Relaunch toDō to finish moving into %@."), sanitizedMode.title),
             style: .warning
          )
          return
@@ -195,7 +200,7 @@ final class SyncCoordinator: ObservableObject {
          preferredSyncMode = previousPreference
          userDefaults.set(previousPreference.rawValue, forKey: AppPreferences.Keys.syncMode)
          showFeedback(
-            title: "Sync Change Failed",
+            title: String(localized: "Sync Change Failed"),
             message: error.localizedDescription,
             style: .failure
          )
@@ -205,7 +210,7 @@ final class SyncCoordinator: ObservableObject {
       if previousPreference != sanitizedMode || effectiveSyncMode != resolvedMode {
          if await transition(to: resolvedMode, userID: userID) {
             showFeedback(
-               title: "Sync Updated",
+               title: String(localized: "Sync Updated"),
                message: successMessage(for: sanitizedMode, userID: userID, didTransferData: shouldTransferData),
                style: .success
             )
@@ -218,7 +223,7 @@ final class SyncCoordinator: ObservableObject {
          try migrationService.executeIfNeeded(from: .syncEverywhere, to: .deviceOnly, userID: userID)
       } catch {
          showFeedback(
-            title: "Sync Change Failed",
+            title: String(localized: "Sync Change Failed"),
             message: error.localizedDescription,
             style: .failure
          )
@@ -244,7 +249,7 @@ final class SyncCoordinator: ObservableObject {
             mode: mode,
             isAvailable: isAvailable,
             detailText: !isAvailable
-            ? "Unavailable right now while ToDo's CloudKit data model is being hardened."
+            ? "Unavailable right now while toDō's CloudKit data model is being hardened."
             : mode == .syncEverywhere && !isAuthenticated
             ? "Best for iPhone, Android, and web. Sign in to activate it."
             : mode.subtitle,
@@ -332,13 +337,15 @@ final class SyncCoordinator: ObservableObject {
          nextBackend = backend(for: mode)
       }
 
+      log("Transition requested: target=\(mode.rawValue), currentEffective=\(effectiveSyncMode.rawValue), backend=\(String(describing: type(of: nextBackend))), userID=\(userID?.uuidString ?? "nil")")
       let didActivate = await nextBackend.activate(userID: userID)
       guard didActivate else {
+         log("Transition activation failed: target=\(mode.rawValue), backend=\(String(describing: type(of: nextBackend)))")
          nextBackend.deactivate()
          let detail = lastSyncErrorMessage.map { " \($0)" } ?? ""
          showFeedback(
-            title: "Sync Not Activated",
-            message: "ToDo stayed on \(effectiveSyncMode.title) because \(mode.title) could not finish setup.\(detail)",
+            title: String(localized: "Sync Not Activated"),
+            message: String(format: String(localized: "toDō stayed on %@ because %@ could not finish setup.%@"), effectiveSyncMode.title, mode.title, detail),
             style: .failure
          )
          return false
@@ -356,6 +363,7 @@ final class SyncCoordinator: ObservableObject {
          syncActivityState = .activating
          currentSyncPhase = .activating
       }
+      log("Transition activated: target=\(mode.rawValue), effective=\(effectiveSyncMode.rawValue), backend=\(String(describing: type(of: nextBackend)))")
       return true
    }
 
@@ -387,9 +395,7 @@ final class SyncCoordinator: ObservableObject {
    }
 
    private func log(_ message: String) {
-#if DEBUG
-      AppLog.info("ToDo Sync: \(message)", logger: AppLog.sync)
-#endif
+      AppLog.info("toDō Sync: \(message)", logger: AppLog.sync)
    }
 
    private static func syncErrorMessage(for error: Error) -> String {
@@ -410,16 +416,16 @@ final class SyncCoordinator: ObservableObject {
    }
 
    private func successMessage(for mode: SyncMode, userID: UUID?, didTransferData: Bool) -> String {
-      let transferPrefix = didTransferData ? "" : String(localized: "ToDo started this sync mode without moving existing ToDos. ")
+      let transferPrefix = didTransferData ? "" : String(localized: "toDō started this sync mode without moving existing toDōs. ")
       switch mode {
       case .deviceOnly:
-         return transferPrefix + String(localized: "ToDo now keeps what matters on this device.")
+         return transferPrefix + String(localized: "toDō now keeps what matters on this device.")
       case .iCloud:
-         return transferPrefix + String(localized: "ToDo now uses iCloud to keep Apple devices in step.")
+         return transferPrefix + String(localized: "toDō now uses iCloud to keep Apple devices in step.")
       case .syncEverywhere:
          return userID == nil
          ? String(format: String(localized: "%@ is selected. Sign in to finish turning it on."), mode.title)
-         : transferPrefix + String(localized: "ToDo now uses your account to keep iPhone, Android, and web in step.")
+         : transferPrefix + String(localized: "toDō now uses your account to keep iPhone, Android, and web in step.")
       }
    }
 }

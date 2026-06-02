@@ -22,13 +22,13 @@ final class NotificationManager: NSObject, ObservableObject {
       var statusText: String {
          switch self {
          case .idle:
-            return "Not registered"
+            return String(localized: "Not Ready")
          case .requesting:
-            return "Registering"
+            return String(localized: "Getting Ready")
          case .registered:
-            return "Push ready"
+            return String(localized: "Ready")
          case .failed:
-            return "Push unavailable"
+            return String(localized: "Unavailable")
          }
       }
    }
@@ -36,13 +36,13 @@ final class NotificationManager: NSObject, ObservableObject {
    var pushReadinessDetail: String {
       switch registrationState {
       case .idle:
-         return "This device has not registered an APNs token yet."
+         return String(localized: "This device is not ready for remote reminders yet.")
       case .requesting:
-         return "ToDo is asking iOS for an APNs device token."
-      case .registered(let token):
-         return "APNs token registered. Token ends in \(token.suffix(8))."
-      case .failed(let message):
-         return "APNs registration failed. \(message)"
+         return String(localized: "toDō is getting this device ready for remote reminders.")
+      case .registered:
+         return String(localized: "Remote reminders are ready on this device.")
+      case .failed:
+         return String(localized: "Remote reminders could not be prepared. Try again from Settings.")
       }
    }
 
@@ -57,6 +57,7 @@ final class NotificationManager: NSObject, ObservableObject {
    private let categoryIdentifier = "TODO_DUE_REMINDER"
    private let markDoneActionIdentifier = "todo.markDone"
    private let snoozeActionPrefix = "todo.snooze."
+   private static let soundPreviewNotificationPrefix = "todo.sound-preview."
    private let initialSyncDelayNanoseconds: UInt64 = 1_500_000_000
    private let coalescedSyncDelayNanoseconds: UInt64 = 350_000_000
    private let maxScheduledNotificationRequests = 64
@@ -127,6 +128,42 @@ final class NotificationManager: NSObject, ObservableObject {
       remoteNotificationRegistrar?()
    }
 
+   func scheduleSoundPreviewNotification(after seconds: TimeInterval = 3) async throws {
+      let settings = await center.notificationSettings()
+      guard settings.authorizationStatus == .authorized
+               || settings.authorizationStatus == .provisional
+               || settings.authorizationStatus == .ephemeral else {
+         return
+      }
+
+      registerNotificationCategories()
+      removeSoundPreviewNotifications()
+
+      let content = NotificationContentBuilder.content(
+         for: .test,
+         title: String(localized: "toDō sound check"),
+         body: String(localized: "This reminder uses your selected notification sound."),
+         isTimeSensitive: false,
+         isQuiet: false,
+         soundOption: preferredSoundOption
+      )
+      content.badge = nil
+
+      let trigger = UNTimeIntervalNotificationTrigger(
+         timeInterval: max(seconds, 1),
+         repeats: false
+      )
+      let identifier = "\(Self.soundPreviewNotificationPrefix)\(UUID().uuidString)"
+      let request = UNNotificationRequest(
+         identifier: identifier,
+         content: content,
+         trigger: trigger
+      )
+
+      try await center.add(request)
+      scheduleSoundPreviewCleanup(identifier: identifier, after: max(seconds, 1) + 2)
+   }
+
    func didRegisterForRemoteNotifications(deviceToken: Data) {
       let token = deviceToken.map { String(format: "%02x", $0) }.joined()
       registrationState = .registered(token: token)
@@ -177,6 +214,36 @@ final class NotificationManager: NSObject, ObservableObject {
 
          guard !Task.isCancelled else { return }
          await self.syncScheduledNotifications()
+      }
+   }
+
+   private func scheduleSoundPreviewCleanup(identifier: String, after delay: TimeInterval) {
+      Task { [center] in
+         let nanoseconds = UInt64(max(delay, 1) * 1_000_000_000)
+         try? await Task.sleep(nanoseconds: nanoseconds)
+         center.removeDeliveredNotifications(withIdentifiers: [identifier])
+         center.removePendingNotificationRequests(withIdentifiers: [identifier])
+      }
+   }
+
+   private func removeSoundPreviewNotifications() {
+      let prefix = Self.soundPreviewNotificationPrefix
+      center.getPendingNotificationRequests { requests in
+         let identifiers = requests
+            .map(\.identifier)
+            .filter { $0.hasPrefix(prefix) }
+
+         guard !identifiers.isEmpty else { return }
+         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
+      }
+
+      center.getDeliveredNotifications { notifications in
+         let identifiers = notifications
+            .map(\.request.identifier)
+            .filter { $0.hasPrefix(prefix) }
+
+         guard !identifiers.isEmpty else { return }
+         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
       }
    }
 
@@ -282,22 +349,27 @@ final class NotificationManager: NSObject, ObservableObject {
       do {
          let toDos = try context.fetch(FetchDescriptor<ToDo>())
          let now = Date()
-         let schedulableOccurrences = limitedScheduledOccurrences(for: toDos, now: now)
+         let activeToDos = toDos.filter(\.isActive)
+         let futureDueToDos = activeToDos.filter { toDo in
+            toDo.dueDate.map { $0 > now } ?? false
+         }
+         let schedulableOccurrences = limitedScheduledOccurrences(for: activeToDos, now: now)
+         let settings = await center.notificationSettings()
+         AppLog.info(
+            "Notification sync started: auth=\(Self.authorizationDescription(settings.authorizationStatus)), alert=\(Self.settingDescription(settings.alertSetting)), sound=\(Self.settingDescription(settings.soundSetting)), timeSensitive=\(Self.settingDescription(settings.timeSensitiveSetting)), sourceToDos=\(toDos.count), active=\(activeToDos.count), futureDue=\(futureDueToDos.count), schedulable=\(schedulableOccurrences.count).",
+            logger: AppLog.notifications
+         )
          await updateAppIconBadge(for: toDos, now: now)
 
          let pendingIdentifiers = await center.pendingNotificationRequests()
             .map(\.identifier)
             .filter { $0.hasPrefix(notificationPrefix) }
-         let deliveredIdentifiers = await center.deliveredNotifications()
-            .map { $0.request.identifier }
-            .filter { $0.hasPrefix(notificationPrefix) }
-         let existingIdentifiers = Array(Set(pendingIdentifiers + deliveredIdentifiers))
 
-         if !existingIdentifiers.isEmpty {
-            center.removePendingNotificationRequests(withIdentifiers: existingIdentifiers)
-            center.removeDeliveredNotifications(withIdentifiers: existingIdentifiers)
+         if !pendingIdentifiers.isEmpty {
+            center.removePendingNotificationRequests(withIdentifiers: pendingIdentifiers)
          }
 
+         var scheduledCount = 0
          for occurrence in schedulableOccurrences {
             let notificationType = notificationType(
                for: occurrence.toDo,
@@ -309,10 +381,10 @@ final class NotificationManager: NSObject, ObservableObject {
                for: notificationType,
                title: notificationTitle(for: occurrence.toDo, fireDate: occurrence.fireDate),
                body: notificationBody(for: occurrence.toDo),
-	               isTimeSensitive: isTimeSensitive,
-	               isQuiet: occurrence.toDo.reminderIntent == .soft,
-	               soundOption: preferredSoundOption
-	            )
+               isTimeSensitive: isTimeSensitive,
+               isQuiet: occurrence.toDo.reminderIntent == .soft,
+               soundOption: preferredSoundOption
+            )
             content.badge = NSNumber(value: appIconBadgeCount(for: toDos, now: occurrence.fireDate))
 
             var userInfo: [String: Any] = [
@@ -342,9 +414,45 @@ final class NotificationManager: NSObject, ObservableObject {
             )
 
             try await center.add(request)
+            scheduledCount += 1
          }
+         let nextFireDate = schedulableOccurrences.first?.fireDate.formatted(date: .numeric, time: .standard) ?? "none"
+         AppLog.info(
+            "Notification sync finished: scheduled=\(scheduledCount), removedPending=\(pendingIdentifiers.count), nextFire=\(nextFireDate).",
+            logger: AppLog.notifications
+         )
       } catch {
          AppLog.error("Failed to sync notifications: \(error)", logger: AppLog.notifications)
+      }
+   }
+
+   private static func authorizationDescription(_ status: UNAuthorizationStatus) -> String {
+      switch status {
+      case .notDetermined:
+         return "notDetermined"
+      case .denied:
+         return "denied"
+      case .authorized:
+         return "authorized"
+      case .provisional:
+         return "provisional"
+      case .ephemeral:
+         return "ephemeral"
+      @unknown default:
+         return "unknown"
+      }
+   }
+
+   private static func settingDescription(_ setting: UNNotificationSetting) -> String {
+      switch setting {
+      case .notSupported:
+         return "notSupported"
+      case .disabled:
+         return "disabled"
+      case .enabled:
+         return "enabled"
+      @unknown default:
+         return "unknown"
       }
    }
 
@@ -385,7 +493,7 @@ final class NotificationManager: NSObject, ObservableObject {
    private func markDoneAction() -> UNNotificationAction {
       UNNotificationAction(
          identifier: markDoneActionIdentifier,
-         title: "Mark Done",
+         title: String(localized: "Mark Done"),
          options: []
       )
    }
@@ -429,28 +537,28 @@ final class NotificationManager: NSObject, ObservableObject {
 
    private func notificationTitle(for toDo: ToDo, fireDate: Date) -> String {
       guard toDo.dueDate != nil else {
-         return "ToDo reminder"
+         return String(localized: "toDō reminder")
       }
 
       if fireDate < .now {
-         return "ToDo: overdue"
+         return String(localized: "toDō: overdue")
       }
 
       if toDo.isRecurring {
-         return "ToDo: repeating"
+         return String(localized: "toDō: repeating")
       }
 
       switch toDo.reminderIntent {
       case .soft:
-         return "ToDo reminder"
+         return String(localized: "toDō reminder")
       case .due, .timeSensitive:
-         return "ToDo: due"
+         return String(localized: "toDō: due")
       }
    }
 
    private func notificationBody(for toDo: ToDo) -> String {
       let task = toDo.task.trimmingCharacters(in: .whitespacesAndNewlines)
-      return task.isEmpty ? "Open ToDo to review this reminder." : task
+      return task.isEmpty ? String(localized: "Open toDō to review this reminder.") : task
    }
 
    private func interruptionLevel(for toDo: ToDo) -> UNNotificationInterruptionLevel {
@@ -506,13 +614,13 @@ final class NotificationManager: NSObject, ObservableObject {
       let toDoTitle = toDo?.task.trimmingCharacters(in: .whitespacesAndNewlines)
       let content = NotificationContentBuilder.debugContent(
          for: scenario,
-         toDoTitle: toDoTitle?.isEmpty == false ? toDoTitle! : "Review ToDo",
-	         toDoIdentifier: toDo.map(persistentIdentifierString(for:)),
-	         toDoCloudIdentifier: toDo?.cloudID
-	      )
-	      content.sound = notificationSound(for: preferredSoundOption)
+         toDoTitle: toDoTitle?.isEmpty == false ? toDoTitle! : "Review toDō",
+         toDoIdentifier: toDo.map(persistentIdentifierString(for:)),
+         toDoCloudIdentifier: toDo?.cloudID
+      )
+      content.sound = notificationSound(for: preferredSoundOption)
 
-	      let trigger = UNTimeIntervalNotificationTrigger(
+      let trigger = UNTimeIntervalNotificationTrigger(
          timeInterval: max(seconds, 1),
          repeats: false
       )
@@ -580,13 +688,11 @@ final class NotificationManager: NSObject, ObservableObject {
       return occurrences
    }
 
-   private func limitedScheduledOccurrences(for toDos: [ToDo], now: Date) -> [ScheduledOccurrence] {
+   private func limitedScheduledOccurrences(for activeToDos: [ToDo], now: Date) -> [ScheduledOccurrence] {
       var occurrences: [ScheduledOccurrence] = []
       occurrences.reserveCapacity(maxScheduledNotificationRequests)
 
-      let focusFilterMode = UserDefaults.standard.string(forKey: AppPreferences.Keys.toDoFocusFilterMode) ?? "all"
-
-      for toDo in toDos where toDo.isActive && toDo.matchesFocusFilter(modeRawValue: focusFilterMode) {
+      for toDo in activeToDos {
          for occurrence in scheduledNotificationOccurrences(for: toDo, now: now) {
             occurrences.append(ScheduledOccurrence(
                toDo: toDo,
@@ -774,23 +880,32 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
       withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
    ) {
       let content = notification.request.content
+      let isSoundPreview = notification.request.identifier.hasPrefix(Self.soundPreviewNotificationPrefix)
 
       let options: UNNotificationPresentationOptions
-      switch content.interruptionLevel {
-      case .passive:
-         options = [.list, .badge]
-      case .active, .timeSensitive, .critical:
-         var opts: UNNotificationPresentationOptions = [.banner, .list, .badge]
+      if isSoundPreview {
+         var opts: UNNotificationPresentationOptions = [.banner]
          if content.sound != nil {
             opts.insert(.sound)
          }
          options = opts
-      @unknown default:
-         var opts: UNNotificationPresentationOptions = [.banner, .list, .badge]
-         if content.sound != nil {
-            opts.insert(.sound)
+      } else {
+         switch content.interruptionLevel {
+         case .passive:
+            options = [.list, .badge]
+         case .active, .timeSensitive, .critical:
+            var opts: UNNotificationPresentationOptions = [.banner, .list, .badge]
+            if content.sound != nil {
+               opts.insert(.sound)
+            }
+            options = opts
+         @unknown default:
+            var opts: UNNotificationPresentationOptions = [.banner, .list, .badge]
+            if content.sound != nil {
+               opts.insert(.sound)
+            }
+            options = opts
          }
-         options = opts
       }
       completionHandler(options)
    }

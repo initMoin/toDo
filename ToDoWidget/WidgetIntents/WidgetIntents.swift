@@ -11,7 +11,7 @@ struct ToDoCategoryOptionsProvider: DynamicOptionsProvider {
 }
 
 struct ConfigurationAppIntent: WidgetConfigurationIntent {
-   static var title: LocalizedStringResource { "ToDo Widget" }
+   static var title: LocalizedStringResource { "toDō Widget" }
    static var description: IntentDescription { "Choose the category this widget should show." }
 
    @Parameter(title: "Category", optionsProvider: ToDoCategoryOptionsProvider())
@@ -23,11 +23,11 @@ struct ConfigurationAppIntent: WidgetConfigurationIntent {
 }
 
 struct CompleteWidgetToDoIntent: AppIntent {
-   static let title: LocalizedStringResource = "Mark ToDo Done"
-   static let description = IntentDescription("Mark this ToDo as done from the widget.")
+   static let title: LocalizedStringResource = "Mark toDō Done"
+   static let description = IntentDescription("Mark this toDō as done from the widget.")
    static let openAppWhenRun = false
 
-   @Parameter(title: "ToDo ID")
+   @Parameter(title: "toDō ID")
    var toDoID: String
 
    @Parameter(title: "Cloud ID")

@@ -8,7 +8,7 @@ struct FreeFeatureContractTests {
     @Test func personalSyncModesRemainAvailableWithoutPaidEntitlements() {
         #expect(SyncMode.deviceOnly.title == "This Device Only")
         #expect(SyncMode.iCloud.title == "Sync with iCloud")
-        #expect(SyncMode.syncEverywhere.title == "ToDo Sync")
+        #expect(SyncMode.syncEverywhere.title == "toDō Sync")
         #expect(SyncMode.allCases == [.deviceOnly, .iCloud, .syncEverywhere])
     }
 

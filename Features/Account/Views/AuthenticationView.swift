@@ -11,17 +11,17 @@ struct AuthenticationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("ToDo Sync")
+            Text("toDō Sync")
                 .font(.appSubtitle(15, relativeTo: .subheadline))
                 .foregroundStyle(AppColor.secondary)
 
             VStack(alignment: .leading, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Create or sign in to enable ToDo Sync.")
+                    Text("Sign in to keep toDō in sync.")
                         .font(.appBodyStrong(15, relativeTo: .subheadline))
                         .foregroundStyle(AppColor.textPrimary)
 
-                    Text("Use ToDo Sync to keep what matters available across iPhone, Android, and web.")
+                    Text("Keep what matters available across iPhone, Android, and web.")
                         .font(.appBody(12, relativeTo: .caption))
                         .foregroundStyle(AppColor.textSecondary)
                 }
@@ -57,7 +57,7 @@ struct AuthenticationView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(isGoogleAuthenticating ? "Opening Google..." : "Sign In with Google")
                                 .font(.appBodyStrong(15, relativeTo: .subheadline))
-                            Text("Use Google's native sign-in flow to connect ToDo Sync.")
+                            Text("Continue with your Google account.")
                                 .font(.appBody(12, relativeTo: .caption))
                                 .foregroundStyle(AppColor.textSecondary)
                         }
@@ -88,11 +88,11 @@ struct AuthenticationView: View {
                         .padding(.top, 2)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Local mode remains available.")
+                        Text("You can stay on this device.")
                             .font(.appBodyStrong(14, relativeTo: .caption))
                             .foregroundStyle(AppColor.textPrimary)
 
-                        Text("If you do nothing here, ToDo keeps running locally on this device path.")
+                        Text("No account required. toDō will stay on this device.")
                             .font(.appBody(12, relativeTo: .caption))
                             .foregroundStyle(AppColor.textSecondary)
                     }
@@ -141,7 +141,7 @@ struct AuthenticationView: View {
                   let tokenData = credential.identityToken,
                   let idToken = String(data: tokenData, encoding: .utf8)
             else {
-                authStore.lastErrorMessage = "Sign In with Apple did not return a valid identity token."
+                authStore.lastErrorMessage = "Sign In with Apple could not finish. Try again."
                 return
             }
 
@@ -159,11 +159,11 @@ struct AuthenticationView: View {
                     return
                 case .notInteractive, .matchedExcludedCredential, .credentialImport, .credentialExport,
                      .preferSignInWithApple, .deviceNotConfiguredForPasskeyCreation:
-                    authStore.lastErrorMessage = "Sign In with Apple stopped before ToDo received a credential. System error \(authorizationError.code.rawValue): \(authorizationError.localizedDescription)"
+                    authStore.lastErrorMessage = "Sign In with Apple did not finish. Try again when you are ready."
                 case .failed, .invalidResponse, .notHandled, .unknown:
-                    authStore.lastErrorMessage = "Sign In with Apple failed before ToDo received a credential. Verify the target has the Sign In with Apple capability, the device is signed into Apple ID, and the provisioning profile has been refreshed. System error \(authorizationError.code.rawValue): \(authorizationError.localizedDescription)"
+                    authStore.lastErrorMessage = "Sign In with Apple could not finish. Make sure this device is signed in to your Apple Account, then try again."
                 @unknown default:
-                    authStore.lastErrorMessage = "Sign In with Apple failed before ToDo received a credential. System error \(authorizationError.code.rawValue): \(authorizationError.localizedDescription)"
+                    authStore.lastErrorMessage = "Sign In with Apple could not finish. Try again in a moment."
                 }
             } else {
                 authStore.lastErrorMessage = error.localizedDescription
@@ -188,16 +188,13 @@ struct AuthenticationView: View {
 struct AuthenticationScreenView: View {
     @EnvironmentObject private var authStore: SupabaseAuthStore
     let title: String
-    let supportingText: String
     let onClose: (() -> Void)?
 
     init(
-        title: String = "ToDo Sync",
-        supportingText: String = "Create or sign in to ToDo Sync to keep what matters with you across iPhone, Android, and web.",
+        title: String = "toDō Sync",
         onClose: (() -> Void)? = nil
     ) {
         self.title = title
-        self.supportingText = supportingText
         self.onClose = onClose
     }
 
@@ -209,11 +206,6 @@ struct AuthenticationScreenView: View {
                 ZStack(alignment: .top) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 24) {
-                            Text(supportingText)
-                                .font(.appBody(14, relativeTo: .body))
-                                .foregroundStyle(AppColor.textSecondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-
                             AuthenticationView()
                         }
                         .padding(.horizontal, 16)

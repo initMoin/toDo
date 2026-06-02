@@ -14,10 +14,10 @@ enum TrashAutoEmptyInterval: String, CaseIterable, Identifiable {
    case oneMonth = "1 Month"
    case threeMonths = "3 Months"
    case never = "Never"
-   
+
    var id: String { rawValue }
    var title: String { rawValue }
-   
+
    var days: Int? {
       switch self {
       case .oneWeek: return 7
@@ -41,7 +41,7 @@ struct TrashView: View {
 
    private var visibleOwnerUserID: UUID? {
       guard authStore.effectiveSyncMode == .syncEverywhere else { return nil }
-      return authStore.currentUserID
+      return authStore.scopedOwnerUserID
    }
 
    private var trashedToDos: [ToDo] {
@@ -154,18 +154,18 @@ struct TrashView: View {
                .foregroundStyle(selectedToDoIDs.contains(toDo.id) ? AppColor.actionPrimary : AppColor.textSecondary)
                .padding(.top, 2)
          }
-         
+
          VStack(alignment: .leading, spacing: 6) {
             Text(toDo.task)
                .font(.appBodyStrong(16, relativeTo: .body))
                .foregroundStyle(AppColor.textPrimary)
-            
+
             Text(daysRemainingText(for: toDo))
                .font(.appBody(12, relativeTo: .caption))
                .foregroundStyle(AppColor.actionDestructive)
          }
          .frame(maxWidth: .infinity, alignment: .leading)
-         
+
          if !isSelectionMode {
             Menu {
                Button("Restore") { restore(toDo) }
@@ -225,7 +225,7 @@ struct TrashView: View {
       if daysLeft <= 0 { return "Deleting today" }
       return daysLeft == 1 ? "1 day left" : "\(daysLeft) days left"
    }
-   
+
    private func restore(_ toDo: ToDo) {
       HapticFeedbackService.play(.restored)
       withAnimation(AppAnimation.snappyStandard) {
@@ -235,7 +235,7 @@ struct TrashView: View {
       persistChanges("Failed to restore")
       syncCalendarMirrorIfNeeded(for: toDo)
    }
-   
+
    private func deletePermanently(_ toDo: ToDo) {
       HapticFeedbackService.play(.destructive)
       withAnimation(AppAnimation.easeFast) {
@@ -245,7 +245,7 @@ struct TrashView: View {
       }
       persistChanges("Failed to delete permanently")
    }
-   
+
    private func emptyTrashNow() {
       guard !trashedToDos.isEmpty else { return }
       HapticFeedbackService.play(.destructive)
@@ -256,12 +256,12 @@ struct TrashView: View {
       }
       persistChanges("Failed to empty trash")
    }
-   
+
    private func runRollingAutoEmpty() {
       guard let dayLimit = resolvedInterval.days else { return }
       let cutoffDate = Calendar.current.date(byAdding: .day, value: -dayLimit, to: Date()) ?? Date()
       var didPurge = false
-      
+
       for toDo in trashedToDos {
          if let trashedAt = toDo.trashedAt, trashedAt < cutoffDate {
             removeCalendarMirrorIfPresent(for: toDo)
@@ -272,7 +272,7 @@ struct TrashView: View {
       }
       if didPurge { persistChanges("Failed to auto-purge") }
    }
-   
+
    private func persistChanges(_ message: String) {
       do {
          try context.save()
@@ -280,7 +280,7 @@ struct TrashView: View {
          SyncCoordinator.shared.scheduleLocalSync()
       } catch { AppLog.error("\(message): \(error)", logger: AppLog.app) }
    }
-   
+
    private var bulkActionBar: some View {
       VStack(spacing: 0) {
          Divider()
@@ -296,7 +296,7 @@ struct TrashView: View {
          .background(AppColor.surface)
       }
    }
-   
+
    private func bulkActionButton(systemName: String, label: String, isDestructive: Bool = false, disabled: Bool, action: @escaping () -> Void) -> some View {
       Button(action: action) {
          VStack(spacing: 5) {
@@ -312,7 +312,7 @@ struct TrashView: View {
       .buttonStyle(.plain)
       .disabled(disabled)
    }
-   
+
    private func toggleSelection(for toDo: ToDo) {
       HapticFeedbackService.play(.selection)
       if selectedToDoIDs.contains(toDo.id) {
@@ -321,7 +321,7 @@ struct TrashView: View {
          selectedToDoIDs.insert(toDo.id)
       }
    }
-   
+
    private func restoreSelected() {
       guard !selectedToDoIDs.isEmpty else { return }
       HapticFeedbackService.play(.restored)
@@ -340,7 +340,7 @@ struct TrashView: View {
          syncCalendarMirrorIfNeeded(for: toDo)
       }
    }
-   
+
    private func deleteSelectedPermanently() {
       guard !selectedToDoIDs.isEmpty else { return }
       HapticFeedbackService.play(.destructive)

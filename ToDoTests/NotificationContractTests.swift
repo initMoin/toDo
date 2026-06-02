@@ -23,7 +23,7 @@ struct NotificationContractTests {
             toDoCloudIdentifier: toDoID
         )
 
-        #expect(content.title == "ToDo: due")
+        #expect(content.title == "toDō: due")
         #expect(content.body == "File quarterly report")
         #expect(content.userInfo["type"] as? String == RemoteNotificationType.toDoDue.rawValue)
         #expect(content.userInfo["todoIdentifier"] as? String == "local-id")
@@ -50,7 +50,7 @@ struct NotificationContractTests {
             toDoTitle: "File quarterly report"
         )
 
-        #expect(content.title == "ToDo: overdue")
+        #expect(content.title == "toDō: overdue")
         #expect(content.categoryIdentifier == NotificationCategoryID.taskReminder.rawValue)
         #expect(content.interruptionLevel == .timeSensitive)
         #expect(content.targetContentIdentifier == "todo-overdue")
@@ -64,7 +64,7 @@ struct NotificationContractTests {
             toDoTitle: "Water plants"
         )
 
-        #expect(content.title == "ToDo: repeating")
+        #expect(content.title == "toDō: repeating")
         #expect(content.categoryIdentifier == NotificationCategoryID.recurringReminder.rawValue)
         #expect(content.threadIdentifier == "todo-recurring")
         #expect(content.targetContentIdentifier == "todo-recurring")

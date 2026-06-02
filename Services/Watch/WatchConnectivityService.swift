@@ -150,7 +150,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
       do {
          let allToDos = try context.fetch(FetchDescriptor<ToDo>())
          let syncMode = SyncCoordinator.shared.effectiveSyncMode
-         let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.currentUserID : nil
+         let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.scopedOwnerUserID : nil
          let visibleToDos = allToDos
             .filter { $0.ownerUserID == ownerUserID && !$0.isArchived }
             .sorted(by: watchSort)
@@ -164,7 +164,19 @@ final class WatchConnectivityService: NSObject, ObservableObject {
                dueDate: toDo.dueDate,
                isTimeSensitive: toDo.reminderIntent == .timeSensitive,
                createdAt: toDo.createdAt,
-               updatedAt: toDo.syncUpdatedAt
+               updatedAt: toDo.syncUpdatedAt,
+               nanoDos: toDo.nanoDos
+                  .sorted { $0.syncUpdatedAt > $1.syncUpdatedAt }
+                  .map { nanoDo in
+                     WatchNanoDoItem(
+                        id: persistentIdentifierString(for: nanoDo),
+                        cloudID: nanoDo.cloudID,
+                        task: nanoDo.task,
+                        isDone: nanoDo.isDone,
+                        dueDate: nanoDo.dueDate,
+                        updatedAt: nanoDo.syncUpdatedAt
+                     )
+                  }
             )
          }
 
@@ -188,12 +200,12 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          send(receipt: WatchToDoActionReceipt(actionID: action.id, accepted: true))
       case .create:
          createToDo(from: action)
-      case .complete, .reopen, .setDueDate, .snooze, .openOnPhone:
+      case .complete, .reopen, .archive, .trash, .updateTask, .setDueDate, .snooze, .openOnPhone, .completeNanoDo, .reopenNanoDo, .deleteNanoDo:
          apply(action: action)
 
          SyncCoordinator.shared.showTransientFeedback(
-            title: "Watch Update",
-            message: "Applied \(actionName) successfully",
+            title: String(localized: "Watch Update"),
+            message: String(format: String(localized: "Applied %@ successfully"), actionName),
             style: .success
          )
       }
@@ -204,7 +216,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          send(receipt: WatchToDoActionReceipt(
             actionID: action.id,
             accepted: false,
-            message: "iPhone data store is not ready."
+            message: String(localized: "iPhone data store is not ready.")
          ))
          return
       }
@@ -214,7 +226,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          send(receipt: WatchToDoActionReceipt(
             actionID: action.id,
             accepted: false,
-            message: "Add a task before saving."
+            message: String(localized: "Add a task before saving.")
          ))
          return
       }
@@ -226,7 +238,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          return action.isTimeSensitive == true ? .timeSensitive : .due
       }()
       let syncMode = SyncCoordinator.shared.effectiveSyncMode
-      let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.currentUserID : nil
+      let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.scopedOwnerUserID : nil
 
       do {
          let toDo = ToDo(
@@ -258,7 +270,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          send(receipt: WatchToDoActionReceipt(
             actionID: action.id,
             accepted: false,
-            message: "iPhone data store is not ready."
+            message: String(localized: "iPhone data store is not ready.")
          ))
          return
       }
@@ -271,18 +283,67 @@ final class WatchConnectivityService: NSObject, ObservableObject {
             send(receipt: WatchToDoActionReceipt(
                actionID: action.id,
                accepted: false,
-               message: "ToDo was not found on iPhone."
+               message: String(localized: "toDō was not found on iPhone.")
             ))
             refreshSnapshot()
             return
          }
 
          switch action.type {
+         case .updateTask:
+            let task = action.task?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !task.isEmpty else {
+               send(receipt: WatchToDoActionReceipt(
+                  actionID: action.id,
+                  accepted: false,
+                  message: String(localized: "Add a task before saving.")
+               ))
+               return
+            }
+            toDo.task = task
+            toDo.markUpdated()
          case .complete:
             toDo.transition(to: .done)
             LiveActivityService.shared.endActivity(for: toDo)
          case .reopen:
             toDo.transition(to: .active)
+         case .archive:
+            toDo.transition(to: .archived)
+            LiveActivityService.shared.endActivity(for: toDo)
+         case .trash:
+            toDo.trashedAt = Date()
+            toDo.transition(to: .trashed)
+            LiveActivityService.shared.endActivity(for: toDo)
+         case .completeNanoDo, .reopenNanoDo, .deleteNanoDo:
+            guard let nanoDo = nanoDo(matching: action, in: toDo.nanoDos) else {
+               send(receipt: WatchToDoActionReceipt(
+                  actionID: action.id,
+                  accepted: false,
+                  message: String(localized: "nanoDo was not found on iPhone.")
+               ))
+               refreshSnapshot()
+               return
+            }
+
+            switch action.type {
+            case .completeNanoDo:
+               nanoDo.isDone = true
+               nanoDo.markUpdated()
+            case .reopenNanoDo:
+               nanoDo.isDone = false
+               nanoDo.markUpdated()
+            case .deleteNanoDo:
+               SyncTombstoneStore.recordDelete(
+                  table: .nanoDos,
+                  recordID: nanoDo.cloudID,
+                  userID: nanoDo.ownerUserID
+               )
+               toDo.nanoDos.removeAll { $0 === nanoDo }
+               context.delete(nanoDo)
+            default:
+               break
+            }
+            toDo.markUpdated()
          case .setDueDate:
             toDo.dueDate = action.dueDate
             if action.dueDate == nil {
@@ -299,7 +360,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
                send(receipt: WatchToDoActionReceipt(
                   actionID: action.id,
                   accepted: false,
-                  message: "Choose a snooze duration."
+                  message: String(localized: "Choose a snooze duration.")
                ))
                return
             }
@@ -320,8 +381,8 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          try context.save()
 
          SyncCoordinator.shared.showTransientFeedback(
-            title: "Watch Update",
-            message: "Applied \(action.type.rawValue) to '\(toDo.task)",
+            title: String(localized: "Watch Update"),
+            message: String(format: String(localized: "Applied %@ to %@"), action.type.rawValue, toDo.task),
             style: .success
          )
 
@@ -354,6 +415,19 @@ final class WatchConnectivityService: NSObject, ObservableObject {
       return nil
    }
 
+   private func nanoDo(matching action: WatchToDoAction, in nanoDos: [NanoDo]) -> NanoDo? {
+      if let cloudID = action.nanoDoCloudID,
+         let nanoDo = nanoDos.first(where: { $0.cloudID == cloudID }) {
+         return nanoDo
+      }
+
+      if let localIdentifier = action.nanoDoLocalIdentifier {
+         return nanoDos.first { persistentIdentifierString(for: $0) == localIdentifier }
+      }
+
+      return nil
+   }
+
    private func watchSort(_ lhs: ToDo, _ rhs: ToDo) -> Bool {
       if lhs.isDoneState != rhs.isDoneState {
          return !lhs.isDoneState
@@ -370,6 +444,10 @@ final class WatchConnectivityService: NSObject, ObservableObject {
 
    private func persistentIdentifierString(for toDo: ToDo) -> String {
       String(describing: toDo.id)
+   }
+
+   private func persistentIdentifierString(for nanoDo: NanoDo) -> String {
+      String(describing: nanoDo.id)
    }
 
    private func currentAuthState() -> WatchAuthState {

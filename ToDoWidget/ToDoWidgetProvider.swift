@@ -9,7 +9,7 @@ struct ToDoWidgetProvider: AppIntentTimelineProvider {
       ToDoWidgetEntry(
          date: .now,
          configuration: configuration,
-         snapshot: WidgetToDoService().snapshot() ?? .placeholder
+         snapshot: WidgetToDoService().snapshot() ?? .empty
       )
    }
 

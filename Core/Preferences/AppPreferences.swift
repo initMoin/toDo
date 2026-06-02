@@ -19,7 +19,10 @@ enum AppPreferences {
       static let toDoFocusFilterMode = "todoFocusFilterMode"
       static let appIconBadgePolicy = "appIconBadgePolicy"
       static let notificationSoundOption = "notificationSoundOption"
+      static let appTheme = "appTheme"
+      static let appAppearanceMode = "appAppearanceMode"
       static let statsInsightsEnabled = "statsInsightsEnabled"
+      static let pushInstallationID = "pushInstallationID"
       static let remotePushDeviceToken = "remotePushDeviceToken"
       static let lastSignInProvider = "lastSignInProvider"
       static let lastSignInProviderUserID = "lastSignInProviderUserID"
@@ -127,7 +130,7 @@ enum AppPreferences {
          case .off:
             return String(localized: "Off")
          case .activeToDos:
-            return String(localized: "Active ToDos")
+            return String(localized: "Active toDōs")
          case .dueToday:
             return String(localized: "Due Today")
          case .overdue:
@@ -142,17 +145,17 @@ enum AppPreferences {
       var detail: String {
          switch self {
          case .off:
-            return String(localized: "No app icon badge.")
+            return String(localized: "Hide the app icon count.")
          case .activeToDos:
-            return String(localized: "Counts every active ToDo.")
+            return String(localized: "Count all active toDōs.")
          case .dueToday:
-            return String(localized: "Counts active ToDos due today.")
+            return String(localized: "Count active toDōs due today.")
          case .overdue:
-            return String(localized: "Counts active ToDos past due.")
+            return String(localized: "Count active toDōs past due.")
          case .timeSensitive:
-            return String(localized: "Counts active time-sensitive ToDos.")
+            return String(localized: "Count active Time-Sensitive toDōs.")
          case .scheduledReminders:
-            return String(localized: "Counts active ToDos with a future reminder.")
+            return String(localized: "Count active toDōs with a future reminder.")
          }
       }
    }
@@ -184,15 +187,15 @@ enum AppPreferences {
       var detail: String {
          switch self {
          case .defaultSound:
-            return String(localized: "Use the system default notification sound.")
+            return String(localized: "Use the device default.")
          case .silent:
-            return String(localized: "Show reminder alerts without sound.")
+            return String(localized: "Show alerts without sound.")
          case .softChime:
-            return String(localized: "Use a quieter two-note reminder sound.")
+            return String(localized: "A quieter two-note sound.")
          case .brightPing:
-            return String(localized: "Use a sharper sound for clear reminders.")
+            return String(localized: "A sharper sound for clear reminders.")
          case .urgentDouble:
-            return String(localized: "Use a stronger double alert for due ToDos.")
+            return String(localized: "A stronger double alert.")
          }
       }
 
@@ -206,6 +209,36 @@ enum AppPreferences {
             return "todo-bright-ping.wav"
          case .urgentDouble:
             return "todo-urgent-double.wav"
+         }
+      }
+   }
+
+   enum AppAppearanceMode: String, CaseIterable, Identifiable {
+      case system
+      case light
+      case dark
+
+      var id: String { rawValue }
+
+      var title: String {
+         switch self {
+         case .system:
+            return String(localized: "System")
+         case .light:
+            return String(localized: "Light")
+         case .dark:
+            return String(localized: "Dark")
+         }
+      }
+
+      var detail: String {
+         switch self {
+         case .system:
+            return String(localized: "Follow the device appearance setting.")
+         case .light:
+            return String(localized: "Keep toDō in light mode.")
+         case .dark:
+            return String(localized: "Keep toDō in dark mode.")
          }
       }
    }
@@ -228,6 +261,8 @@ enum AppPreferences {
          Keys.toDoFocusFilterMode: "all",
          Keys.appIconBadgePolicy: AppIconBadgePolicy.overdue.rawValue,
          Keys.notificationSoundOption: NotificationSoundOption.defaultSound.rawValue,
+         Keys.appTheme: "classic",
+         Keys.appAppearanceMode: AppAppearanceMode.system.rawValue,
          Keys.mirrorSyncDeletesToDeviceOnly: true,
       ]
    }

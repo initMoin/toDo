@@ -32,21 +32,23 @@ struct StatsView: View {
    }
 
    var body: some View {
+      let currentSnapshot = snapshot
+
       ZStack(alignment: .top) {
          AppColor.surface
             .ignoresSafeArea()
 
          ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-               StatsHeroCard(snapshot: snapshot)
-               StatsFocusGrid(snapshot: snapshot)
-               StatsMomentumCard(snapshot: snapshot)
-               StatsWorkloadCard(snapshot: snapshot)
-               StatsTagCard(snapshot: snapshot)
-               StatsTrendCard(snapshot: snapshot)
-               StatsPlanningCard(snapshot: snapshot)
-               StatsPressureCard(snapshot: snapshot)
-               StatsInsightCard(snapshot: snapshot, isEnabled: $statsInsightsEnabled)
+               StatsHeroCard(snapshot: currentSnapshot)
+               StatsFocusGrid(snapshot: currentSnapshot)
+               StatsMomentumCard(snapshot: currentSnapshot)
+               StatsWorkloadCard(snapshot: currentSnapshot)
+               StatsTagCard(snapshot: currentSnapshot)
+               StatsTrendCard(snapshot: currentSnapshot)
+               StatsPlanningCard(snapshot: currentSnapshot)
+               StatsPressureCard(snapshot: currentSnapshot)
+               StatsInsightCard(snapshot: currentSnapshot, isEnabled: $statsInsightsEnabled)
             }
             .padding(.horizontal, 16)
             .padding(.top, 92)
@@ -122,8 +124,8 @@ private struct ToDoStatsSnapshot {
       let withoutNanoDos = toDos.filter { $0.nanoDos.isEmpty && $0.lifecycleState != .trashed }
       let nanoTotal = nanoDos.count
       let nanoCompleted = nanoDos.filter(\.isDone).count
-      let tagUsage = Self.tagUsage(from: toDos, tags: tags)
-      let activeTagUsage = Self.tagUsage(from: active, tags: tags)
+      let tagUsage = Self.tagUsage(from: toDos)
+      let activeTagUsage = Self.tagUsage(from: active)
       let topTag = tagUsage.max { lhs, rhs in
          if lhs.value == rhs.value { return lhs.key > rhs.key }
          return lhs.value < rhs.value
@@ -225,7 +227,7 @@ private struct ToDoStatsSnapshot {
    }
 
    var oldestActiveLabel: String {
-      guard let oldestActiveAgeInDays else { return String(localized: "No active ToDos") }
+      guard let oldestActiveAgeInDays else { return String(localized: "No active toDōs") }
       return AppLocalization.localizedCount(oldestActiveAgeInDays, singularKey: "%@ day", pluralKey: "%@ days")
    }
 
@@ -251,15 +253,15 @@ private struct ToDoStatsSnapshot {
 
    var strongestInsight: String {
       if overdueToDos > 0 {
-         return String(localized: "Overdue ToDos are creating the most pressure right now.")
+         return String(localized: "Overdue toDōs are creating the most pressure right now.")
       }
 
       if staleFourteenDays > 0 {
-         return String(localized: "Some active ToDos have not moved in over two weeks.")
+         return String(localized: "Some active toDōs have not moved in over two weeks.")
       }
 
       if completionRateWithNanoDos > completionRateWithoutNanoDos, activeToDosWithNanoDos > 0 {
-         return String(localized: "ToDos with NanoDos are completing at a stronger rate.")
+         return String(localized: "toDōs with NanoDos are completing at a stronger rate.")
       }
 
       if dueTodayToDos > 0 {
@@ -269,8 +271,8 @@ private struct ToDoStatsSnapshot {
       return String(localized: "You're caught up. Nothing needs urgent attention right now.")
    }
 
-   private static func tagUsage(from toDos: [ToDo], tags: [Tag]) -> [String: Int] {
-      var usage: [String: Int] = Dictionary(uniqueKeysWithValues: tags.map { ($0.displayName, 0) })
+   private static func tagUsage(from toDos: [ToDo]) -> [String: Int] {
+      var usage: [String: Int] = [:]
 
       for toDo in toDos where toDo.lifecycleState != .trashed {
          for tag in toDo.effectiveTags {
@@ -306,6 +308,7 @@ private struct ToDoStatsSnapshot {
 }
 
 private struct StatsHeader: View {
+   @Environment(\.colorScheme) private var colorScheme
    let onBack: () -> Void
 
    var body: some View {
@@ -316,14 +319,20 @@ private struct StatsHeader: View {
                   .font(.system(size: 16, weight: .bold))
                   .foregroundStyle(AppColor.secondary)
                   .frame(width: 36, height: 36)
-                  .background(AppColor.white, in: Circle())
+                  .background {
+                     if #unavailable(iOS 26.0) {
+                        Circle()
+                           .fill(AppColor.headerControlBackground(for: colorScheme))
+                     }
+                  }
+                  .appInteractiveCircleGlass(tint: AppColor.headerControlBackground(for: colorScheme))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Go back to Settings")
 
             Text("Stats")
                .font(.appTitle(28, relativeTo: .title))
-               .foregroundStyle(AppColor.white)
+               .foregroundStyle(AppColor.headerForeground(for: colorScheme))
                .lineLimit(1)
                .minimumScaleFactor(0.82)
                .accessibilityAddTraits(.isHeader)
@@ -348,19 +357,15 @@ private struct StatsHeroCard: View {
          HStack(alignment: .top, spacing: 14) {
             Image(systemName: "chart.line.uptrend.xyaxis")
                .font(.appBodyStrong(22, relativeTo: .title3))
-               .foregroundStyle(AppColor.secondary)
+               .foregroundStyle(AppColor.white)
                .frame(width: 48, height: 48)
-               .background(AppColor.secondary.opacity(0.14), in: Circle())
+               .background(AppColor.secondary, in: Circle())
+               .shadow(color: AppColor.secondary.opacity(0.24), radius: 14, y: 8)
 
             VStack(alignment: .leading, spacing: 6) {
                Text("Measure what matters")
                   .font(.appDisplay(24, relativeTo: .title2))
                   .foregroundStyle(AppColor.textPrimary)
-
-               Text("A live read on task pressure, completion momentum, and how much structure your ToDos carry.")
-                  .font(.appBody(14, relativeTo: .body))
-                  .foregroundStyle(AppColor.textSecondary)
-                  .fixedSize(horizontal: false, vertical: true)
             }
          }
 
@@ -370,7 +375,7 @@ private struct StatsHeroCard: View {
             StatsHeroMetric(title: "Overdue", value: snapshot.overdueToDos, tint: AppColor.destructive)
          }
       }
-      .statsCardStyle()
+      .statsCardStyle(accent: AppColor.secondary)
    }
 }
 
@@ -407,7 +412,7 @@ private struct StatsFocusGrid: View {
          StatsTile(title: "Due Today", value: AppLocalization.numberString(snapshot.dueTodayToDos), systemName: "calendar", tint: AppColor.tertiary)
          StatsTile(title: "Time-Sensitive", value: AppLocalization.numberString(snapshot.timeSensitiveToDos), systemName: "bolt.fill", tint: AppColor.destructive)
          StatsTile(title: "Scheduled", value: snapshot.dueDateCoverageLabel, systemName: "clock.badge.checkmark", tint: AppColor.secondary)
-         StatsTile(title: "Recurring", value: AppLocalization.numberString(snapshot.recurringToDos), systemName: "repeat", tint: AppColor.black)
+         StatsTile(title: "Recurring", value: AppLocalization.numberString(snapshot.recurringToDos), systemName: "repeat", tint: AppColor.main)
       }
    }
 }
@@ -417,7 +422,7 @@ private struct StatsMomentumCard: View {
 
    var body: some View {
       VStack(alignment: .leading, spacing: 16) {
-         StatsSectionHeader(title: "Momentum", subtitle: snapshot.activeHealthLabel, systemName: "speedometer", tint: AppColor.tertiary)
+         StatsSectionHeader(title: "Momentum", systemName: "speedometer", tint: AppColor.tertiary)
 
          StatsProgressRow(title: "Completion Rate", value: snapshot.completionRateLabel, progress: snapshot.completionRate, tint: AppColor.tertiary)
          StatsProgressRow(title: "NanoDo Completion", value: snapshot.nanoDoCompletionRateLabel, progress: snapshot.nanoDoCompletionRate, tint: AppColor.tertiary)
@@ -428,7 +433,7 @@ private struct StatsMomentumCard: View {
             StatsCompactMetric(title: "Done 30 Days", value: AppLocalization.numberString(snapshot.completedThisMonth), tint: AppColor.tertiary)
          }
       }
-      .statsCardStyle()
+      .statsCardStyle(accent: AppColor.tertiary)
    }
 }
 
@@ -437,14 +442,14 @@ private struct StatsWorkloadCard: View {
 
    var body: some View {
       VStack(alignment: .leading, spacing: 16) {
-         StatsSectionHeader(title: "Workload Shape", subtitle: "What your active list is carrying.", systemName: "square.stack.3d.up", tint: AppColor.secondary)
+         StatsSectionHeader(title: "Workload Shape", systemName: "square.stack.3d.up", tint: AppColor.secondary)
 
          StatsDetailRow(title: "Open NanoDos", value: AppLocalization.numberString(snapshot.openNanoDos), systemName: "smallcircle.filled.circle", tint: AppColor.secondary)
          StatsDetailRow(title: "Average NanoDos", value: snapshot.averageNanoDosLabel, systemName: "number", tint: AppColor.secondary)
          StatsDetailRow(title: "Location Reminders", value: AppLocalization.numberString(snapshot.locationReminderToDos), systemName: "location.fill", tint: AppColor.secondary)
          StatsDetailRow(title: "Oldest Active", value: snapshot.oldestActiveLabel, systemName: "hourglass", tint: AppColor.secondary)
       }
-      .statsCardStyle()
+      .statsCardStyle(accent: AppColor.secondary)
    }
 }
 
@@ -453,14 +458,14 @@ private struct StatsTagCard: View {
 
    var body: some View {
       VStack(alignment: .leading, spacing: 16) {
-         StatsSectionHeader(title: "Organization", subtitle: "Tags, archives, and cleanup signals.", systemName: "tag.fill", tint: AppColor.textSecondary)
+         StatsSectionHeader(title: "Organization", systemName: "tag.fill", tint: AppColor.main)
 
-         StatsDetailRow(title: "Top Tag", value: topTagLabel, systemName: "number", tint: AppColor.textSecondary)
-         StatsDetailRow(title: "Archived", value: AppLocalization.numberString(snapshot.archivedToDos), systemName: "archivebox.fill", tint: AppColor.textSecondary)
-         StatsDetailRow(title: "Trash", value: AppLocalization.numberString(snapshot.trashedToDos), systemName: "trash.fill", tint: AppColor.textSecondary)
-         StatsDetailRow(title: "Total ToDos", value: AppLocalization.numberString(snapshot.totalToDos), systemName: "tray.full.fill", tint: AppColor.textSecondary)
+         StatsDetailRow(title: "Top Tag", value: topTagLabel, systemName: "number", tint: AppColor.main)
+         StatsDetailRow(title: "Archived", value: AppLocalization.numberString(snapshot.archivedToDos), systemName: "archivebox.fill", tint: AppColor.main)
+         StatsDetailRow(title: "Trash", value: AppLocalization.numberString(snapshot.trashedToDos), systemName: "trash.fill", tint: AppColor.main)
+         StatsDetailRow(title: "Total toDōs", value: AppLocalization.numberString(snapshot.totalToDos), systemName: "tray.full.fill", tint: AppColor.main)
       }
-      .statsCardStyle()
+      .statsCardStyle(accent: AppColor.main)
    }
 
    private var topTagLabel: String {
@@ -477,7 +482,7 @@ private struct StatsTrendCard: View {
 
    var body: some View {
       VStack(alignment: .leading, spacing: 16) {
-         StatsSectionHeader(title: "Completion Trends", subtitle: "Recent completion pace and list movement.", systemName: "chart.xyaxis.line", tint: AppColor.tertiary)
+         StatsSectionHeader(title: "Completion Trends", systemName: "chart.xyaxis.line", tint: AppColor.tertiary)
 
          HStack(spacing: 12) {
             StatsCompactMetric(title: "Done Last 7 Days", value: AppLocalization.numberString(snapshot.completedLastSevenDays), tint: AppColor.tertiary)
@@ -486,7 +491,7 @@ private struct StatsTrendCard: View {
 
          StatsProgressRow(title: "Overall Completion", value: snapshot.completionRateLabel, progress: snapshot.completionRate, tint: AppColor.tertiary)
       }
-      .statsCardStyle()
+      .statsCardStyle(accent: AppColor.tertiary)
    }
 }
 
@@ -495,7 +500,7 @@ private struct StatsPlanningCard: View {
 
    var body: some View {
       VStack(alignment: .leading, spacing: 16) {
-         StatsSectionHeader(title: "Planning Accuracy", subtitle: "Due dates, late work, and schedule follow-through.", systemName: "calendar.badge.clock", tint: AppColor.secondary)
+         StatsSectionHeader(title: "Planning Accuracy", systemName: "calendar.badge.clock", tint: AppColor.secondary)
 
          StatsProgressRow(title: "On-Time Due Completion", value: snapshot.onTimeCompletionRateLabel, progress: Double(snapshot.onTimeCompletedDueToDos) / Double(max(snapshot.onTimeCompletedDueToDos + snapshot.lateCompletedDueToDos, 1)), tint: AppColor.secondary)
          StatsDetailRow(title: "Completed Before Due", value: AppLocalization.numberString(snapshot.onTimeCompletedDueToDos), systemName: "checkmark.circle.fill", tint: AppColor.secondary)
@@ -503,7 +508,7 @@ private struct StatsPlanningCard: View {
          StatsDetailRow(title: "No-Due Completions", value: AppLocalization.numberString(snapshot.noDueCompletedToDos), systemName: "minus.circle.fill", tint: AppColor.secondary)
          StatsDetailRow(title: "Overdue Pattern", value: snapshot.overduePatternLabel, systemName: "calendar", tint: AppColor.secondary)
       }
-      .statsCardStyle()
+      .statsCardStyle(accent: AppColor.secondary)
    }
 }
 
@@ -512,7 +517,7 @@ private struct StatsPressureCard: View {
 
    var body: some View {
       VStack(alignment: .leading, spacing: 16) {
-         StatsSectionHeader(title: "Pressure Signals", subtitle: "What may need cleanup or focused attention.", systemName: "gauge.with.dots.needle.67percent", tint: AppColor.destructive)
+         StatsSectionHeader(title: "Pressure Signals", systemName: "gauge.with.dots.needle.67percent", tint: AppColor.destructive)
 
          StatsProgressRow(title: "Focus Pressure", value: snapshot.focusPressureLabel, progress: Double(snapshot.focusPressureScore) / 100, tint: AppColor.destructive)
          StatsDetailRow(title: "Stale 7 Days", value: AppLocalization.numberString(snapshot.staleSevenDays), systemName: "clock.arrow.circlepath", tint: AppColor.destructive)
@@ -521,7 +526,7 @@ private struct StatsPressureCard: View {
          StatsDetailRow(title: "Overdue Recurring", value: AppLocalization.numberString(snapshot.overdueRecurringToDos), systemName: "repeat.circle.fill", tint: AppColor.destructive)
          StatsDetailRow(title: "Top Active Tag", value: topActiveTagLabel, systemName: "tag.fill", tint: AppColor.destructive)
       }
-      .statsCardStyle()
+      .statsCardStyle(accent: AppColor.destructive)
    }
 
    private var topActiveTagLabel: String {
@@ -534,11 +539,12 @@ private struct StatsPressureCard: View {
 }
 
 private struct StatsInsightCard: View {
+   @Environment(\.accessibilityReduceMotion) private var reduceMotion
    let snapshot: ToDoStatsSnapshot
    @Binding var isEnabled: Bool
    @State private var animateGlow = false
    @State private var didUnlock = false
-   
+
    @State private var orbOneSize: CGFloat = 150
    @State private var orbTwoSize: CGFloat = 92
    @State private var orbOneOpacity: Double = 0.14
@@ -562,7 +568,7 @@ private struct StatsInsightCard: View {
                   .scaleEffect(didUnlock ? 1.08 : 1)
 
                VStack(alignment: .leading, spacing: 5) {
-                  Text(isEnabled ? "Insights Unlocked" : "Private Insights")
+                  Text(isEnabled ? String(localized: "Insights Unlocked") : String(localized: "Private Insights"))
                      .font(.appDisplay(24, relativeTo: .title2))
                      .foregroundStyle(AppColor.textPrimary)
 
@@ -580,8 +586,9 @@ private struct StatsInsightCard: View {
             if isEnabled {
                VStack(alignment: .leading, spacing: 14) {
                   Text(snapshot.strongestInsight)
-                     .font(.appBodyStrong(17, relativeTo: .body))
+                     .font(.appBodyStrong(18, relativeTo: .body))
                      .foregroundStyle(AppColor.textPrimary)
+                     .lineSpacing(2)
                      .fixedSize(horizontal: false, vertical: true)
                      .transition(.move(edge: .bottom).combined(with: .opacity))
 
@@ -591,6 +598,7 @@ private struct StatsInsightCard: View {
                }
             } else {
                Button {
+                  HapticFeedbackService.play(.reveal)
                   withAnimation(.spring(response: 0.48, dampingFraction: 0.78)) {
                      isEnabled = true
                      didUnlock = true
@@ -620,16 +628,19 @@ private struct StatsInsightCard: View {
          RoundedRectangle(cornerRadius: 30, style: .continuous)
             .stroke(AppColor.secondary.opacity(isEnabled ? 0.45 : 0.24), lineWidth: 1)
       }
+      .shadow(color: AppColor.secondary.opacity(isEnabled ? 0.18 : 0.08), radius: isEnabled ? 24 : 14, y: isEnabled ? 14 : 8)
       .onAppear {
-//         withAnimation(.easeInOut(duration: 1.9).repeatForever(autoreverses: true)) {
+         guard !reduceMotion else { return }
+
          withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
             animateGlow = true
-            
             backgroundShift = 0.22
          }
-         
-         randomizeOrbState()
-         
+      }
+      .task {
+         guard !reduceMotion else { return }
+
+         await runOrbAnimationLoop()
       }
       .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isEnabled)
    }
@@ -641,8 +652,6 @@ private struct StatsInsightCard: View {
             AppColor.secondary.opacity(isEnabled ? 0.18 : 0.1),
             AppColor.tertiary.opacity(isEnabled ? 0.12 : 0.06)
          ],
-//         startPoint: .topLeading,
-//         endPoint: .bottomTrailing
          startPoint: UnitPoint(x: backgroundShift, y: 0),
          endPoint: UnitPoint(x: 1.0 - backgroundShift, y: 1)
       )
@@ -650,25 +659,39 @@ private struct StatsInsightCard: View {
 
    private var decorativeOrbs: some View {
       ZStack {
-         Circle()
-//            .fill(AppColor.secondary.opacity(animateGlow ? 0.18 : 0.08))
-//            .frame(width: animateGlow ? 162 : 144, height: animateGlow ? 162 : 144)
-//            .offset(x: animateGlow ? 38 : 54, y: animateGlow ? -50 : -64)
-            .fill(AppColor.secondary.opacity(orbOneOpacity))
+      Circle()
+            .fill(
+               RadialGradient(
+                  colors: [
+                     AppColor.secondary.opacity(orbOneOpacity),
+                     AppColor.secondary.opacity(0)
+                  ],
+                  center: .center,
+                  startRadius: 0,
+                  endRadius: orbOneSize / 2
+               )
+            )
             .frame(width: orbOneSize, height: orbOneSize)
-            .blur(radius: animateGlow ? 0 : 6)
+            .blur(radius: animateGlow ? 1 : 8)
             .offset(orbOneOffset)
             .animation(.easeInOut(duration: 4.8), value: orbOneSize)
             .animation(.easeInOut(duration: 4.8), value: orbOneOpacity)
             .animation(.easeInOut(duration: 4.8), value: orbOneOffset)
 
          Circle()
-//            .fill(AppColor.tertiary.opacity(animateGlow ? 0.16 : 0.07))
-//            .frame(width: animateGlow ? 100 : 86, height: animateGlow ? 100 : 86)
-//            .offset(x: animateGlow ? -210 : -226, y: animateGlow ? 158 : 174)
-            .fill(AppColor.tertiary.opacity(orbTwoOpacity))
+            .fill(
+               RadialGradient(
+                  colors: [
+                     AppColor.tertiary.opacity(orbTwoOpacity),
+                     AppColor.tertiary.opacity(0)
+                  ],
+                  center: .center,
+                  startRadius: 0,
+                  endRadius: orbTwoSize / 2
+               )
+            )
             .frame(width: orbTwoSize, height: orbTwoSize)
-            .blur(radius: animateGlow ? 0 : 5)
+            .blur(radius: animateGlow ? 1 : 7)
             .offset(orbTwoOffset)
             .animation(.easeInOut(duration: 5.6), value: orbTwoSize)
             .animation(.easeInOut(duration: 5.6), value: orbTwoOpacity)
@@ -676,45 +699,43 @@ private struct StatsInsightCard: View {
       }
       .allowsHitTesting(false)
    }
-   
-   
-   private func randomizeOrbState() {
-      orbOneSize = CGFloat.random(in: 132...178)
-      orbTwoSize = CGFloat.random(in: 82...118)
-      
-      orbOneOpacity = Double.random(in: 0.08...0.18)
-      orbTwoOpacity = Double.random(in: 0.06...0.16)
-      
-      orbOneOffset = CGSize(
-         width: CGFloat.random(in: 26...64),
-         height: CGFloat.random(in: -76 ... -36)
-      )
-      
-      orbTwoOffset = CGSize(
-         width: CGFloat.random(in: -240 ... -188),
-         height: CGFloat.random(in: 132 ... 188)
-      )
-      
-      Timer.scheduledTimer(withTimeInterval: 5.2, repeats: true) { _ in
-         Task { @MainActor in
-            withAnimation(.easeInOut(duration: 5.2)) {
-               orbOneSize = CGFloat.random(in: 132...178)
-               orbTwoSize = CGFloat.random(in: 82...118)
-               
-               orbOneOpacity = Double.random(in: 0.08...0.18)
-               orbTwoOpacity = Double.random(in: 0.06...0.16)
-               
-               orbOneOffset = CGSize(
-                  width: CGFloat.random(in: 26...64),
-                  height: CGFloat.random(in: -76 ... -36)
-               )
-               
-               orbTwoOffset = CGSize(
-                  width: CGFloat.random(in: -240 ... -188),
-                  height: CGFloat.random(in: 132 ... 188)
-               )
-            }
+
+   private func runOrbAnimationLoop() async {
+      randomizeOrbState(animated: false)
+
+      while !Task.isCancelled {
+         try? await Task.sleep(for: .seconds(5.2))
+         guard !Task.isCancelled else { return }
+         randomizeOrbState(animated: true)
+      }
+   }
+
+   @MainActor
+   private func randomizeOrbState(animated: Bool) {
+      let updates = {
+         orbOneSize = CGFloat.random(in: 132...178)
+         orbTwoSize = CGFloat.random(in: 82...118)
+
+         orbOneOpacity = Double.random(in: 0.08...0.18)
+         orbTwoOpacity = Double.random(in: 0.06...0.16)
+
+         orbOneOffset = CGSize(
+            width: CGFloat.random(in: 26...64),
+            height: CGFloat.random(in: -76 ... -36)
+         )
+
+         orbTwoOffset = CGSize(
+            width: CGFloat.random(in: -240 ... -188),
+            height: CGFloat.random(in: 132 ... 188)
+         )
+      }
+
+      if animated {
+         withAnimation(.easeInOut(duration: 5.2)) {
+            updates()
          }
+      } else {
+         updates()
       }
    }
 }
@@ -744,31 +765,31 @@ private struct StatsTile: View {
       .padding(16)
       .frame(maxWidth: .infinity, minHeight: 148, alignment: .topLeading)
       .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 24))
+      .overlay {
+         RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .stroke(tint.opacity(0.18), lineWidth: 1)
+      }
    }
 }
 
 private struct StatsSectionHeader: View {
    let title: LocalizedStringKey
-   let subtitle: String
    let systemName: String
    var tint: Color = AppColor.secondary
 
    var body: some View {
-      HStack(alignment: .top, spacing: 12) {
+      HStack(alignment: .top, spacing: 14) {
          Image(systemName: systemName)
-            .font(.appBodyStrong(16, relativeTo: .headline))
-            .foregroundStyle(tint)
-            .frame(width: 34, height: 34)
-            .background(tint.opacity(0.14), in: Circle())
+            .font(.appBodyStrong(22, relativeTo: .title3))
+            .foregroundStyle(AppColor.white)
+            .frame(width: 48, height: 48)
+            .background(tint, in: Circle())
+            .shadow(color: tint.opacity(0.24), radius: 14, y: 8)
 
-         VStack(alignment: .leading, spacing: 3) {
+         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-               .font(.appDisplay(20, relativeTo: .title3))
+               .font(.appDisplay(24, relativeTo: .title2))
                .foregroundStyle(AppColor.textPrimary)
-
-            Text(subtitle)
-               .font(.appBody(13, relativeTo: .caption))
-               .foregroundStyle(AppColor.textSecondary)
          }
       }
    }
@@ -861,13 +882,14 @@ private struct StatsDetailRow: View {
 }
 
 private extension View {
-   func statsCardStyle() -> some View {
-      modifier(StatsCardModifier())
+   func statsCardStyle(accent: Color = AppColor.secondary) -> some View {
+      modifier(StatsCardModifier(accent: accent))
    }
 }
 
 private struct StatsCardModifier: ViewModifier {
    @Environment(\.colorScheme) private var colorScheme
+   let accent: Color
 
    func body(content: Content) -> some View {
       content
@@ -878,6 +900,7 @@ private struct StatsCardModifier: ViewModifier {
             RoundedRectangle(cornerRadius: 28, style: .continuous)
                .stroke(AppColor.border.opacity(colorScheme == .dark ? 0.7 : 0.45), lineWidth: 1)
          }
+         .shadow(color: AppColor.shadow.opacity(colorScheme == .dark ? 0.18 : 0.1), radius: 18, y: 10)
    }
 }
 

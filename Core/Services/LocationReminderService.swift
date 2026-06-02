@@ -53,9 +53,9 @@ final class LocationReminderService: NSObject, ObservableObject {
    var locationReminderStatusMessage: String {
       switch authorizationStatus {
       case .authorizedAlways:
-         return String(localized: "Ready. Arrival and leaving reminders can work when ToDo is not open.")
+         return String(localized: "Ready. Arrival and leaving reminders can work when toDō is not open.")
       case .authorizedWhenInUse:
-         return String(localized: "Allow Always Location access so arrival and leaving reminders can work after ToDo is closed.")
+         return String(localized: "Allow Always Location access so arrival and leaving reminders can work after toDō is closed.")
       case .notDetermined:
          return String(localized: "iOS will ask for location access. Choose Always for reliable arrival and leaving reminders.")
       case .denied, .restricted:
@@ -204,10 +204,10 @@ final class LocationReminderService: NSObject, ObservableObject {
 
          let trigger = triggerKind(from: regionIdentifier) ?? .arriving
          let place = toDo.locationReminderLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
-         let title = trigger == .arriving ? "ToDo: arrived" : "ToDo: leaving"
+         let title = trigger == .arriving ? "toDō: arrived" : "toDō: leaving"
          let bodyBase = toDo.task.trimmingCharacters(in: .whitespacesAndNewlines)
          let body = bodyBase.isEmpty
-            ? "Open ToDo to review this location reminder."
+            ? "Open toDō to review this location reminder."
             : place?.isEmpty == false ? "\(bodyBase) near \(place!)" : bodyBase
 	         let content = NotificationContentBuilder.content(
 	            for: .reminder,

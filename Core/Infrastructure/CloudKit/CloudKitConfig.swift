@@ -10,6 +10,6 @@ enum CloudKitConfig {
             return .none
         }
 
-        return syncMode.usesCloudKit && isAvailable ? .automatic : .none
+        return syncMode.usesCloudKit && isAvailable ? .private(containerIdentifier) : .none
     }
 }

@@ -45,7 +45,7 @@ struct WidgetHeader: View {
             .foregroundStyle(WidgetPalette.secondary)
             .monospacedDigit()
             .frame(minWidth: countBadgeSize, minHeight: countBadgeSize)
-            .accessibilityLabel("\(count) incomplete ToDos")
+            .accessibilityLabel("\(count) incomplete toDōs")
       }
       .padding(.horizontal, headerHorizontalPadding)
       .padding(.vertical, headerVerticalPadding)
@@ -108,7 +108,7 @@ struct WidgetEmptyState: View {
          Text("Clear")
             .font(WidgetTypography.title(24, relativeTo: .title3))
             .foregroundStyle(WidgetPalette.textPrimary)
-         Text("No pending ToDos.")
+         Text("No pending toDōs.")
             .font(WidgetTypography.bodyStrong(12, relativeTo: .caption))
             .foregroundStyle(WidgetPalette.textSecondary)
       }

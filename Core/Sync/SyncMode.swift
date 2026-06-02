@@ -14,18 +14,18 @@ enum SyncMode: String, CaseIterable, Codable, Identifiable {
         case .iCloud:
             return String(localized: "Sync with iCloud")
         case .syncEverywhere:
-            return String(localized: "ToDo Sync")
+            return String(localized: "toDō Sync")
         }
     }
 
     var subtitle: String {
         switch self {
         case .deviceOnly:
-            return String(localized: "Highest privacy. Your data stays on this device.")
+            return String(localized: "Keep your toDōs only on this device.")
         case .iCloud:
-            return String(localized: "Best for Apple devices. Uses your private iCloud storage.")
+            return String(localized: "Keep your Apple devices in step with iCloud.")
         case .syncEverywhere:
-            return String(localized: "Best for iPhone, Android, and web. Uses your ToDo account.")
+            return String(localized: "Use your toDō account for iPhone, Android, and web.")
         }
     }
 

@@ -12,15 +12,12 @@
 	<string>https://kddeevmuyevhgoyvrdlc.supabase.co</string>
 	<key>UIAppFonts</key>
 	<array>
-		<string>carbonplus-light.otf</string>
 		<string>CalSans-Regular.ttf</string>
 		<string>Jura-Variable.ttf</string>
 		<string>nixieone-regular.ttf</string>
 		<string>bjorn-light.otf</string>
 		<string>bjorn-regular.otf</string>
 		<string>bebas-neue.ttf</string>
-		<string>carbonplus-regular.otf</string>
-		<string>carbonplus-bold.otf</string>
 		<string>Aleo-Bold.ttf</string>
 		<string>Aleo-BoldItalic.ttf</string>
 	</array>

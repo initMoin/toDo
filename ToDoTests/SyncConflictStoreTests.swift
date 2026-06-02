@@ -42,7 +42,7 @@ struct SyncConflictStoreTests {
         #expect(didRecordFirstConflict)
         #expect(!didRecordSecondConflict)
         #expect(conflicts.count == 1)
-        #expect(conflicts.first?.title == "Sync Needs Review")
+        #expect(conflicts.first?.title == "Choose a Version")
         #expect(conflicts.first?.recordID == recordID)
     }
 
@@ -90,6 +90,7 @@ struct SyncConflictStoreTests {
         #expect(toDo.recurrenceMode == .finite)
         #expect(toDo.recurrenceCount == 3)
         #expect(toDo.lastSyncedUpdatedAt == syncedUpdatedAt)
+        #expect(toDo.lastSyncedUpdatedAt == toDo.updatedAt)
     }
 
     private func makeContext() throws -> ModelContext {

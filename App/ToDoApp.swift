@@ -16,6 +16,7 @@ struct ToDoApp: App {
    @State private var didRunInitialStartupMaintenance = false
    @State private var isRunningForegroundMaintenance = false
    @AppStorage("todo.lastForegroundRemoteRefreshAt") private var lastForegroundRemoteRefreshAt = 0.0
+   @AppStorage(AppPreferences.Keys.appAppearanceMode) private var appAppearanceModeRaw = AppPreferences.AppAppearanceMode.system.rawValue
 
    private let sharedModelContainer: ModelContainer
    private let isRunningInPreview: Bool
@@ -31,6 +32,9 @@ struct ToDoApp: App {
       shouldStartSupabaseAuth = !isPreview && !isScreenshot
       _supabaseAuthStore = StateObject(wrappedValue: isPreview ? .preview : .shared)
       AppPreferences.registerDefaults()
+      if isScreenshot {
+         Self.prepareScreenshotPreferences()
+      }
       let preferredSyncMode = AppPreferences.preferredSyncMode()
       let storedSyncMode = UserDefaults.standard.string(forKey: AppPreferences.Keys.syncMode).flatMap(SyncMode.init(rawValue:))
       if storedSyncMode != preferredSyncMode {
@@ -93,6 +97,7 @@ struct ToDoApp: App {
             }
          }
          .appBaseTypography()
+         .preferredColorScheme(preferredAppColorScheme)
          .environmentObject(supabaseAuthStore)
          .onOpenURL { url in
             guard !isRunningInPreview else { return }
@@ -116,6 +121,7 @@ struct ToDoApp: App {
       await NotificationManager.shared.refreshAuthorizationStatus()
       NotificationManager.shared.scheduleRefresh()
       LocationReminderService.shared.syncMonitoringFromStore()
+      LiveActivityService.shared.startObservingPushTokens()
       LiveActivityService.shared.refresh(from: sharedModelContainer)
 
       if refreshRemote {
@@ -132,6 +138,24 @@ struct ToDoApp: App {
 
    private var shouldRefreshRemoteOnForeground: Bool {
       Date().timeIntervalSince1970 - lastForegroundRemoteRefreshAt >= foregroundRemoteRefreshInterval
+   }
+
+   private var preferredAppColorScheme: ColorScheme? {
+      switch AppPreferences.AppAppearanceMode(rawValue: appAppearanceModeRaw) ?? .system {
+      case .system:
+         return nil
+      case .light:
+         return .light
+      case .dark:
+         return .dark
+      }
+   }
+
+   private static func prepareScreenshotPreferences() {
+      UserDefaults.standard.set(true, forKey: AppPreferences.Keys.didCompleteOnboarding)
+      UserDefaults.standard.set(true, forKey: AppPreferences.Keys.hasCompletedOnboardingOnce)
+      UserDefaults.standard.set(SyncMode.deviceOnly.rawValue, forKey: AppPreferences.Keys.syncMode)
+      UserDefaults.standard.removeObject(forKey: AppPreferences.Keys.currentOnboardingStep)
    }
 
    private static func makeModelContainer(
