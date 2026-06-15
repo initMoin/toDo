@@ -4,6 +4,7 @@ import SwiftData
 struct StatsView: View {
    @Environment(\.dismiss) private var dismiss
    @Environment(\.colorScheme) private var colorScheme
+   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
    @AppStorage(AppPreferences.Keys.statsInsightsEnabled) private var statsInsightsEnabled = false
    @Query private var toDos: [ToDo]
    @Query private var nanoDos: [NanoDo]
@@ -42,27 +43,53 @@ struct StatsView: View {
             VStack(alignment: .leading, spacing: 18) {
                StatsHeroCard(snapshot: currentSnapshot)
                StatsFocusGrid(snapshot: currentSnapshot)
-               StatsMomentumCard(snapshot: currentSnapshot)
-               StatsWorkloadCard(snapshot: currentSnapshot)
-               StatsTagCard(snapshot: currentSnapshot)
-               StatsTrendCard(snapshot: currentSnapshot)
-               StatsPlanningCard(snapshot: currentSnapshot)
-               StatsPressureCard(snapshot: currentSnapshot)
+
+               if usesRegularWidthLayout {
+                  LazyVGrid(columns: statsBoardColumns, alignment: .center, spacing: 18) {
+                     StatsMomentumCard(snapshot: currentSnapshot)
+                     StatsWorkloadCard(snapshot: currentSnapshot)
+                     StatsTagCard(snapshot: currentSnapshot)
+                     StatsTrendCard(snapshot: currentSnapshot)
+                     StatsPlanningCard(snapshot: currentSnapshot)
+                     StatsPressureCard(snapshot: currentSnapshot)
+                  }
+               } else {
+                  StatsMomentumCard(snapshot: currentSnapshot)
+                  StatsWorkloadCard(snapshot: currentSnapshot)
+                  StatsTagCard(snapshot: currentSnapshot)
+                  StatsTrendCard(snapshot: currentSnapshot)
+                  StatsPlanningCard(snapshot: currentSnapshot)
+                  StatsPressureCard(snapshot: currentSnapshot)
+               }
+
                StatsInsightCard(snapshot: currentSnapshot, isEnabled: $statsInsightsEnabled)
             }
+            .frame(maxWidth: statsContentMaxWidth, alignment: .top)
+            .frame(maxWidth: .infinity, alignment: .top)
             .padding(.horizontal, 16)
-            .padding(.top, 92)
+            .padding(.top, 18)
             .padding(.bottom, 28)
-         }
-
-         StatsHeader {
-            dismiss()
          }
       }
       .background(AppColor.surface)
       .appBaseTypography()
-      .appNavigationChrome()
-      .toolbar(.hidden, for: .navigationBar)
+      .settingsNativeNavigationTitle("Stats", colorScheme: colorScheme, background: AppColor.secondary)
+      .accessibilityIdentifier("stats.view")
+   }
+
+   private var usesRegularWidthLayout: Bool {
+      horizontalSizeClass == .regular
+   }
+
+   private var statsContentMaxWidth: CGFloat {
+      usesRegularWidthLayout ? 1040 : .infinity
+   }
+
+   private var statsBoardColumns: [GridItem] {
+      [
+         GridItem(.flexible(minimum: 320, maximum: 500), spacing: 18, alignment: .top),
+         GridItem(.flexible(minimum: 320, maximum: 500), spacing: 18, alignment: .top)
+      ]
    }
 }
 
@@ -307,64 +334,22 @@ private struct ToDoStatsSnapshot {
    }
 }
 
-private struct StatsHeader: View {
-   @Environment(\.colorScheme) private var colorScheme
-   let onBack: () -> Void
-
-   var body: some View {
-      VStack(spacing: 0) {
-         HStack(alignment: .center, spacing: 14) {
-            Button(action: onBack) {
-               Image(systemName: "chevron.left")
-                  .font(.system(size: 16, weight: .bold))
-                  .foregroundStyle(AppColor.secondary)
-                  .frame(width: 36, height: 36)
-                  .background {
-                     if #unavailable(iOS 26.0) {
-                        Circle()
-                           .fill(AppColor.headerControlBackground(for: colorScheme))
-                     }
-                  }
-                  .appInteractiveCircleGlass(tint: AppColor.headerControlBackground(for: colorScheme))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Go back to Settings")
-
-            Text("Stats")
-               .font(.appTitle(28, relativeTo: .title))
-               .foregroundStyle(AppColor.headerForeground(for: colorScheme))
-               .lineLimit(1)
-               .minimumScaleFactor(0.82)
-               .accessibilityAddTraits(.isHeader)
-
-            Spacer(minLength: 0)
-         }
-         .frame(maxWidth: .infinity, alignment: .leading)
-         .padding(.horizontal, 16)
-         .padding(.top, 8)
-         .padding(.bottom, 14)
-         .background(AppColor.secondary)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-   }
-}
-
 private struct StatsHeroCard: View {
    let snapshot: ToDoStatsSnapshot
 
    var body: some View {
       VStack(alignment: .leading, spacing: 18) {
-         HStack(alignment: .top, spacing: 14) {
+         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "chart.line.uptrend.xyaxis")
-               .font(.appBodyStrong(22, relativeTo: .title3))
+               .font(.appBodyStrong(20, relativeTo: .title3))
                .foregroundStyle(AppColor.white)
-               .frame(width: 48, height: 48)
+               .frame(width: 44, height: 44)
                .background(AppColor.secondary, in: Circle())
                .shadow(color: AppColor.secondary.opacity(0.24), radius: 14, y: 8)
 
             VStack(alignment: .leading, spacing: 6) {
                Text("Measure what matters")
-                  .font(.appDisplay(24, relativeTo: .title2))
+                  .font(.appDisplay(26, relativeTo: .title2))
                   .foregroundStyle(AppColor.textPrimary)
             }
          }
@@ -586,15 +571,15 @@ private struct StatsInsightCard: View {
             if isEnabled {
                VStack(alignment: .leading, spacing: 14) {
                   Text(snapshot.strongestInsight)
-                     .font(.appBodyStrong(18, relativeTo: .body))
+                     .font(.appBody(18, relativeTo: .body))
                      .foregroundStyle(AppColor.textPrimary)
                      .lineSpacing(2)
                      .fixedSize(horizontal: false, vertical: true)
                      .transition(.move(edge: .bottom).combined(with: .opacity))
 
-                  StatsDetailRow(title: "With NanoDos", value: snapshot.completionRateWithNanoDosLabel, systemName: "checklist", tint: AppColor.secondary, valueSize: 16)
-                  StatsDetailRow(title: "Without NanoDos", value: snapshot.completionRateWithoutNanoDosLabel, systemName: "list.bullet", tint: AppColor.secondary, valueSize: 16)
-                  StatsDetailRow(title: "Recurring Done 30 Days", value: AppLocalization.numberString(snapshot.recurringCompletedLastThirtyDays), systemName: "repeat", tint: AppColor.secondary, valueSize: 16)
+                  StatsDetailRow(title: "With NanoDos", value: snapshot.completionRateWithNanoDosLabel, systemName: "checklist", tint: AppColor.secondary, valueSize: 18)
+                  StatsDetailRow(title: "Without NanoDos", value: snapshot.completionRateWithoutNanoDosLabel, systemName: "list.bullet", tint: AppColor.secondary, valueSize: 18)
+                  StatsDetailRow(title: "Recurring Done 30 Days", value: AppLocalization.numberString(snapshot.recurringCompletedLastThirtyDays), systemName: "repeat", tint: AppColor.secondary, valueSize: 18)
                }
             } else {
                Button {
@@ -778,17 +763,17 @@ private struct StatsSectionHeader: View {
    var tint: Color = AppColor.secondary
 
    var body: some View {
-      HStack(alignment: .top, spacing: 14) {
+      HStack(alignment: .center, spacing: 14) {
          Image(systemName: systemName)
-            .font(.appBodyStrong(22, relativeTo: .title3))
+            .font(.appBodyStrong(20, relativeTo: .headline))
             .foregroundStyle(AppColor.white)
-            .frame(width: 48, height: 48)
+            .frame(width: 44, height: 44)
             .background(tint, in: Circle())
             .shadow(color: tint.opacity(0.24), radius: 14, y: 8)
 
          VStack(alignment: .leading, spacing: 6) {
             Text(title)
-               .font(.appDisplay(24, relativeTo: .title2))
+               .font(.appDisplay(26, relativeTo: .title2))
                .foregroundStyle(AppColor.textPrimary)
          }
       }

@@ -1,0 +1,401 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "Bundle display name",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "toDō"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        }
+      }
+    },
+    "CFBundleName" : {
+      "comment" : "Bundle name",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō"
+          }
+        }
+      }
+    },
+    "NSCalendarsFullAccessUsageDescription" : {
+      "comment" : "Calendar permission prompt copy.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يستخدم تُدُ الوصول إلى التقويم لإضافة تُدُس المجدولة ذات تواريخ الاستحقاق إلى تقويمك حتى تظهر مهامك بجانب أحداث يومك."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "ToDo uses Calendar access to add scheduled ToDos with due dates to your calendar so your tasks can appear alongside your day’s events."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō usa el acceso al calendario para añadir toDōs programados con fechas límite a tu calendario, para que tus tareas aparezcan junto a los eventos del día."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō कैलेंडर एक्सेस का उपयोग नियत तारीख वाले निर्धारित toDōs को आपके कैलेंडर में जोड़ने के लिए करता है, ताकि आपके कार्य दिन की घटनाओं के साथ दिखें।"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō usa l’accesso al calendario per aggiungere al tuo calendario i toDō programmati con scadenze, così le attività compaiono insieme agli eventi della giornata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDōはカレンダーへのアクセスを使用して、期限のあるtoDōをカレンダーに追加し、1日の予定と一緒に表示します。"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō menggunakan akses kalendar untuk menambah toDō berjadual yang mempunyai tarikh akhir ke kalendar anda supaya tugasan muncul bersama acara harian anda."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō ใช้การเข้าถึงปฏิทินเพื่อเพิ่ม toDō ที่มีกำหนดลงในปฏิทินของคุณ เพื่อให้งานแสดงร่วมกับกิจกรรมประจำวันของคุณ"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ٹُڈُو کیلنڈر رسائی استعمال کرتا ہے تاکہ مقررہ تاریخ والے scheduled ٹُڈُوز آپ کے کیلنڈر میں شامل کیے جا سکیں اور آپ کے کام دن کے events کے ساتھ نظر آئیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō 使用日历访问权限，将带有截止日期的计划 toDō 添加到你的日历中，让任务与当天事件一起显示。"
+          }
+        }
+      }
+    },
+    "NSCalendarsWriteOnlyAccessUsageDescription" : {
+      "comment" : "Calendar write-only permission prompt copy.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يضيف تُدُ تُدُس المستحقة إلى تقويمك عندما تختار عكسها هناك."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "ToDo adds due ToDos to your calendar when you choose to mirror them there."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō añade los toDōs con fecha límite a tu calendario cuando eliges reflejarlos allí."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "जब आप चुनते हैं, toDō नियत तारीख वाले toDōs को आपके कैलेंडर में जोड़ता है।"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō aggiunge al tuo calendario i toDō con scadenza quando scegli di rispecchiarli lì."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "カレンダーに反映することを選ぶと、toDōは期限のあるtoDōをカレンダーに追加します。"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō menambah toDō yang mempunyai tarikh akhir ke kalendar anda apabila anda memilih untuk mencerminkannya di sana."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō จะเพิ่ม toDō ที่มีกำหนดลงในปฏิทินของคุณเมื่อคุณเลือกให้แสดงในปฏิทิน"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "جب آپ مقررہ ٹُڈُوز کو کیلنڈر میں دکھانے کا انتخاب کرتے ہیں تو ٹُڈُو انہیں آپ کے کیلنڈر میں شامل کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "当你选择同步到日历时，toDō 会将有截止日期的 toDō 添加到你的日历。"
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription" : {
+      "comment" : "Always location permission prompt copy.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يستخدم تُدُ الموقع فقط عندما تختار تذكيرات الوصول أو المغادرة لـ تُدُس محددة."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "ToDo uses location only when you choose arrival or leaving reminders for specific ToDos."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō usa la ubicación solo cuando eliges recordatorios de llegada o salida para toDōs específicos."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō स्थान का उपयोग केवल तब करता है जब आप किसी विशेष toDō के लिए पहुँचने या निकलने के रिमाइंडर चुनते हैं।"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō usa la posizione solo quando scegli promemoria di arrivo o partenza per toDō specifici."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDōは、特定のtoDōに到着または出発リマインダーを設定した場合にのみ位置情報を使用します。"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō menggunakan lokasi hanya apabila anda memilih peringatan tiba atau keluar untuk toDō tertentu."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō ใช้ตำแหน่งเฉพาะเมื่อคุณเลือกการเตือนเมื่อมาถึงหรือออกจากสถานที่สำหรับ toDō บางรายการเท่านั้น"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ٹُڈُو مقام صرف اس وقت استعمال کرتا ہے جب آپ مخصوص ٹُڈُوز کے لیے پہنچنے یا نکلنے کی یاد دہانیاں منتخب کرتے ہیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō 只会在你为特定 toDō 选择到达或离开提醒时使用位置。"
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription" : {
+      "comment" : "When-in-use location permission prompt copy.",
+      "extractionState" : "extracted_with_value",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "يستخدم تُدُ موقعك لإعداد تذكيرات الوصول والمغادرة التي تختارها."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "ToDo uses your location to set up arrival and leaving reminders you choose."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō usa tu ubicación para configurar los recordatorios de llegada y salida que elijas."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō आपके चुने हुए पहुँचने और निकलने के रिमाइंडर सेट करने के लिए आपके स्थान का उपयोग करता है।"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō usa la tua posizione per configurare i promemoria di arrivo e partenza che scegli."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDōは、選択した到着および出発リマインダーを設定するために位置情報を使用します。"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō menggunakan lokasi anda untuk menyediakan peringatan tiba dan keluar yang anda pilih."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō ใช้ตำแหน่งของคุณเพื่อตั้งค่าการเตือนเมื่อมาถึงและออกจากสถานที่ตามที่คุณเลือก"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "ٹُڈُو آپ کا مقام آپ کی منتخب کردہ پہنچنے اور نکلنے کی یاد دہانیاں سیٹ کرنے کے لیے استعمال کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "toDō 使用你的位置来设置你选择的到达和离开提醒。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

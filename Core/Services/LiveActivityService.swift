@@ -48,13 +48,16 @@ final class LiveActivityService {
       let validCandidates = liveActivityCandidates(from: scopedToDos)
       let activities = Activity<ToDoLiveActivityAttributes>.activities
       let currentIdentifier = activities.first?.attributes.toDoIdentifier
+      let preferredCandidate = preferredToDo.flatMap { preferredToDo in
+         Self.isLiveActivityEligible(preferredToDo) ? preferredToDo : nil
+      }
 
       guard let candidate = liveActivityCandidate(
          from: validCandidates,
-         preferredIdentifier: preferredToDo.flatMap(Self.identifierIfLiveActivityEligible(for:)),
+         preferredCandidate: preferredCandidate,
          currentIdentifier: currentIdentifier
       ) else {
-         AppLog.info("Live Activity refresh ended all activities: candidates=\(toDos.count), scoped=\(scopedToDos.count), eligible=0.", logger: AppLog.liveActivity)
+         AppLog.info("Live Activity refresh ended all activities: candidates=\(toDos.count), scoped=\(scopedToDos.count), eligible=0, preferredEligible=\(preferredCandidate != nil).", logger: AppLog.liveActivity)
          endAllActivities()
          return
       }
@@ -79,12 +82,11 @@ final class LiveActivityService {
 
    private func liveActivityCandidate(
       from candidates: [ToDo],
-      preferredIdentifier: String?,
+      preferredCandidate: ToDo?,
       currentIdentifier: String?
    ) -> ToDo? {
-      if let preferredIdentifier,
-         let preferredToDo = candidates.first(where: { Self.identifier(for: $0) == preferredIdentifier }) {
-         return preferredToDo
+      if let preferredCandidate {
+         return preferredCandidate
       }
 
       if let currentIdentifier,
@@ -131,10 +133,6 @@ final class LiveActivityService {
 
    private static func isLiveActivityEligible(_ toDo: ToDo) -> Bool {
       guard let dueDate = toDo.dueDate else { return false }
-      if SyncCoordinator.shared.effectiveSyncMode == .syncEverywhere,
-         toDo.cloudID == nil {
-         return false
-      }
       return toDo.lifecycleState == .active
          && toDo.reminderIntent == .timeSensitive
          && dueDate > .now
@@ -180,7 +178,7 @@ final class LiveActivityService {
       _ activity: Activity<ToDoLiveActivityAttributes>,
       with content: ToDoLiveActivityAttributes.ContentState
    ) {
-      Task {
+      Task { @MainActor in
          await activity.update(ActivityContent(
             state: content,
             staleDate: staleDate(for: content),
@@ -204,7 +202,7 @@ final class LiveActivityService {
       let activityID = activity.id
       updateTokenTasks[activityID]?.cancel()
       updateTokenTasks[activityID] = nil
-      Task {
+      Task { @MainActor in
          await SupabaseAuthStore.shared.deactivateLiveActivityToken(activityID: activityID)
          await activity.end(nil, dismissalPolicy: .immediate)
       }

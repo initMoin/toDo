@@ -1,21 +1,51 @@
 import SwiftUI
 import SwiftData
 
+enum SettingsDetailPresentation {
+   case pushed
+   case sidePanel
+}
+
+private struct SettingsDetailPresentationKey: EnvironmentKey {
+   static let defaultValue: SettingsDetailPresentation = .pushed
+}
+
+extension EnvironmentValues {
+   var settingsDetailPresentation: SettingsDetailPresentation {
+      get { self[SettingsDetailPresentationKey.self] }
+      set { self[SettingsDetailPresentationKey.self] = newValue }
+   }
+}
+
 struct SettingsSubmenuContainer<Content: View>: View {
+   @Environment(\.settingsDetailPresentation) private var presentation
+   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
    let title: String
    @ViewBuilder let content: () -> Content
 
+   private var pushedContentMaxWidth: CGFloat {
+      horizontalSizeClass == .regular ? 760 : .infinity
+   }
+
    var body: some View {
+      if presentation == .sidePanel {
+         sidePanelBody
+      } else {
+         pushedBody
+      }
+   }
+
+   private var pushedBody: some View {
       VStack(spacing: 0) {
          AppSettingsDetailHeader(title: title)
 
          ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-               content()
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            .padding(.bottom, 28)
+            contentStack
+               .frame(maxWidth: pushedContentMaxWidth, alignment: .topLeading)
+               .frame(maxWidth: .infinity, alignment: .top)
+               .padding(.horizontal, 16)
+               .padding(.top, 4)
+               .padding(.bottom, 28)
          }
          .scrollIndicators(.hidden)
       }
@@ -23,7 +53,62 @@ struct SettingsSubmenuContainer<Content: View>: View {
       .tint(AppColor.main)
       .appBaseTypography()
       .appNavigationChrome()
-      .toolbar(.hidden, for: .navigationBar)
+   }
+
+   private var sidePanelBody: some View {
+      ViewThatFits(in: .vertical) {
+         VStack(spacing: 0) {
+            sidePanelHeader
+
+            contentStack
+               .padding(.horizontal, 16)
+               .padding(.top, 4)
+               .padding(.bottom, 18)
+         }
+
+         VStack(spacing: 0) {
+            sidePanelHeader
+
+            ScrollView {
+               contentStack
+                  .padding(.horizontal, 16)
+                  .padding(.top, 4)
+                  .padding(.bottom, 18)
+            }
+            .scrollIndicators(.hidden)
+         }
+      }
+      .background(AppColor.surface)
+      .tint(AppColor.main)
+      .appBaseTypography()
+      .appNavigationChrome()
+   }
+
+   private var contentStack: some View {
+      VStack(alignment: .leading, spacing: 24) {
+         content()
+      }
+   }
+
+   private var sidePanelHeader: some View {
+      HStack(spacing: 10) {
+         Capsule()
+            .fill(AppColor.main)
+            .frame(width: 5, height: 28)
+
+         Text(LocalizedStringKey(title))
+            .font(.appDisplay(28, relativeTo: .title2))
+            .foregroundStyle(AppColor.textPrimary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.86)
+
+         Spacer(minLength: 0)
+      }
+      .padding(.horizontal, 18)
+      .padding(.top, 18)
+      .padding(.bottom, 12)
+      .background(AppColor.surface)
+      .accessibilityAddTraits(.isHeader)
    }
 }
 
@@ -201,7 +286,7 @@ struct SyncConflictReviewView: View {
 
    private func versionBlock(title: String, summary: String, updatedAt: Date?) -> some View {
       VStack(alignment: .leading, spacing: 5) {
-         Text(title)
+         Text(LocalizedStringKey(title))
             .font(.appSubtitle(12, relativeTo: .caption))
             .foregroundStyle(AppColor.secondary)
 
@@ -211,7 +296,7 @@ struct SyncConflictReviewView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
          if let updatedAt {
-            Text("Changed \(AppLocalization.dateTimeString(updatedAt))")
+            Text(String(format: String(localized: "Changed %@"), AppLocalization.dateTimeString(updatedAt)))
                .font(.appBody(11, relativeTo: .caption2))
                .foregroundStyle(AppColor.textSecondary)
          }
@@ -238,7 +323,10 @@ struct SyncConflictReviewView: View {
                style: .success
             )
          } catch {
-            resolutionErrorMessage = "Could not save that sync choice. \(error.localizedDescription)"
+            resolutionErrorMessage = String(
+               format: String(localized: "Could not save that sync choice. %@"),
+               error.localizedDescription
+            )
             AppLog.error("Failed to resolve sync conflict: \(error)", logger: AppLog.sync)
          }
 
@@ -257,18 +345,18 @@ struct SyncConflictReviewView: View {
       var actionTitle: String {
          switch resolution {
          case .keepDeviceVersion:
-            return "Keep This Device"
+            return String(localized: "Keep This Device")
          case .useSyncedVersion:
-            return "Use Synced"
+            return String(localized: "Use Synced")
          }
       }
 
       var message: String {
          switch resolution {
          case .keepDeviceVersion:
-            return "toDō will keep this device's version."
+            return String(localized: "toDō will keep this device's version.")
          case .useSyncedVersion:
-            return "toDō will use the version from your other device."
+            return String(localized: "toDō will use the version from your other device.")
          }
       }
    }

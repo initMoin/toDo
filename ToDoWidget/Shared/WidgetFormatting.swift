@@ -1,57 +1,115 @@
 import Foundation
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
 
 struct WidgetFormatting {
+   static var displayLocale: Locale {
+      let identifier = Locale.preferredLanguages.first ?? Locale.current.identifier
+      if identifier.hasPrefix("ar") {
+         return Locale(identifier: "ar_SA@numbers=arab")
+      }
+      if identifier.hasPrefix("ur") {
+         return Locale(identifier: "ur_PK@numbers=arabext")
+      }
+      if identifier.hasPrefix("hi") {
+         return Locale(identifier: "hi_IN@numbers=deva")
+      }
+      if identifier.hasPrefix("th") {
+         return Locale(identifier: "th_TH@numbers=thai")
+      }
+      return Locale(identifier: identifier)
+   }
+
+   static var displayCalendar: Calendar {
+      let identifier = Locale.preferredLanguages.first ?? Locale.current.identifier
+      var calendar = Calendar(identifier: identifier.hasPrefix("ar") ? .islamicUmmAlQura : .gregorian)
+      calendar.locale = displayLocale
+      calendar.timeZone = .current
+      return calendar
+   }
+
+   static func numberString(_ number: Int) -> String {
+      let formatter = NumberFormatter()
+      formatter.locale = displayLocale
+      formatter.numberStyle = .none
+      return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
+   }
+
+   static func dateTimeString(_ date: Date) -> String {
+      formatted(date, dateStyle: .medium, timeStyle: .short)
+   }
+
+   static func timeString(_ date: Date) -> String {
+      formatted(date, dateStyle: .none, timeStyle: .short)
+   }
+
    static func compactDue(_ date: Date?) -> String? {
       guard let date else { return nil }
-      let calendar = Calendar.current
-      let time = date.formatted(date: .omitted, time: .shortened)
-      if calendar.isDateInToday(date) { return "Today • \(time)" }
-      if calendar.isDateInTomorrow(date) { return "Tomorrow • \(time)" }
-      let weekday = date.formatted(.dateTime.weekday(.abbreviated))
+      let calendar = displayCalendar
+      let time = timeString(date)
+      if calendar.isDateInToday(date) { return "\(String(localized: "Today")) • \(time)" }
+      if calendar.isDateInTomorrow(date) { return "\(String(localized: "Tomorrow")) • \(time)" }
+      let weekday = weekdayString(date)
       return "\(weekday) • \(time)"
    }
 
    static func tagSummary(for item: ToDoWidgetItem) -> String? {
       guard let first = item.tagNames.first else { return nil }
       let additionalCount = max(item.tagNames.count - 1, 0)
-      return additionalCount > 0 ? "#\(first) +\(additionalCount)" : "#\(first)"
+      return additionalCount > 0 ? "#\(first) +\(numberString(additionalCount))" : "#\(first)"
+   }
+
+   private static func weekdayString(_ date: Date) -> String {
+      let formatter = DateFormatter()
+      formatter.locale = displayLocale
+      formatter.calendar = displayCalendar
+      formatter.setLocalizedDateFormatFromTemplate("EEE")
+      return formatter.string(from: date)
+   }
+
+   private static func formatted(_ date: Date, dateStyle: DateFormatter.Style, timeStyle: DateFormatter.Style) -> String {
+      let formatter = DateFormatter()
+      formatter.locale = displayLocale
+      formatter.calendar = displayCalendar
+      formatter.dateStyle = dateStyle
+      formatter.timeStyle = timeStyle
+      return formatter.string(from: date)
    }
 }
 
 enum WidgetPalette {
-   static let main = Color(light: 0xE9A700, dark: 0xFFCC36)
-   static let secondary = Color(light: 0x006CE7, dark: 0x67A9FF)
-   static let tertiary = Color(light: 0x62C400, dark: 0x8FE35B)
-   static let destructive = Color(light: 0xD40000, dark: 0xFF0A12)
-   static let onDestructive = Color(light: 0xFFFFFF, dark: 0xFFFFFF)
-   static let textPrimary = Color(light: 0x393939, dark: 0xF5F2EA)
-   static let textSecondary = Color(light: 0x393939, dark: 0xF5F2EA, lightOpacity: 0.62, darkOpacity: 0.68)
-   static let surface = Color(light: 0xFFFFFF, dark: 0x111316)
-   static let surfaceElevated = Color(light: 0xF7F6F2, dark: 0x1A1D21)
-   static let surfaceMuted = Color(light: 0x393939, dark: 0xF5F2EA, lightOpacity: 0.08, darkOpacity: 0.1)
-   static let border = Color(light: 0x393939, dark: 0xF5F2EA, lightOpacity: 0.22, darkOpacity: 0.18)
-   static let onAction = Color(light: 0xFFFFFF, dark: 0x111316)
+   static let main = Color("widgetBrandMain")
+   static let secondary = Color("widgetBrandSecondary")
+   static let tertiary = Color("widgetBrandTertiary")
+   static let destructive = Color("widgetDestructive")
+   static let onDestructive = Color("widgetOnDestructive")
+   static let textPrimary = Color("widgetTextPrimary")
+   static let textSecondary = Color("widgetTextSecondary")
+   static let surface = Color("widgetSurface")
+   static let surfaceElevated = Color("widgetSurfaceElevated")
+   static let surfaceMuted = Color("widgetSurfaceMuted")
+   static let border = Color("widgetBorder")
+   static let onAction = Color("widgetOnAction")
 }
 
 enum WidgetTypography {
-   static func title(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .headline) -> Font {
+   static func brand(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .headline) -> Font {
       .custom("CalSans-Regular", size: size, relativeTo: textStyle)
    }
 
+   static func title(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .headline) -> Font {
+      .custom("BebasNeue-Regular", size: size, relativeTo: textStyle)
+   }
+
    static func body(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-      .custom("Jura-Light", size: size, relativeTo: textStyle)
+      .custom("Jura-SemiBold", size: size, relativeTo: textStyle)
    }
 
    static func bodyStrong(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-      .custom("Jura-Regular", size: size, relativeTo: textStyle)
+      .custom("Jura-SemiBold", size: size, relativeTo: textStyle)
    }
 
    static func accent(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .subheadline) -> Font {
-      .custom("Jura-Bold", size: size, relativeTo: textStyle)
+      .custom("Jura-SemiBold", size: size, relativeTo: textStyle)
    }
 }
 
@@ -64,22 +122,5 @@ extension Color {
          blue: Double(hex & 0xff) / 255,
          opacity: opacity
       )
-   }
-
-   init(light: UInt, dark: UInt, lightOpacity: Double = 1, darkOpacity: Double = 1) {
-      #if canImport(UIKit)
-      self.init(uiColor: UIColor { traits in
-         let hex = traits.userInterfaceStyle == .dark ? dark : light
-         let opacity = traits.userInterfaceStyle == .dark ? darkOpacity : lightOpacity
-         return UIColor(
-            red: CGFloat((hex >> 16) & 0xff) / 255,
-            green: CGFloat((hex >> 8) & 0xff) / 255,
-            blue: CGFloat(hex & 0xff) / 255,
-            alpha: CGFloat(opacity)
-         )
-      })
-      #else
-      self.init(hex: light, opacity: lightOpacity)
-      #endif
    }
 }

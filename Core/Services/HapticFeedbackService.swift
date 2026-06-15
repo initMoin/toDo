@@ -1,11 +1,8 @@
-import Foundation
-
-#if os(iOS)
-import UIKit
-#endif
+import Combine
+import SwiftUI
 
 @MainActor
-enum HapticFeedbackService {
+final class HapticFeedbackService: ObservableObject {
    enum Event {
       case selection
       case reveal
@@ -17,34 +14,51 @@ enum HapticFeedbackService {
       case destructive
    }
 
+   static let shared = HapticFeedbackService()
+
+   @Published private(set) var selectionTrigger = 0
+   @Published private(set) var revealTrigger = 0
+   @Published private(set) var successTrigger = 0
+   @Published private(set) var reopenTrigger = 0
+   @Published private(set) var warningTrigger = 0
+
+   private init() {}
+
    static func play(_ event: Event) {
-#if os(iOS)
+      shared.play(event)
+   }
+
+   private func play(_ event: Event) {
       switch event {
       case .selection:
-         let generator = UISelectionFeedbackGenerator()
-         generator.prepare()
-         generator.selectionChanged()
+         selectionTrigger += 1
       case .reveal:
-         let generator = UIImpactFeedbackGenerator(style: .light)
-         generator.prepare()
-         generator.impactOccurred(intensity: 0.55)
+         revealTrigger += 1
       case .taskCompleted, .saved, .restored:
-         let generator = UINotificationFeedbackGenerator()
-         generator.prepare()
-         generator.notificationOccurred(.success)
+         successTrigger += 1
       case .taskReopened:
-         let generator = UIImpactFeedbackGenerator(style: .medium)
-         generator.prepare()
-         generator.impactOccurred(intensity: 0.7)
-      case .warning:
-         let generator = UINotificationFeedbackGenerator()
-         generator.prepare()
-         generator.notificationOccurred(.warning)
-      case .destructive:
-         let generator = UINotificationFeedbackGenerator()
-         generator.prepare()
-         generator.notificationOccurred(.warning)
+         reopenTrigger += 1
+      case .warning, .destructive:
+         warningTrigger += 1
       }
-#endif
+   }
+}
+
+private struct AppHapticFeedbackHost: ViewModifier {
+   @ObservedObject private var haptics = HapticFeedbackService.shared
+
+   func body(content: Content) -> some View {
+      content
+         .sensoryFeedback(.selection, trigger: haptics.selectionTrigger)
+         .sensoryFeedback(.impact(weight: .light, intensity: 0.55), trigger: haptics.revealTrigger)
+         .sensoryFeedback(.success, trigger: haptics.successTrigger)
+         .sensoryFeedback(.impact(weight: .medium, intensity: 0.7), trigger: haptics.reopenTrigger)
+         .sensoryFeedback(.warning, trigger: haptics.warningTrigger)
+   }
+}
+
+extension View {
+   func appHapticFeedbackHost() -> some View {
+      modifier(AppHapticFeedbackHost())
    }
 }

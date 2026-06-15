@@ -16,7 +16,7 @@ enum TrashAutoEmptyInterval: String, CaseIterable, Identifiable {
    case never = "Never"
 
    var id: String { rawValue }
-   var title: String { rawValue }
+   var title: String { String(localized: String.LocalizationValue(rawValue)) }
 
    var days: Int? {
       switch self {
@@ -32,12 +32,17 @@ enum TrashAutoEmptyInterval: String, CaseIterable, Identifiable {
 struct TrashView: View {
    @Environment(\.modelContext) private var context
    @Environment(\.dismiss) private var dismiss
+   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
    @EnvironmentObject private var authStore: SupabaseAuthStore
    @Query private var toDos: [ToDo]
    @AppStorage("trashAutoEmptyInterval") private var trashAutoEmptyIntervalRaw = TrashAutoEmptyInterval.oneMonth.rawValue
    @State private var isShowingEmptyTrashConfirmation = false
    @State private var isSelectionMode = false
    @State private var selectedToDoIDs = Set<PersistentIdentifier>()
+
+   private var contentMaxWidth: CGFloat {
+      horizontalSizeClass == .regular ? 760 : .infinity
+   }
 
    private var visibleOwnerUserID: UUID? {
       guard authStore.effectiveSyncMode == .syncEverywhere else { return nil }
@@ -63,8 +68,8 @@ struct TrashView: View {
                } else {
                   VStack(alignment: .leading, spacing: 10) {
                      Text("Recently Deleted")
-                        .font(.appSubtitle(15, relativeTo: .subheadline))
-                        .foregroundStyle(AppColor.textPrimary)
+                        .font(.appDisplay(22, relativeTo: .title3))
+                        .foregroundStyle(AppColor.secondary)
 
                      VStack(alignment: .leading, spacing: 14) {
                         ForEach(Array(trashedToDos.enumerated()), id: \.element.id) { index, toDo in
@@ -79,6 +84,8 @@ struct TrashView: View {
                }
                Color.clear.frame(height: 116)
             }
+            .frame(maxWidth: contentMaxWidth, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .top)
             .padding(.horizontal, 16)
             .padding(.top, 86)
          }
@@ -99,8 +106,6 @@ struct TrashView: View {
       .animation(AppAnimation.snappyStandard, value: isSelectionMode)
       .appBaseTypography()
       .appNavigationChrome()
-      .toolbar(.hidden, for: .navigationBar)
-      .navigationBarBackButtonHidden()
       .onAppear {
          runRollingAutoEmpty()
       }
@@ -138,7 +143,7 @@ struct TrashView: View {
          Text("Trash is empty.")
             .font(.appHeadline(20, relativeTo: .title3))
             .foregroundStyle(AppColor.textPrimary)
-         Text("Items will be permanently deleted after \(resolvedInterval.title.lowercased()).")
+         Text(String(format: String(localized: "Items will be permanently deleted after %@."), resolvedInterval.title))
             .font(.appBody(15, relativeTo: .body))
             .foregroundStyle(AppColor.textSecondary)
       }
@@ -212,6 +217,7 @@ struct TrashView: View {
          .background(AppColor.actionDestructive, in: .rect(cornerRadius: 24))
       }
       .buttonStyle(.plain)
+      .frame(maxWidth: contentMaxWidth)
       .padding(16)
       .disabled(trashedToDos.isEmpty)
       .opacity(trashedToDos.isEmpty ? 0 : 1)
@@ -219,11 +225,14 @@ struct TrashView: View {
    }
 
    private func daysRemainingText(for toDo: ToDo) -> String {
-      guard let dayLimit = resolvedInterval.days, let trashedAt = toDo.trashedAt else { return "Will not auto-delete" }
-      let expirationDate = Calendar.current.date(byAdding: .day, value: dayLimit, to: trashedAt) ?? Date()
-      let daysLeft = Calendar.current.dateComponents([.day], from: Date(), to: expirationDate).day ?? 0
-      if daysLeft <= 0 { return "Deleting today" }
-      return daysLeft == 1 ? "1 day left" : "\(daysLeft) days left"
+      guard let dayLimit = resolvedInterval.days, let trashedAt = toDo.trashedAt else {
+         return String(localized: "Will not auto-delete")
+      }
+      let expirationDate = AppLocalization.displayCalendar.date(byAdding: .day, value: dayLimit, to: trashedAt) ?? Date()
+      let daysLeft = AppLocalization.displayCalendar.dateComponents([.day], from: Date(), to: expirationDate).day ?? 0
+      if daysLeft <= 0 { return String(localized: "Deleting today") }
+      if daysLeft == 1 { return String(localized: "1 day left") }
+      return String(format: String(localized: "%@ days left"), AppLocalization.numberString(daysLeft))
    }
 
    private func restore(_ toDo: ToDo) {
@@ -295,6 +304,8 @@ struct TrashView: View {
          .padding(.vertical, 12)
          .background(AppColor.surface)
       }
+      .frame(maxWidth: contentMaxWidth)
+      .frame(maxWidth: .infinity)
    }
 
    private func bulkActionButton(systemName: String, label: String, isDestructive: Bool = false, disabled: Bool, action: @escaping () -> Void) -> some View {

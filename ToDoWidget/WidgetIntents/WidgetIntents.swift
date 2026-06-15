@@ -44,7 +44,11 @@ struct CompleteWidgetToDoIntent: AppIntent {
    }
 
    func perform() async throws -> some IntentResult {
-      try WidgetToDoService().complete(toDoID: toDoID, cloudID: cloudID.flatMap(UUID.init(uuidString:)))
+      do {
+         try WidgetToDoService().complete(toDoID: toDoID, cloudID: cloudID.flatMap(UUID.init(uuidString:)))
+      } catch {
+         AppLog.error("Widget completion intent failed: \(error)", logger: AppLog.widget)
+      }
       return .result()
    }
 }

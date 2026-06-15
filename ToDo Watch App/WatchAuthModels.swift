@@ -2,18 +2,18 @@ import Foundation
 
 extension WatchAuthState {
    var title: String {
-      guard isAuthenticated else { return "Not Signed In" }
+      guard isAuthenticated else { return String(localized: "Not Signed In") }
 
       switch source {
       case .iPhone:
          if let provider {
-            return "Using iPhone: \(provider)"
+            return String(format: String(localized: "Using iPhone: %@"), provider)
          }
-         return "Using iPhone Account"
+         return String(localized: "Using iPhone Account")
       case .apple:
-         return "Signed In: Apple"
+         return String(localized: "Signed In: Apple")
       case .offline:
-         return "Offline"
+         return String(localized: "Offline")
       }
    }
 
@@ -24,11 +24,11 @@ extension WatchAuthState {
 
       switch source {
       case .iPhone:
-         return "Synced from paired iPhone."
+         return String(localized: "Synced from paired iPhone.")
       case .apple:
-         return "Account ready. Direct Watch sync comes next."
+         return String(localized: "Account ready. Direct Watch sync comes next.")
       case .offline:
-         return "Capture still works when your iPhone is nearby."
+         return String(localized: "Capture still works when your iPhone is nearby.")
       }
    }
 }

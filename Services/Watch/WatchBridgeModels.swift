@@ -235,6 +235,7 @@ struct WatchToDoAction: Codable, Equatable, Identifiable, Sendable {
    init(
       type: WatchToDoActionType,
       item: WatchToDoItem? = nil,
+      cloudID: UUID? = nil,
       task: String? = nil,
       dueDate: Date? = nil,
       isTimeSensitive: Bool? = nil,
@@ -244,7 +245,7 @@ struct WatchToDoAction: Codable, Equatable, Identifiable, Sendable {
       self.init(
          type: type,
          localIdentifier: item?.id,
-         cloudID: item?.cloudID,
+         cloudID: cloudID ?? item?.cloudID,
          task: task,
          dueDate: dueDate,
          isTimeSensitive: isTimeSensitive,

@@ -8,6 +8,7 @@ struct SnoozeOptionsView: View {
    }
 
    @AppStorage(SnoozePreferences.storageKey) private var snoozeOptionsStorage = SnoozePreferences.defaultEncodedString
+   @Environment(\.colorScheme) private var colorScheme
    @State private var options: SnoozeOptionsStore
    @State private var editorContext: EditorContext?
 
@@ -68,8 +69,6 @@ struct SnoozeOptionsView: View {
       .tint(AppColor.actionPrimary)
       .appBaseTypography()
       .appNavigationChrome()
-      .toolbar(.hidden, for: .navigationBar)
-      .navigationBarBackButtonHidden()
       .sheet(item: $editorContext) { context in
          SnoozeValueEditorSheet(
             unit: context.unit,
@@ -94,8 +93,8 @@ struct SnoozeOptionsView: View {
    private func snoozeSection(for unit: SnoozeUnit) -> some View {
       VStack(alignment: .leading, spacing: 10) {
          Text(unit.title)
-            .font(.appSubtitle(15, relativeTo: .subheadline))
-            .foregroundStyle(AppColor.textPrimary)
+            .font(.appDisplay(22, relativeTo: .title3))
+            .foregroundStyle(AppColor.secondary)
 
          VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(options.values(for: unit).enumerated()), id: \.offset) { _, value in
@@ -112,7 +111,7 @@ struct SnoozeOptionsView: View {
                      Image(systemName: "pencil")
                         .font(.appBodyStrong(12, relativeTo: .caption))
                   }
-                  .buttonStyle(AppCircleActionButtonStyle(intent: .neutral, size: 28))
+                  .buttonStyle(AppCircleActionButtonStyle(intent: .neutral, size: 28, foreground: AppColor.brandYellowForeground(for: colorScheme)))
 
                   Button {
                      deleteOption(value, from: unit)
@@ -120,7 +119,7 @@ struct SnoozeOptionsView: View {
                      Image(systemName: "trash")
                         .font(.appBodyStrong(12, relativeTo: .caption))
                   }
-                  .buttonStyle(AppCircleActionButtonStyle(intent: .cancel, size: 28))
+                  .buttonStyle(AppCircleActionButtonStyle(intent: .cancel, size: 28, foreground: AppColor.brandYellowForeground(for: colorScheme)))
                }
             }
 
@@ -211,7 +210,7 @@ private struct SnoozeValueEditorSheet: View {
             )
             .focused($isFocused)
 
-         Text("Adds this choice to \(unit.title.lowercased()) snooze.")
+         Text(String(format: String(localized: "Adds this choice to %@ snooze."), unit.title))
             .font(.appBody(13, relativeTo: .footnote))
             .foregroundStyle(AppColor.textSecondary)
 

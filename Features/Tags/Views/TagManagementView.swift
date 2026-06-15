@@ -86,8 +86,6 @@ struct TagManagementView: View {
         .tint(AppColor.actionPrimary)
         .appBaseTypography()
         .appNavigationChrome()
-        .toolbar(.hidden, for: .navigationBar)
-        .navigationBarBackButtonHidden()
     }
 
     private var pinnedTitleHeader: some View {
@@ -216,7 +214,9 @@ struct TagManagementView: View {
             } label: {
                 HStack {
                     Text("Default Tags")
-                        .font(.appDisplay(14, relativeTo: .headline))
+                        //.font(.appDisplay(14, relativeTo: .headline))
+                      .font(.appDisplay(22, relativeTo: .title3))
+                      .foregroundStyle(AppColor.secondary)
                     Spacer()
                     Image(systemName: "chevron.right")
                         .font(.appDisplay(11, relativeTo: .caption))
@@ -239,7 +239,7 @@ struct TagManagementView: View {
                     tagFlow {
                         ForEach(Array(filteredDefaultTagNames.enumerated()), id: \.offset) { _, name in
                             let usageCount = defaultUsageCounts[Tag.normalizeName(name), default: 0]
-                            tagPill(name: name, usageCount: usageCount)
+                            tagPill(name: Tag.localizedDefaultName(name), usageCount: usageCount)
                         }
                     }
                 }
@@ -412,8 +412,9 @@ struct TagManagementView: View {
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        Text(title)
-            .font(.appDisplay(14, relativeTo: .headline))
+        Text(LocalizedStringKey(title))
+          .font(.appDisplay(22, relativeTo: .title3))
+          .foregroundStyle(AppColor.secondary)
             .textCase(nil)
     }
 
@@ -480,7 +481,7 @@ struct TagManagementView: View {
                 .font(.appAccent(15, relativeTo: .subheadline))
                 .foregroundStyle(isDuplicateHighlight ? AppColor.white : AppColor.textPrimary)
 
-            Text("\(usageCount)")
+            Text(AppLocalization.numberString(usageCount))
                 .font(.appBody(11, relativeTo: .caption2))
                 .foregroundStyle(isDuplicateHighlight ? AppColor.white.opacity(0.9) : AppColor.textSecondary)
         }
@@ -604,7 +605,7 @@ struct TagManagementView: View {
     private var sortPopoverContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Sort Tags")
-                .font(.appSubtitle(15, relativeTo: .subheadline))
+              .font(.appSubtitle(15, relativeTo: .subheadline)).bold()
                 .foregroundStyle(AppColor.textPrimary)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -653,16 +654,6 @@ struct TagManagementView: View {
         )
         .appBaseTypography()
     }
-
-//    private func defaultTagUsageCountsByNormalizedName() -> [String: Int] {
-//        var counts: [String: Int] = [:]
-//        for toDo in scopedToDos {
-//            for tag in toDo.effectiveTags {
-//                counts[Tag.normalizeName(tag.name), default: 0] += 1
-//            }
-//        }
-//        return counts
-//    }
 
    private func defaultTagUsageCountsByNormalizedName() -> [String: Int] {
       let names = scopedToDos.flatMap { $0.effectiveTags.map { Tag.normalizeName($0.name) } }

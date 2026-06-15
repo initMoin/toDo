@@ -1,8 +1,8 @@
 import ActivityKit
 import Foundation
 
-struct ToDoLiveActivityAttributes: ActivityAttributes {
-   struct ContentState: Codable, Hashable {
+nonisolated struct ToDoLiveActivityAttributes: ActivityAttributes, Sendable {
+   nonisolated struct ContentState: Codable, Hashable, Sendable {
       var title: String
       var dueDate: Date?
       var isOverdue: Bool

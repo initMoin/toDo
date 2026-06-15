@@ -2,11 +2,26 @@ import SwiftUI
 import SwiftData
 import CoreLocation
 
+private enum SettingsDetailRoute: Hashable {
+   case account
+   case conflicts
+   case sync
+   case appearance
+   case behavior
+   case notifications
+   case tags
+   case stats
+   case dataControls
+   case archives
+   case trash
+}
+
 struct SettingsView: View {
    @Environment(\.modelContext) private var context
    @Environment(\.dismiss) private var dismiss
    @Environment(\.openURL) private var openURL
    @Environment(\.colorScheme) private var colorScheme
+   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
    @EnvironmentObject private var authStore: SupabaseAuthStore
    @Query private var tags: [Tag]
    @Query private var toDos: [ToDo]
@@ -31,6 +46,7 @@ struct SettingsView: View {
    @State private var isSortMenuExpanded = false
    @State private var isDoneSwipeMenuExpanded = false
    @State private var isTimeSourceMenuExpanded = false
+   @State private var selectedDetailRoute: SettingsDetailRoute?
    @State private var notificationSoundPreviewStatus: String?
    @StateObject private var onboardingManager = GuidedOnboardingManager.shared
    @StateObject private var notificationManager = NotificationManager.shared
@@ -67,6 +83,42 @@ struct SettingsView: View {
          .sorted { $0.createdAt > $1.createdAt }
    }
 
+   private var settingsContentMaxWidth: CGFloat {
+      horizontalSizeClass == .regular ? 760 : .infinity
+   }
+
+   private var usesSettingsDetailLayout: Bool {
+      horizontalSizeClass == .regular
+   }
+
+   private var isSettingsDetailPanelVisible: Bool {
+      usesSettingsDetailLayout && selectedDetailRoute != nil
+   }
+
+   private var settingsDashboardMaxWidth: CGFloat {
+      1320
+   }
+
+   private var settingsDashboardCurrentMaxWidth: CGFloat {
+      isSettingsDetailPanelVisible ? settingsDashboardMaxWidth : settingsContentMaxWidth
+   }
+
+   private var settingsWorkingPanelMaxWidth: CGFloat {
+      isSettingsDetailPanelVisible ? 620 : settingsContentMaxWidth
+   }
+
+   private var settingsDetailPanelWidth: CGFloat {
+      480
+   }
+
+   private var settingsPanelSpacing: CGFloat {
+      18
+   }
+
+   private var settingsDashboardHorizontalPadding: CGFloat {
+      32
+   }
+
    private var accountSummaryDetail: String {
       if let provider = authStore.accountProviderLabel {
          return provider
@@ -84,176 +136,33 @@ struct SettingsView: View {
 
    var body: some View {
       ZStack(alignment: .top) {
-         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-               settingsSection(String(localized: "Account")) {
-                  NavigationLink {
-                     if authStore.isAuthenticated {
-                        AccountView()
-                     } else {
-                        AuthenticationScreenView()
-                     }
-                  } label: {
-                     settingsNavigationRow(
-                        authStore.isAuthenticated ? String(localized: "Account") : String(localized: "Sign In"),
-                        detail: accountSummaryDetail
-                     )
-                     .onboardingSpotlightAnchor(.settingsAccount)
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
+         if usesSettingsDetailLayout {
+            HStack(alignment: .top, spacing: settingsPanelSpacing) {
+               settingsListPanel
+                  .frame(maxWidth: settingsWorkingPanelMaxWidth)
 
+               if isSettingsDetailPanelVisible {
+                  settingsDetailPanel
+                     .frame(width: settingsDetailPanelWidth)
+                     .transition(.opacity.combined(with: .move(edge: .trailing)))
                }
-
-               settingsSection(String(localized: "Sync")) {
-                  syncStatusBlock
-
-                  if !unresolvedSyncConflicts.isEmpty {
-                     NavigationLink {
-                        SyncConflictReviewView(
-                           conflicts: unresolvedSyncConflicts,
-                           toDos: scopedToDos
-                        )
-                     } label: {
-                        syncReviewRow
-                     }
-                     .foregroundStyle(AppColor.textPrimary)
-                  }
-
-                  NavigationLink {
-                     SyncSettingsView()
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "Where to Save"),
-                        detail: syncCoordinator.pendingRestartSyncMode != nil ? String(localized: "Ready after restart") : syncCoordinator.preferredSyncMode.title
-                     )
-                     .onboardingSpotlightAnchor(.settingsSync)
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  NavigationLink {
-                     syncDetailsSettingsScreen
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "Delete Behavior"),
-                        detail: mirrorSyncDeletesToDeviceOnly ? String(localized: "Match everywhere") : String(localized: "Keep copies")
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-               }
-
-               settingsSection(String(localized: "Preferences")) {
-                  NavigationLink {
-                     themeSettingsScreen
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "Appearance"),
-                        detail: resolvedTheme.title,
-                        detailForeground: AppColor.iconAccent
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  NavigationLink {
-                     behaviorSettingsScreen
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "List & Time"),
-                        detail: resolvedSortOption.title
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  NavigationLink {
-                     notificationSettingsScreen
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "Notifications"),
-                        detail: notificationAuthorizationStatusLabel
-                     )
-                     .onboardingSpotlightAnchor(.settingsNotifications)
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  NavigationLink {
-                     tagSettingsScreen
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "Tags"),
-                        detail: customTagCountLabel
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  NavigationLink {
-                     StatsView(ownerUserID: visibleOwnerUserID)
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "Stats"),
-                        detail: statsSummaryDetail
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  settingsActionRow(
-                     systemName: "sparkles",
-                     title: "Guided Tour",
-                     detail: "Replay the setup guide for creating a toDō, choosing sync, and enabling notifications."
-                  ) {
-                     onboardingManager.restart()
-                     closeView()
-                  }
-               }
-
-               settingsSection(String(localized: "Data")) {
-                  NavigationLink {
-                     dataControlsSettingsScreen
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "Data Controls"),
-                        detail: String(localized: "Clean up")
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  NavigationLink {
-                     ArchivesView()
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "Archives"),
-                        detail: archiveCountLabel
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  NavigationLink {
-                     TrashView()
-                  } label: {
-                     settingsNavigationRow(
-                        String(localized: "Trash"),
-                        detail: trashCountLabel
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-               }
-
-               madeByBrandView
-                  .frame(maxWidth: .infinity)
-                  .padding(.top, 4)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 86)
+            .frame(maxWidth: settingsDashboardCurrentMaxWidth, alignment: .top)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .padding(.horizontal, settingsDashboardHorizontalPadding)
+            .padding(.top, 14)
             .padding(.bottom, 24)
+            .animation(AppAnimation.snappySection, value: isSettingsDetailPanelVisible)
+            .animation(AppAnimation.snappySection, value: selectedDetailRoute)
+         } else {
+            settingsList
          }
-
-         pinnedTitleHeader
-
       }
       .scrollIndicators(.hidden)
       .background(AppColor.surface)
       .tint(AppColor.main)
       .appBaseTypography()
-      .appNavigationChrome()
-      .toolbar(.hidden, for: .navigationBar)
+      .settingsNativeNavigationTitle("Settings", colorScheme: colorScheme, background: AppColor.main)
       .overlayPreferenceValue(OnboardingSpotlightPreferenceKey.self) { anchors in
          if onboardingManager.blocksSettingsChrome {
             GuidedOnboardingOverlay(manager: onboardingManager, anchors: anchors) { step in
@@ -267,7 +176,7 @@ struct SettingsView: View {
             deleteUnusedTags()
          }
       } message: {
-         Text("\(unusedTagCount) unused tag(s) will be permanently removed.")
+         Text(String(format: String(localized: "%@ unused tag(s) will be permanently removed."), AppLocalization.numberString(unusedTagCount)))
       }
       .onChange(of: locationTimeZoneService.authorizationStatus) { _, newStatus in
          if newStatus == .authorizedAlways || newStatus == .authorizedWhenInUse {
@@ -276,6 +185,300 @@ struct SettingsView: View {
       }
       .task {
          await notificationManager.refreshAuthorizationStatus()
+      }
+   }
+
+   private var settingsList: some View {
+      ScrollView {
+         VStack(alignment: .leading, spacing: 24) {
+               settingsSection(String(localized: "Account & Sync")) {
+                  settingsDetailLink(.account) {
+                     settingsNavigationRow(
+                        authStore.isAuthenticated ? String(localized: "Account") : String(localized: "Sign In"),
+                        detail: accountSummaryDetail
+                     )
+                     .onboardingSpotlightAnchor(.settingsAccount)
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+
+                  syncStatusBlock
+
+                  if !unresolvedSyncConflicts.isEmpty {
+                     settingsDetailLink(.conflicts) {
+                        syncReviewRow
+                     }
+                     .foregroundStyle(AppColor.textPrimary)
+                  }
+
+                  settingsDetailLink(.sync) {
+                     settingsNavigationRow(
+                        String(localized: "Where to Save"),
+                        detail: syncCoordinator.pendingRestartSyncMode != nil ? String(localized: "Ready after restart") : syncCoordinator.preferredSyncMode.title
+                     )
+                     .onboardingSpotlightAnchor(.settingsSync)
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+
+                  syncDeletionPreferenceToggle
+               }
+
+               settingsSection(String(localized: "Look & Feel")) {
+                  settingsDetailLink(.appearance) {
+                     settingsNavigationRow(
+                        String(localized: "Appearance"),
+                        detail: resolvedTheme.title,
+                        detailForeground: AppColor.iconAccent
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+               }
+
+               settingsSection(String(localized: "Behavior")) {
+                  settingsDetailLink(.behavior) {
+                     settingsNavigationRow(
+                        String(localized: "Behavior"),
+                        detail: resolvedDoneSwipePrimaryAction.compactTitle
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+               }
+
+               settingsSection(String(localized: "Notifications")) {
+                  settingsDetailLink(.notifications) {
+                     settingsNavigationRow(
+                        String(localized: "Notifications"),
+                        detail: notificationAuthorizationStatusLabel
+                     )
+                     .onboardingSpotlightAnchor(.settingsNotifications)
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+               }
+
+               settingsSection(String(localized: "Tags")) {
+                  settingsDetailLink(.tags) {
+                     settingsNavigationRow(
+                        String(localized: "Tags"),
+                        detail: customTagCountLabel
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+               }
+
+               settingsSection(String(localized: "Setup")) {
+                  settingsActionRow(
+                     systemName: "sparkles",
+                     title: "Guided Tour",
+                     detail: "Replay the setup guide for creating a toDō, choosing sync, and enabling notifications."
+                  ) {
+                     onboardingManager.restart()
+                     closeView()
+                  }
+               }
+
+               settingsSection(String(localized: "Stats")) {
+                  NavigationLink {
+                     StatsView(ownerUserID: visibleOwnerUserID)
+                  } label: {
+                     statsEntryCard
+                  }
+                  .buttonStyle(.plain)
+                  .foregroundStyle(AppColor.textPrimary)
+               }
+
+               settingsSection(String(localized: "Manage Your Data")) {
+                  settingsFullNavigationLink(.dataControls) {
+                     settingsNavigationRow(
+                        String(localized: "Data Controls"),
+                        detail: String(localized: "Clean up")
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+
+                  settingsFullNavigationLink(.archives) {
+                     settingsNavigationRow(
+                        String(localized: "Archives"),
+                        detail: archiveCountLabel
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+
+                  settingsFullNavigationLink(.trash) {
+                     settingsNavigationRow(
+                        String(localized: "Trash"),
+                        detail: trashCountLabel
+                     )
+                  }
+                  .foregroundStyle(AppColor.textPrimary)
+               }
+
+               madeByBrandView
+                  .frame(maxWidth: .infinity)
+                  .padding(.top, 4)
+         }
+         .frame(maxWidth: settingsContentMaxWidth, alignment: .top)
+         .frame(maxWidth: .infinity, alignment: .top)
+         .padding(.horizontal, 16)
+         .padding(.top, 18)
+         .padding(.bottom, 24)
+      }
+   }
+
+   private var settingsListPanel: some View {
+      settingsList
+         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+         .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 30))
+         .clipShape(.rect(cornerRadius: 30))
+         .shadow(color: AppColor.shadow, radius: 18, x: 0, y: 8)
+   }
+
+   @ViewBuilder
+   private var settingsDetailPanel: some View {
+      if let selectedDetailRoute {
+         ZStack(alignment: .topTrailing) {
+            settingsDetailView(selectedDetailRoute)
+               .environment(\.settingsDetailPresentation, .sidePanel)
+               .frame(maxWidth: .infinity, alignment: .top)
+               .clipShape(.rect(cornerRadius: 24))
+               .padding(14)
+
+            closeSettingsDetailButton
+               .padding(.top, 16)
+               .padding(.trailing, 16)
+         }
+         .frame(maxWidth: .infinity, alignment: .top)
+         .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 30))
+         .clipShape(.rect(cornerRadius: 30))
+         .shadow(color: AppColor.shadow, radius: 18, x: 0, y: 8)
+         .animation(AppAnimation.snappySection, value: selectedDetailRoute)
+      }
+   }
+
+   private var closeSettingsDetailButton: some View {
+      Button {
+         withAnimation(AppAnimation.snappyStandard) {
+            selectedDetailRoute = nil
+         }
+      } label: {
+         Image(systemName: "xmark.circle.fill")
+            .font(.appDisplay(30, relativeTo: .title2))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(AppColor.textSecondary)
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
+      }
+      .buttonStyle(.plain)
+      .accessibilityLabel(Text("Close"))
+   }
+
+   private var statsEntryCard: some View {
+      HStack(spacing: 14) {
+         ZStack {
+            Circle()
+               .fill(AppColor.actionSuccess.opacity(0.95))
+               .frame(width: 44, height: 44)
+
+            Image(systemName: "chart.bar.xaxis")
+               .font(.appDisplay(19, relativeTo: .headline))
+               .foregroundStyle(AppColor.textPrimary)
+         }
+
+         VStack(alignment: .leading, spacing: 5) {
+            Text("Stats")
+               .font(.appBodyStrong(17, relativeTo: .body))
+               .foregroundStyle(AppColor.textPrimary)
+
+            Text(statsSummaryDetail)
+               .font(.appBody(12, relativeTo: .caption))
+               .foregroundStyle(AppColor.textSecondary)
+         }
+
+         Spacer(minLength: 12)
+
+         Image(systemName: "chevron.right")
+            .font(.appBodyStrong(11, relativeTo: .caption))
+            .foregroundStyle(AppColor.textSecondary)
+      }
+      .padding(16)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .background(
+         LinearGradient(
+            colors: [
+               AppColor.actionSuccess.opacity(0.16),
+               AppColor.surfaceMuted
+            ],
+            startPoint: .leading,
+            endPoint: .trailing
+         ),
+         in: .rect(cornerRadius: 24)
+      )
+   }
+
+   @ViewBuilder
+   private func settingsDetailLink<Label: View>(
+      _ route: SettingsDetailRoute,
+      @ViewBuilder label: () -> Label
+   ) -> some View {
+      if usesSettingsDetailLayout {
+         Button {
+            withAnimation(AppAnimation.snappyStandard) {
+               selectedDetailRoute = route
+            }
+         } label: {
+            label()
+         }
+         .buttonStyle(.plain)
+         .accessibilityAddTraits(selectedDetailRoute == route ? [.isSelected] : [])
+      } else {
+         NavigationLink {
+            settingsDetailView(route)
+         } label: {
+            label()
+         }
+      }
+   }
+
+   private func settingsFullNavigationLink<Label: View>(
+      _ route: SettingsDetailRoute,
+      @ViewBuilder label: () -> Label
+   ) -> some View {
+      NavigationLink {
+         settingsDetailView(route)
+      } label: {
+         label()
+      }
+   }
+
+   private func settingsDetailView(_ route: SettingsDetailRoute) -> AnyView {
+      switch route {
+      case .account:
+         if authStore.isAuthenticated {
+            return AnyView(AccountView())
+         } else {
+            return AnyView(AuthenticationScreenView())
+         }
+      case .conflicts:
+         return AnyView(SyncConflictReviewView(
+            conflicts: unresolvedSyncConflicts,
+            toDos: scopedToDos
+         ))
+      case .sync:
+         return AnyView(SyncSettingsView())
+      case .appearance:
+         return AnyView(themeSettingsScreen)
+      case .behavior:
+         return AnyView(behaviorSettingsScreen)
+      case .notifications:
+         return AnyView(notificationSettingsScreen)
+      case .tags:
+         return AnyView(tagSettingsScreen)
+      case .stats:
+         return AnyView(StatsView(ownerUserID: visibleOwnerUserID))
+      case .dataControls:
+         return AnyView(dataControlsSettingsScreen)
+      case .archives:
+         return AnyView(ArchivesView())
+      case .trash:
+         return AnyView(TrashView())
       }
    }
 
@@ -288,28 +491,18 @@ struct SettingsView: View {
 
    private var behaviorSettingsScreen: some View {
       SettingsSubmenuContainer(
-         title: "List & Time"
+         title: "Behavior"
       ) {
-         settingsSection("List") {
+         settingsSection("Order") {
             settingsSortDropdown
          }
 
-         settingsSection("Time") {
+         settingsSection("Timing") {
             timeSourceDropdown
          }
 
-         settingsSection("Done toDōs") {
+         settingsSection("Remove from View") {
             doneSwipeActionDropdown
-
-            NavigationLink {
-               SnoozeOptionsView()
-            } label: {
-                  settingsNavigationRow(
-                  "Snooze Options",
-                  detail: String(localized: "Quick choices")
-               )
-            }
-            .foregroundStyle(AppColor.textPrimary)
          }
 
          settingsSection("Calendar") {
@@ -343,6 +536,18 @@ struct SettingsView: View {
       ) {
          settingsSection("Reminder Alerts") {
             notificationSettingsBlock
+         }
+
+         settingsSection("Snooze") {
+            NavigationLink {
+               SnoozeOptionsView()
+            } label: {
+               settingsNavigationRow(
+                  "Snooze Options",
+                  detail: String(localized: "Quick choices")
+               )
+            }
+            .foregroundStyle(AppColor.textPrimary)
          }
       }
    }
@@ -446,6 +651,16 @@ struct SettingsView: View {
          }
       }
       .tint(AppColor.actionSecondary)
+      .onChange(of: mirrorDueDatesToCalendar) { _, isEnabled in
+         guard isEnabled else { return }
+         Task {
+            do {
+               _ = try await CalendarIntegrationService.shared.requestWriteAccess()
+            } catch {
+               AppLog.error("Failed to request Calendar write access: \(error)", logger: AppLog.calendar)
+            }
+         }
+      }
    }
 
    private var trashAutoEmptyControl: some View {
@@ -495,7 +710,7 @@ struct SettingsView: View {
 
    private var madeByBrandView: some View {
       VStack(spacing: 12) {
-         Text("\(Text("toDō").foregroundStyle(AppColor.main).bold()) what matters")
+         Text("\(Text("toDō").foregroundStyle(AppColor.main).bold()) \(Text(String(localized: "what matters")))")
             .font(.appSubtitle(16, relativeTo: .subheadline))
             .foregroundStyle(AppColor.textPrimary)
             .multilineTextAlignment(.center)
@@ -556,57 +771,25 @@ struct SettingsView: View {
    }
 
    private var brandWordmarkFont: Font {
-      .custom("Aleo-Bold", size: 17, relativeTo: .footnote)
+      .custom("Aleo", size: 17, relativeTo: .footnote)
+         .weight(.medium)
    }
 
    private var brandWordmarkItalicFont: Font {
-      .custom("Aleo-BoldItalic", size: 17, relativeTo: .footnote)
-   }
-
-   private var pinnedTitleHeader: some View {
-      VStack(spacing: 0) {
-         HStack(alignment: .center, spacing: 12) {
-            Text("Settings")
-               .font(.appTitle(34, relativeTo: .largeTitle))
-               .foregroundStyle(AppColor.headerForeground(for: colorScheme))
-               .accessibilityAddTraits(.isHeader)
-
-            Spacer(minLength: 12)
-
-            Button {
-               closeView()
-            } label: {
-               Image(systemName: "xmark")
-                  .font(.appBodyStrong(21, relativeTo: .largeTitle))
-                  .foregroundStyle(AppColor.headerControlForeground(for: colorScheme))
-                  .frame(width: 34, height: 34)
-                  .background {
-                     if #unavailable(iOS 26.0) {
-                        Circle()
-                           .fill(AppColor.headerControlBackground(for: colorScheme))
-                     }
-                  }
-                  .appInteractiveCircleGlass(tint: AppColor.headerControlBackground(for: colorScheme))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Close settings")
-         }
-         .frame(maxWidth: .infinity, alignment: .leading)
-         .padding(.horizontal, 16)
-         .padding(.top, 8)
-         .padding(.bottom, 14)
-         .background(AppColor.main)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .custom("Aleo", size: 17, relativeTo: .footnote)
+         .weight(.regular)
+         .italic()
    }
 
    private func settingsSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
       VStack(alignment: .leading, spacing: 10) {
          Text(LocalizedStringKey(title))
-            .font(.appSubtitle(15, relativeTo: .subheadline))
-            .foregroundStyle(AppColor.main)
+            .font(.appDisplay(22, relativeTo: .title3))
+            .foregroundStyle(AppColor.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.82)
 
-         VStack(alignment: .leading, spacing: 18) {
+         VStack(alignment: .leading, spacing: 20) {
             content()
          }
          .frame(maxWidth: .infinity, alignment: .leading)
@@ -623,10 +806,11 @@ struct SettingsView: View {
       _ title: String,
       detail: String,
       detailForeground: Color = AppColor.textSecondary,
-      detailFont: Font = .appBodyStrong(17, relativeTo: .body)
+      detailFont: Font = .appBody(16, relativeTo: .body)
    ) -> some View {
       HStack(spacing: 14) {
          Text(LocalizedStringKey(title))
+            .font(.appBodyStrong(17, relativeTo: .body))
             .foregroundStyle(AppColor.textPrimary)
 
          Spacer(minLength: 14)
@@ -639,7 +823,7 @@ struct SettingsView: View {
             .font(.appBodyStrong(11, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
       }
-      .padding(.vertical, 3)
+      .padding(.vertical, 7)
    }
 
    private func settingsStandaloneNavigationButton(
@@ -1003,7 +1187,7 @@ struct SettingsView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                Text(LocalizedStringKey(title))
-                  .font(.appBodyStrong(15, relativeTo: .subheadline))
+                  .font(.appButton(17, relativeTo: .headline))
                   .foregroundStyle(foregroundStyle)
 
                Text(LocalizedStringKey(detail))
@@ -1036,14 +1220,17 @@ struct SettingsView: View {
       VStack(alignment: .leading, spacing: 10) {
          HStack(alignment: .center, spacing: 12) {
             Text("Current Sync")
-               .font(.appBody(17, relativeTo: .body))
+               .font(.appDisplay(20, relativeTo: .headline))
                .foregroundStyle(AppColor.textPrimary)
 
             Spacer(minLength: 12)
 
             Text(syncStatusTitle)
-               .font(.appBodyStrong(17, relativeTo: .body))
+               .font(.appBadge(14, relativeTo: .subheadline))
                .foregroundStyle(AppColor.textSecondary)
+               .padding(.horizontal, 10)
+               .padding(.vertical, 6)
+               .background(AppColor.surfaceMuted, in: Capsule())
          }
 
          Text(syncStatusDetail)
@@ -1102,13 +1289,9 @@ struct SettingsView: View {
    private var syncDeletionPreferenceToggle: some View {
       Toggle(isOn: $mirrorSyncDeletesToDeviceOnly) {
          VStack(alignment: .leading, spacing: 5) {
-            Text("Match Deletes on This Device")
+            Text("Match Deletes Everywhere")
                .font(.appBodyStrong(15, relativeTo: .subheadline))
                .foregroundStyle(AppColor.textPrimary)
-
-            Text("When on, deleting a synced toDō also removes its copy on this device.")
-               .font(.appBody(12, relativeTo: .caption))
-               .foregroundStyle(AppColor.textSecondary)
          }
       }
       .tint(AppColor.actionSecondary)
@@ -1168,10 +1351,7 @@ struct SettingsView: View {
          notificationSoundDropdown
          notificationSoundPreviewButton
 
-         Text("Quiet stays silent. Due and Time-Sensitive can play your selected sound.")
-            .font(.appBody(11, relativeTo: .caption2))
-            .foregroundStyle(AppColor.textSecondary)
-            .fixedSize(horizontal: false, vertical: true)
+         reminderIntentSoundGuide
 
          Divider()
             .overlay(AppColor.border.opacity(0.5))
@@ -1319,7 +1499,7 @@ struct SettingsView: View {
 
                HStack(spacing: 8) {
                   Text(resolvedNotificationSoundOption.title)
-                     .font(.appBodyStrong(12, relativeTo: .caption))
+                     .font(.appBadge(12, relativeTo: .caption))
                      .foregroundStyle(AppColor.onAction)
                      .padding(.horizontal, 10)
                      .padding(.vertical, 6)
@@ -1342,38 +1522,28 @@ struct SettingsView: View {
    }
 
    private var notificationSoundPreviewButton: some View {
-      Button {
+      let previewBlue = Color(red: 0.16, green: 0.43, blue: 0.88)
+      return Button {
          scheduleNotificationSoundPreview()
       } label: {
          HStack(spacing: 12) {
-            Image(systemName: "speaker.wave.2.circle.fill")
-               .font(.appDisplay(16, relativeTo: .subheadline))
-               .foregroundStyle(AppColor.actionSecondary)
-               .frame(width: 22, height: 22)
+            Image(systemName: "speaker.wave.2.fill")
+               .font(.appDisplay(20, relativeTo: .headline))
+               .foregroundStyle(AppColor.onAction)
+               .frame(width: 28, height: 28)
 
-            VStack(alignment: .leading, spacing: 5) {
-               Text("Test Sound")
-                  .font(.appBodyStrong(13, relativeTo: .footnote))
-                  .foregroundStyle(AppColor.textPrimary)
-
-               Text(notificationSoundPreviewStatus ?? String(localized: "Plays the sound you selected for reminders."))
-                  .font(.appBody(11, relativeTo: .caption2))
-                  .foregroundStyle(AppColor.textSecondary)
-                  .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(notificationSoundPreviewStatus ?? String(localized: "Test Sound"))
+               .font(.appButton(16, relativeTo: .subheadline))
+               .foregroundStyle(AppColor.onAction)
 
             Spacer(minLength: 8)
 
-            Image(systemName: "arrow.up.forward.circle")
-               .font(.appBodyStrong(14, relativeTo: .footnote))
-               .foregroundStyle(AppColor.textSecondary)
          }
-         .padding(.horizontal, 16)
-         .padding(.vertical, 14)
-         .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 20))
+         .padding(.horizontal, 14)
+         .padding(.vertical, 10)
+         .background(previewBlue, in: .rect(cornerRadius: 16))
       }
       .buttonStyle(.plain)
-      .disabled(notificationManager.authorizationStatus == .denied)
    }
 
    private var badgePolicyDropdown: some View {
@@ -1413,7 +1583,7 @@ struct SettingsView: View {
 
                HStack(spacing: 8) {
                   Text(resolvedBadgePolicy.title)
-                     .font(.appBodyStrong(12, relativeTo: .caption))
+                     .font(.appBadge(12, relativeTo: .caption))
                      .foregroundStyle(AppColor.onAction)
                      .padding(.horizontal, 10)
                      .padding(.vertical, 6)
@@ -1444,7 +1614,7 @@ struct SettingsView: View {
          } label: {
             HStack(alignment: .center, spacing: 12) {
                Text("Sorting")
-                  .font(.appBody(17, relativeTo: .body))
+                  .font(.appBodyStrong(17, relativeTo: .body))
                   .foregroundStyle(AppColor.textPrimary)
 
                Spacer(minLength: 12)
@@ -1476,12 +1646,12 @@ struct SettingsView: View {
                options: AppPreferences.ToDoListSortOption.groupingOptions
             )
          }
-         .frame(maxHeight: isSortMenuExpanded ? 108 : 0, alignment: .top)
+         .frame(maxHeight: isSortMenuExpanded ? 118 : 0, alignment: .top)
          .opacity(isSortMenuExpanded ? 1 : 0)
-         .scaleEffect(y: isSortMenuExpanded ? 1 : 0.96, anchor: .top)
          .clipped()
          .allowsHitTesting(isSortMenuExpanded)
       }
+      .animation(AppAnimation.snappyStandard, value: isSortMenuExpanded)
    }
 
    private func compactSortOptionsRow(
@@ -1489,8 +1659,8 @@ struct SettingsView: View {
       options: [AppPreferences.ToDoListSortOption]
    ) -> some View {
       VStack(alignment: .leading, spacing: 6) {
-         Text(title)
-            .font(.appDisplay(11, relativeTo: .caption))
+         Text(LocalizedStringKey(title))
+            .font(.appBodyStrong(11, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
 
          ScrollView(.horizontal, showsIndicators: false) {
@@ -1519,7 +1689,7 @@ struct SettingsView: View {
       Button(action: action) {
          HStack(spacing: 6) {
             Text(title)
-               .font(isSelected ? .appSubtitle(13, relativeTo: .caption) : .appBodyStrong(13, relativeTo: .caption))
+               .font(.appBadge(15, relativeTo: .subheadline))
 
             if let direction {
                Image(systemName: direction)
@@ -1571,7 +1741,7 @@ struct SettingsView: View {
          } label: {
             HStack(alignment: .center, spacing: 12) {
                Text("Time Zone")
-                  .font(.appBody(17, relativeTo: .body))
+                  .font(.appBodyStrong(17, relativeTo: .body))
                   .foregroundStyle(AppColor.textPrimary)
 
                Spacer(minLength: 12)
@@ -1629,9 +1799,10 @@ struct SettingsView: View {
                .buttonStyle(.plain)
             }
          }
-         .frame(height: isTimeSourceMenuExpanded ? nil : 0, alignment: .top)
-         .clipped()
+         .frame(maxHeight: isTimeSourceMenuExpanded ? 112 : 0, alignment: .top)
          .opacity(isTimeSourceMenuExpanded ? 1 : 0)
+         .clipped()
+         .allowsHitTesting(isTimeSourceMenuExpanded)
 
          if resolvedTimeSource == .location {
             settingsActionRow(
@@ -1647,6 +1818,7 @@ struct SettingsView: View {
             }
          }
       }
+      .animation(AppAnimation.snappyStandard, value: isTimeSourceMenuExpanded)
    }
 
    private var doneSwipeActionDropdown: some View {
@@ -1657,8 +1829,8 @@ struct SettingsView: View {
             }
          } label: {
             HStack(alignment: .center, spacing: 12) {
-               Text("After Marking Done")
-                  .font(.appBody(17, relativeTo: .body))
+               Text("Remove Action")
+                  .font(.appBodyStrong(17, relativeTo: .body))
                   .foregroundStyle(AppColor.textPrimary)
 
                Spacer(minLength: 12)
@@ -1712,11 +1884,32 @@ struct SettingsView: View {
                .buttonStyle(.plain)
             }
          }
-         .frame(height: isDoneSwipeMenuExpanded ? nil : 0, alignment: .top)
-         .clipped()
+         .frame(maxHeight: isDoneSwipeMenuExpanded ? 112 : 0, alignment: .top)
          .opacity(isDoneSwipeMenuExpanded ? 1 : 0)
+         .clipped()
+         .allowsHitTesting(isDoneSwipeMenuExpanded)
       }
+      .animation(AppAnimation.snappyStandard, value: isDoneSwipeMenuExpanded)
    }
+
+   private var reminderIntentSoundGuide: some View {
+      TagPillFlowLayout(spacing: 8, rowSpacing: 8) {
+         intentGuideChip("Quiet", systemName: "bell.slash", tint: AppColor.textSecondary)
+         intentGuideChip("Due", systemName: "bell", tint: AppColor.actionPrimary)
+         intentGuideChip("Time-Sensitive", systemName: "flame", tint: AppColor.actionDestructive)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+   }
+
+   private func intentGuideChip(_ title: String, systemName: String, tint: Color) -> some View {
+      Label(title, systemImage: systemName)
+         .font(.appBodyStrong(11, relativeTo: .caption))
+         .foregroundStyle(tint)
+         .padding(.horizontal, 10)
+         .padding(.vertical, 7)
+         .background(tint.opacity(0.10), in: Capsule())
+   }
+
 }
 
 private struct ThemeSettingsScreen: View {
@@ -1762,14 +1955,11 @@ private struct ThemeSettingsScreen: View {
             }
          }
 
-         Picker("Display Mode", selection: $appAppearanceModeRaw) {
+         HStack(spacing: 8) {
             ForEach(AppPreferences.AppAppearanceMode.allCases) { mode in
-               Text(mode.title)
-                  .tag(mode.rawValue)
+               appearanceModeButton(mode)
             }
          }
-         .pickerStyle(.segmented)
-         .tint(AppColor.actionPrimary)
 
          Text(resolvedAppearanceMode.detail)
             .font(.appBody(12, relativeTo: .caption))
@@ -1793,6 +1983,40 @@ private struct ThemeSettingsScreen: View {
       }
    }
 
+   private func appearanceModeButton(_ mode: AppPreferences.AppAppearanceMode) -> some View {
+      let isSelected = mode == resolvedAppearanceMode
+
+      return Button {
+         withAnimation(AppAnimation.snappyStandard) {
+            appAppearanceModeRaw = mode.rawValue
+         }
+      } label: {
+         VStack(spacing: 7) {
+            Image(systemName: appearanceModeSymbol(mode))
+               .font(.appDisplay(17, relativeTo: .headline))
+            Text(mode.title)
+               .font(.appBadge(14, relativeTo: .caption))
+         }
+         .foregroundStyle(isSelected ? AppColor.onAction : AppColor.textPrimary)
+         .frame(maxWidth: .infinity)
+         .padding(.vertical, 12)
+         .background(isSelected ? AppColor.actionPrimary : AppColor.surfaceMuted, in: .rect(cornerRadius: 18))
+      }
+      .buttonStyle(.plain)
+      .accessibilityAddTraits(isSelected ? .isSelected : [])
+   }
+
+   private func appearanceModeSymbol(_ mode: AppPreferences.AppAppearanceMode) -> String {
+      switch mode {
+      case .system:
+         return "iphone"
+      case .light:
+         return "sun.max.fill"
+      case .dark:
+         return "moon.fill"
+      }
+   }
+
    private var themePickerBlock: some View {
       VStack(alignment: .leading, spacing: 18) {
          VStack(alignment: .leading, spacing: 10) {
@@ -1811,10 +2035,6 @@ private struct ThemeSettingsScreen: View {
                .font(.appTitle(34, relativeTo: .largeTitle))
                .foregroundStyle(AppColor.textPrimary)
 
-            Text(resolvedTheme.subtitle)
-               .font(.appBody(13, relativeTo: .footnote))
-               .foregroundStyle(AppColor.textSecondary)
-               .fixedSize(horizontal: false, vertical: true)
          }
          .padding(18)
          .frame(maxWidth: .infinity, alignment: .leading)
@@ -1853,17 +2073,17 @@ private struct ThemeSettingsScreen: View {
             appThemeRaw = selectedThemeRaw
          }
       } label: {
-         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 5) {
+         VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 7) {
                Circle().fill(palette.main)
                Circle().fill(palette.secondary)
                Circle().fill(palette.tertiary)
             }
-            .frame(height: 18)
+            .frame(height: 24)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 10) {
                Text(theme.title)
-                  .font(.appBodyStrong(12, relativeTo: .caption))
+                  .font(.appBodyStrong(16, relativeTo: .body))
                   .foregroundStyle(AppColor.textPrimary)
                   .lineLimit(1)
 
@@ -1871,19 +2091,13 @@ private struct ThemeSettingsScreen: View {
 
                if isSelected {
                   Image(systemName: "checkmark.circle.fill")
-                     .font(.appBodyStrong(12, relativeTo: .caption))
+                     .font(.appBodyStrong(19, relativeTo: .headline))
                      .foregroundStyle(AppColor.iconAccent)
                }
             }
-
-            Text(theme.subtitle)
-               .font(.appBody(11, relativeTo: .caption2))
-               .foregroundStyle(AppColor.textSecondary)
-               .lineLimit(2)
-               .multilineTextAlignment(.leading)
          }
          .frame(maxWidth: .infinity, alignment: .leading)
-         .padding(12)
+         .padding(14)
          .background {
             if #unavailable(iOS 26.0) {
                RoundedRectangle(cornerRadius: 16, style: .continuous)

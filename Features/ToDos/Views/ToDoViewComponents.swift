@@ -6,9 +6,11 @@ import MapKit
 
 struct ToDoLifecycleActionBar: View {
    let isDone: Bool
-   var includesTrash = true
-   let onArchive: () -> Void
-   let onTrash: () -> Void
+   let removalAction: AppPreferences.DoneSwipePrimaryAction
+   var includesRemovalAction = true
+   var includesSnooze = false
+   let onRemoval: () -> Void
+   let onSnooze: () -> Void
    let onToggleDone: () -> Void
 
    var body: some View {
@@ -30,21 +32,23 @@ struct ToDoLifecycleActionBar: View {
 
    private var controls: some View {
       HStack(spacing: 14) {
-         lifecycleActionButton(
-            systemName: "archivebox.fill",
-            accessibilityLabel: "Archive toDō",
-            foreground: AppColor.onAction,
-            background: AppColor.actionPrimary,
-            action: onArchive
-         )
-
-         if includesTrash {
+         if includesSnooze {
             lifecycleActionButton(
-               systemName: "trash.fill",
-               accessibilityLabel: "Move toDō to trash",
+               systemName: "clock.arrow.circlepath",
+               accessibilityLabel: "Snooze toDō",
                foreground: AppColor.onAction,
-               background: AppColor.actionDestructive,
-               action: onTrash
+               background: AppColor.actionPrimary,
+               action: onSnooze
+            )
+         }
+
+         if includesRemovalAction {
+            lifecycleActionButton(
+               systemName: removalAction.systemImage,
+               accessibilityLabel: LocalizedStringKey(removalAction.accessibilityLabel),
+               foreground: AppColor.onAction,
+               background: removalAction == .delete ? AppColor.actionDestructive : AppColor.actionSecondary,
+               action: onRemoval
             )
          }
 
@@ -67,9 +71,9 @@ struct ToDoLifecycleActionBar: View {
    ) -> some View {
       Button(action: action) {
          Image(systemName: systemName)
-            .font(.appBodyStrong(19, relativeTo: .headline))
+            .font(.appDisplay(18, relativeTo: .headline))
             .foregroundStyle(foreground)
-            .frame(width: 46, height: 46)
+            .frame(width: 34, height: 34)
             .background {
                if #unavailable(iOS 26) {
                   Circle().fill(background)
@@ -164,6 +168,7 @@ struct NanoDoReadOnlyRowView: View {
 struct ToDoDueDateCalendar: View {
    @Binding var selection: Date?
    @State private var visibleMonth: Date
+   @Environment(\.colorScheme) private var colorScheme
 
    private let calendar = AppLocalization.displayCalendar
    private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
@@ -241,20 +246,20 @@ struct ToDoDueDateCalendar: View {
          }
       } label: {
          Text(dayNumber(for: date))
-            .font(.appBodyStrong(14, relativeTo: .subheadline))
+            .font(isSelected ? .appSubtitle(16, relativeTo: .headline) : .appBodyStrong(15, relativeTo: .subheadline))
             .foregroundStyle(dayTextColor(isSelected: isSelected, isToday: isToday))
             .frame(width: 34, height: 34)
             .background {
-               if #unavailable(iOS 26.0) {
+               if isSelected {
                   Circle()
-                     .fill(isSelected ? AppColor.main : Color.clear)
+                     .fill(AppColor.main)
+                     .shadow(color: AppColor.main.opacity(0.24), radius: 8, y: 4)
                }
             }
-            .appInteractiveCircleGlass(tint: isSelected ? AppColor.main : AppColor.surfaceMuted)
             .overlay {
-               if #unavailable(iOS 26.0) {
+               if isToday && !isSelected {
                   Circle()
-                     .stroke(isToday && !isSelected ? AppColor.main : Color.clear, lineWidth: 1.5)
+                     .stroke(AppColor.main, lineWidth: 1.5)
                }
             }
             .contentShape(Circle())
@@ -291,7 +296,7 @@ struct ToDoDueDateCalendar: View {
 
    private func dayTextColor(isSelected: Bool, isToday: Bool) -> Color {
       if isSelected {
-         return AppColor.textPrimary
+         return AppColor.brandYellowForeground(for: colorScheme)
       }
 
       return isToday ? AppColor.textPrimary : AppColor.textSecondary
@@ -326,9 +331,9 @@ struct NanoDoRowView: View {
                }
             } label: {
                Image(systemName: nanoDo.isDone ? "checkmark.circle.fill" : "circle")
-                  .font(.appDisplay(18, relativeTo: .headline))
+                  .font(.appDisplay(23, relativeTo: .headline))
                   .foregroundStyle(nanoDo.isDone ? AppColor.actionPrimary : AppColor.textSecondary)
-                  .frame(width: 30, height: 30)
+                  .frame(width: 34, height: 34)
                   .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
@@ -343,7 +348,7 @@ struct NanoDoRowView: View {
                      SyncCoordinator.shared.scheduleLocalSync()
                   }
                ))
-               .font(.appDisplay(18, relativeTo: .headline))
+               .font(.appUserEntry(18, relativeTo: .headline))
                .foregroundStyle(nanoDo.isDone ? AppColor.textSecondary : AppColor.textPrimary)
                .strikethrough(nanoDo.isDone, color: AppColor.textSecondary.opacity(0.6))
             } else {
@@ -361,18 +366,9 @@ struct NanoDoRowView: View {
                   onDelete()
                } label: {
                   Image(systemName: "trash")
-                     .font(.appDisplay(14, relativeTo: .subheadline))
-                     .frame(width: 30, height: 30)
+                     .frame(width: 26, height: 26)
                }
-               .buttonStyle(.plain)
-               .foregroundStyle(AppColor.actionDestructive)
-               .background {
-                  if #unavailable(iOS 26.0) {
-                     Circle()
-                        .fill(AppColor.surface)
-                  }
-               }
-               .appInteractiveCircleGlass(tint: AppColor.surface)
+               .buttonStyle(AppOutlinedIconButtonStyle(tint: AppColor.actionDestructive, size: 28, symbolSize: 12, lineWidth: 2))
                .accessibilityLabel("Delete nanoDo")
             }
          }
@@ -425,10 +421,10 @@ struct NanoDoRowView: View {
       }
       .padding(12)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(AppColor.main.opacity(nanoDo.isDone ? 0.09 : 0.16), in: .rect(cornerRadius: 18))
+      .background(AppColor.surfaceElevated.opacity(nanoDo.isDone ? 0.62 : 0.92), in: .rect(cornerRadius: 18))
       .overlay(
          RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .stroke(AppColor.main.opacity(nanoDo.isDone ? 0.16 : 0.28), lineWidth: 1)
+            .stroke(AppColor.secondary.opacity(nanoDo.isDone ? 0.12 : 0.22), lineWidth: 1)
       )
       .opacity(nanoDo.isDone ? 0.72 : 1)
    }
@@ -439,7 +435,7 @@ struct SwipeableNanoDoRow: View {
    let onDelete: () -> Void
    @State private var dragOffset: CGFloat = 0
 
-   private let actionWidth: CGFloat = 66
+   private let actionWidth: CGFloat = 58
 
    var body: some View {
       ZStack(alignment: .trailing) {
@@ -448,9 +444,9 @@ struct SwipeableNanoDoRow: View {
             onDelete()
          } label: {
             Image(systemName: "trash")
-               .font(.appDisplay(19, relativeTo: .headline))
+               .font(.appDisplay(13, relativeTo: .footnote))
                .foregroundStyle(AppColor.onAction)
-               .frame(width: 54, height: 54)
+               .frame(width: 38, height: 38)
                .background {
                   if #unavailable(iOS 26.0) {
                      Circle()
@@ -459,6 +455,7 @@ struct SwipeableNanoDoRow: View {
                }
                .appInteractiveCircleGlass(tint: AppColor.actionDestructive)
          }
+         .padding(.trailing, 10)
          .buttonStyle(.plain)
          .accessibilityLabel("Delete nanoDo")
 

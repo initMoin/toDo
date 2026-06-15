@@ -232,19 +232,27 @@ struct SyncHealthStatusView: View {
 
     private var relativeDateFormatter: RelativeDateTimeFormatter {
         let formatter = RelativeDateTimeFormatter()
+        formatter.locale = AppLocalization.displayLocale
+        formatter.calendar = AppLocalization.displayCalendar
         formatter.unitsStyle = .full
         return formatter
     }
 
     private var absoluteDateFormatter: DateFormatter {
         let formatter = DateFormatter()
+        formatter.locale = AppLocalization.displayLocale
+        formatter.calendar = AppLocalization.displayCalendar
         formatter.dateStyle = .none
         formatter.timeStyle = .short
         return formatter
     }
 
     private func lastSyncMessage(for date: Date) -> String {
-        "Last synced \(relativeDateFormatter.localizedString(for: date, relativeTo: .now)) at \(absoluteDateFormatter.string(from: date))."
+        String(
+            format: String(localized: "Last synced %@ at %@."),
+            relativeDateFormatter.localizedString(for: date, relativeTo: .now),
+            absoluteDateFormatter.string(from: date)
+        )
     }
 }
 

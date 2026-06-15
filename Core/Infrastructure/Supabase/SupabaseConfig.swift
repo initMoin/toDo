@@ -7,27 +7,55 @@ enum SupabaseConfig {
         static let redirectURL = "SUPABASE_REDIRECT_URL"
     }
 
-    static let supabaseURL: URL = requiredURL(for: Key.url)
-    static let publishableKey: String = requiredString(for: Key.publishableKey)
-    static let redirectURL: URL = requiredURL(for: Key.redirectURL)
+    static let supabaseURL: URL = optionalWebURL(for: Key.url) ?? URL(string: "https://localhost.invalid")!
+    static let publishableKey: String = optionalString(for: Key.publishableKey) ?? "missing-supabase-publishable-key"
+    static let redirectURL: URL = optionalURL(for: Key.redirectURL) ?? URL(string: "todo://auth-callback")!
+
+    static var isConfigured: Bool {
+        optionalWebURL(for: Key.url) != nil &&
+        optionalString(for: Key.publishableKey) != nil &&
+        optionalURL(for: Key.redirectURL) != nil
+    }
+
+    static var configurationIssue: String? {
+        if optionalWebURL(for: Key.url) == nil {
+            return "Missing or invalid \(Key.url) in Info.plist"
+        }
+        if optionalString(for: Key.publishableKey) == nil {
+            return "Missing \(Key.publishableKey) in Info.plist"
+        }
+        if optionalURL(for: Key.redirectURL) == nil {
+            return "Missing or invalid \(Key.redirectURL) in Info.plist"
+        }
+        return nil
+    }
 
     static var callbackScheme: String {
         redirectURL.scheme ?? "todo"
     }
 
-    private static func requiredString(for key: String) -> String {
+    private static func optionalString(for key: String) -> String? {
         guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String,
               !value.isEmpty
         else {
-            fatalError("Missing \(key) in Info.plist")
+            return nil
         }
         return value
     }
 
-    private static func requiredURL(for key: String) -> URL {
-        guard let url = URL(string: requiredString(for: key)) else {
-            fatalError("Invalid URL for \(key) in Info.plist")
+    private static func optionalURL(for key: String) -> URL? {
+        optionalString(for: key).flatMap(URL.init(string:))
+    }
+
+    private static func optionalWebURL(for key: String) -> URL? {
+        guard let url = optionalURL(for: key),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              url.host != nil
+        else {
+            return nil
         }
+
         return url
     }
 }

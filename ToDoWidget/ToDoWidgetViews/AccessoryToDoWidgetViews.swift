@@ -11,18 +11,18 @@ struct AccessoryInlineToDoWidgetView: View {
 
    private var inlineText: String {
       if entry.filteredCount == 0 {
-         return "ToDō clear"
+         return String(localized: "ToDō clear")
       }
 
       if entry.snapshot.overdueCount > 0 {
-         return "ToDō \(entry.snapshot.overdueCount) overdue"
+         return String(format: String(localized: "ToDō %@ overdue"), WidgetFormatting.numberString(entry.snapshot.overdueCount))
       }
 
       if entry.snapshot.dueTodayCount > 0 {
-         return "ToDō \(entry.snapshot.dueTodayCount) today"
+         return String(format: String(localized: "ToDō %@ today"), WidgetFormatting.numberString(entry.snapshot.dueTodayCount))
       }
 
-      return "ToDō \(entry.filteredCount)"
+      return String(format: String(localized: "ToDō %@"), WidgetFormatting.numberString(entry.filteredCount))
    }
 }
 
@@ -34,7 +34,7 @@ struct AccessoryCircularToDoWidgetView: View {
          AccessoryWidgetBackground()
 
          VStack(spacing: 2) {
-            Text("\(entry.filteredCount)")
+            Text(WidgetFormatting.numberString(entry.filteredCount))
                .font(.system(size: 18, weight: .bold, design: .rounded))
                .minimumScaleFactor(0.72)
 
@@ -70,7 +70,7 @@ struct AccessoryRectangularToDoWidgetView: View {
 
             Spacer(minLength: 0)
 
-            Text("\(entry.filteredCount)")
+            Text(WidgetFormatting.numberString(entry.filteredCount))
                .font(.system(size: 13, weight: .bold, design: .rounded))
          }
 
@@ -99,21 +99,21 @@ struct AccessoryRectangularToDoWidgetView: View {
 
    private func detailText(for item: ToDoWidgetItem) -> String {
       if item.isOverdue {
-         return "Overdue"
+         return String(localized: "Overdue")
       }
 
       if item.isDueToday {
-         return item.due?.formatted(date: .omitted, time: .shortened) ?? "Due today"
+         return item.due.map(WidgetFormatting.timeString) ?? String(localized: "Due today")
       }
 
       if let due = item.due {
-         return due.formatted(date: .abbreviated, time: .shortened)
+         return WidgetFormatting.dateTimeString(due)
       }
 
       if let tag = item.tagNames.first {
          return "#\(tag)"
       }
 
-      return "Active"
+      return String(localized: "Active")
    }
 }

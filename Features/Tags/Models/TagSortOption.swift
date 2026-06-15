@@ -10,11 +10,11 @@ enum TagSortOption: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .name:
-            return "Name"
+            return String(localized: "Name")
         case .created:
-            return "Created"
+            return String(localized: "Created")
         case .linked:
-            return "Linked"
+            return String(localized: "Linked")
         }
     }
 
@@ -32,11 +32,11 @@ enum TagSortOption: String, CaseIterable, Identifiable {
     func directionTitle(isAscending: Bool) -> String {
         switch self {
         case .name:
-            return isAscending ? "A to Z" : "Z to A"
+            return isAscending ? String(localized: "A to Z") : String(localized: "Z to A")
         case .created:
-            return isAscending ? "Oldest to Newest" : "Newest to Oldest"
+            return isAscending ? String(localized: "Oldest to Newest") : String(localized: "Newest to Oldest")
         case .linked:
-            return isAscending ? "Least to Most" : "Most to Least"
+            return isAscending ? String(localized: "Least to Most") : String(localized: "Most to Least")
         }
     }
 

@@ -14,12 +14,9 @@
 	<array>
 		<string>CalSans-Regular.ttf</string>
 		<string>Jura-Variable.ttf</string>
-		<string>nixieone-regular.ttf</string>
-		<string>bjorn-light.otf</string>
-		<string>bjorn-regular.otf</string>
 		<string>bebas-neue.ttf</string>
-		<string>Aleo-Bold.ttf</string>
-		<string>Aleo-BoldItalic.ttf</string>
+		<string>Aleo-VariableFont_wght.ttf</string>
+		<string>Aleo-Italic-VariableFont_wght.ttf</string>
 	</array>
 	<key>UIBackgroundModes</key>
 	<array>

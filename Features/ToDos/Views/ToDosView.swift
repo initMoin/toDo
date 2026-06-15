@@ -1,9 +1,5 @@
 import SwiftUI
 import SwiftData
-import Combine
-#if canImport(UIKit)
-import UIKit
-#endif
 
 struct ToDosView: View {
    private enum SystemListFilter: Equatable {
@@ -13,9 +9,27 @@ struct ToDosView: View {
       case timeSensitive
    }
 
+   private enum ActiveSheet: Identifiable {
+      case bulkTagPicker
+      case syncReview
+      case settings
+
+      var id: String {
+         switch self {
+         case .bulkTagPicker:
+            return "bulk-tag-picker"
+         case .syncReview:
+            return "sync-review"
+         case .settings:
+            return "settings"
+         }
+      }
+   }
+
    @Environment(\.modelContext) private var context
    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
    @Environment(\.colorScheme) private var colorScheme
+   @Environment(\.dismiss) private var dismiss
    @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
    @ObservedObject private var syncCoordinator = SyncCoordinator.shared
    @Query private var toDos: [ToDo]
@@ -34,19 +48,14 @@ struct ToDosView: View {
    @State private var selectedTagID: PersistentIdentifier?
    @State private var searchText = ""
    @State private var isSearchVisible = false
-   @State private var isShowingNewToDo = false
-   @State private var isShowingSettings = false
-   @State private var isShowingSyncReview = false
+   @State private var activeSheet: ActiveSheet?
    @State private var isSelectionMode = false
-   @State private var isShowingBulkTagPicker = false
    @State private var selectedCircleID: UUID?
    @State private var showingSyncView = false
    @State private var pendingNotificationToDoRoute: PendingNotificationToDoRoute?
    @State private var pendingNotificationResolutionTask: Task<Void, Never>?
    @State private var isShowingMissingNotificationToDoAlert = false
    @State private var selectedToDoIDs = Set<PersistentIdentifier>()
-   @State private var editingToDo: ToDo?
-   @State private var viewingToDo: ToDo?
    @State private var isFilterVisible = false
    @State private var isUtilityTrayPresented = false
    @State private var expandedToDoID: PersistentIdentifier?
@@ -54,115 +63,78 @@ struct ToDosView: View {
    @State private var composerDetent = PresentationDetent.large//.fraction(0.92)
    @State private var systemListFilter: SystemListFilter?
    @State private var didApplyScreenshotPresentation = false
-   @State private var keyboardHeight: CGFloat = 0
    @State private var completionAnimationPhases: [PersistentIdentifier: ToDoCompletionAnimationPhase] = [:]
    @FocusState private var isSearchFieldFocused: Bool
 
    @State private var navigationCoordinator = NavigationCoordinator.shared
    @StateObject private var onboardingManager = GuidedOnboardingManager.shared
 
+   let onCreateToDo: (PersistentIdentifier?) -> Void
+   let onViewToDo: (ToDo) -> Void
+   let onEditToDo: (ToDo) -> Void
+
+   init(
+      onCreateToDo: @escaping (PersistentIdentifier?) -> Void = { _ in },
+      onViewToDo: @escaping (ToDo) -> Void = { _ in },
+      onEditToDo: @escaping (ToDo) -> Void = { _ in }
+   ) {
+      self.onCreateToDo = onCreateToDo
+      self.onViewToDo = onViewToDo
+      self.onEditToDo = onEditToDo
+   }
+
    var body: some View {
-      NavigationStack {
-         ZStack(alignment: .bottomTrailing) {
-            AppColor.surface
-               .ignoresSafeArea()
+      ZStack(alignment: .bottomTrailing) {
+         AppColor.surface
+            .ignoresSafeArea()
 
-            listContent
-               .blur(radius: isInlineEditingDetail ? 5 : 0)
-               .animation(AppAnimation.snappySection, value: isInlineEditingDetail)
+         listContent
+            .blur(radius: isInlineEditingDetail ? 5 : 0)
+            .animation(AppAnimation.snappySection, value: isInlineEditingDetail)
 
-            if filteredWorkingToDos.isEmpty && !usesRegularWidthLayout {
-               emptyStateOverlay
-            }
+         if filteredWorkingToDos.isEmpty && !usesRegularWidthLayout {
+            emptyStateOverlay
+         }
 
-            if !usesRegularWidthLayout {
-               GeometryReader { proxy in
-                  VStack(spacing: 0) {
-                     Spacer(minLength: 0)
+         inlineDetailEditorOverlay
 
-                     HStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        composeButton(containerWidth: proxy.size.width)
-                     }
-                  }
-               }
-               .allowsHitTesting(!isComposeButtonSuppressed)
+         if let feedback = syncCoordinator.syncFeedback {
+            SyncFeedbackOverlay(feedback: feedback)
+               .transition(.move(edge: .top).combined(with: .opacity))
+               .zIndex(1000)
+         }
+      }
+      .overlayPreferenceValue(OnboardingSpotlightPreferenceKey.self) { anchors in
+         if onboardingManager.blocksToDosChrome {
+            GuidedOnboardingOverlay(manager: onboardingManager, anchors: anchors) { step in
+               handleOnboardingPrimaryAction(step)
             }
-
-            inlineDetailEditorOverlay
-
-            if let feedback = syncCoordinator.syncFeedback {
-               SyncFeedbackOverlay(feedback: feedback)
-                  .transition(.move(edge: .top).combined(with: .opacity))
-                  .zIndex(1000)
-            }
+            .zIndex(1200)
          }
-         .navigationBarHidden(true)
-         .overlayPreferenceValue(OnboardingSpotlightPreferenceKey.self) { anchors in
-            if onboardingManager.blocksToDosChrome {
-               GuidedOnboardingOverlay(manager: onboardingManager, anchors: anchors) { step in
-                  handleOnboardingPrimaryAction(step)
-               }
-               .zIndex(1200)
-            }
+      }
+      .sheet(item: $activeSheet) { sheet in
+         activeSheetContent(for: sheet)
+      }
+      .onAppear {
+         onboardingManager.startIfNeeded()
+         resumeGuidedOnboardingIfNeeded()
+         if defaultTagSeedVersion < 1 {
+            seedIfNeeded()
          }
-         .sheet(isPresented: $isShowingBulkTagPicker) {
-            BulkTagPickerView(
-               selectedTagID: selectedTagID,
-               tags: tagList,
-               onApply: applyBulkTag,
-               onClear: clearBulkTags
-            )
-         }
-         .sheet(isPresented: composerSheetIsPresented) {
-            composerSheetContent
-               .presentationDetents([.large], selection: $composerDetent)
-               .presentationDragIndicator(.visible)
-               .presentationContentInteraction(.scrolls)
-               .onAppear {
-                  composerDetent = .large
-               }
-         }
-         .sheet(isPresented: $isShowingSyncReview) {
-            NavigationStack {
-               SyncConflictReviewView(
-                  conflicts: unresolvedSyncConflicts,
-                  toDos: scopedToDos
-               )
+         if NavigationCoordinator.shared.shouldOpenSettings {
+            NavigationCoordinator.shared.shouldOpenSettings = false
+            Task { @MainActor in
+               openSettingsPanel()
             }
          }
-         .sheet(isPresented: $isShowingSettings) {
-            NavigationStack {
-               SettingsView(onClose: closeSettingsPanel)
-            }
-            .presentationCornerRadius(34)
-            .presentationBackground(AppColor.surface)
-            .presentationDragIndicator(.hidden)
-         }
-         .onReceive(keyboardHeightPublisher) { height in
-            withAnimation(AppAnimation.easeFast) {
-               keyboardHeight = height
-            }
-         }
-         .onAppear {
-            onboardingManager.startIfNeeded()
-            resumeGuidedOnboardingIfNeeded()
-            if defaultTagSeedVersion < 1 {
-               seedIfNeeded()
-            }
-            if NavigationCoordinator.shared.shouldOpenSettings {
-               NavigationCoordinator.shared.shouldOpenSettings = false
-               Task { @MainActor in
-                  openSettingsPanel()
-               }
-            }
-            WidgetSnapshotService.shared.writeSnapshot(from: context)
-            LiveActivityService.shared.refresh(from: context)
-            applyScreenshotPresentationIfNeeded()
-         }
+         WidgetSnapshotService.shared.writeSnapshot(from: context)
+         LiveActivityService.shared.refresh(from: context)
+         applyScreenshotPresentationIfNeeded()
       }
       .tint(AppColor.actionPrimary)
       .appBaseTypography()
+      .navigationBarBackButtonHidden(true)
+      .navigationBarHidden(true)
       .onChange(of: navigationCoordinator.notificationRoute
       ) { _, route in
          handleNotificationRoute(route)
@@ -175,11 +147,20 @@ struct ToDosView: View {
       .onChange(of: navigationCoordinator.listRoute) { _, route in
          handleListRoute(route)
       }
+      .overlay(alignment: .leading) {
+         Rectangle()
+            .foregroundStyle(.clear)
+            .frame(maxHeight: .infinity)
+            .frame(width: usesRegularWidthLayout ? 44 : 20)
+            .contentShape(Rectangle())
+            .highPriorityGesture(homeSwipeGesture)
+      }
       .alert("Couldn’t Find toDō", isPresented: $isShowingMissingNotificationToDoAlert) {
          Button("OK", role: .cancel) {}
       } message: {
          Text("That toDō may have been deleted or has not synced to this device yet.")
       }
+      .accessibilityIdentifier("todos.view")
    }
 
    private var listContent: some View {
@@ -222,12 +203,13 @@ struct ToDosView: View {
 
    private var regularWorkingPanel: some View {
       VStack(alignment: .leading, spacing: 0) {
-         regularPanelHeader(
-            title: workingPanelTitle,
-            count: filteredWorkingToDos.count
-         ) {
+         HStack {
+            Spacer(minLength: 0)
             regularNewToDoButton
          }
+         .padding(.horizontal, 20)
+         .padding(.top, 18)
+         .padding(.bottom, 14)
 
          Divider()
             .padding(.horizontal, 20)
@@ -278,25 +260,22 @@ struct ToDosView: View {
                dismissSelectedDetail()
             } label: {
                Image(systemName: "xmark")
-                  .font(.appDisplay(18, relativeTo: .headline))
+//                  .font(.appDisplay(22, relativeTo: .title3))
+                  .font(.system(size: 18, weight: .black, design: .rounded))
                   .frame(width: 34, height: 34, alignment: .center)
+//                  .contentShape(Circle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(AppColor.actionDestructive)
-            .background {
-               if #unavailable(iOS 26.0) {
-                  Circle()
-                     .fill(AppColor.surface)
-               }
-            }
-            .appInteractiveCircleGlass(tint: AppColor.surface)
-            .overlay(Circle().stroke(AppColor.actionDestructive, lineWidth: 2.5))
+            .foregroundStyle(AppColor.onAction)
+            .contentShape(Circle())
+            .background(AppColor.actionDestructive, in: Circle())
+            .appInteractiveCircleGlass(tint: AppColor.actionDestructive)
             .accessibilityLabel("Close")
          }
 
          VStack(alignment: .leading, spacing: 2) {
             Text("\(Text("Your ").foregroundStyle(AppColor.textPrimary.opacity(0.45)))\(Text("toDō").foregroundStyle(AppColor.textPrimary))")
-               .font(.appDisplay(34, relativeTo: .largeTitle))
+               .font(.appTitle(34, relativeTo: .largeTitle))
          }
 
          Spacer(minLength: 12)
@@ -347,7 +326,6 @@ struct ToDosView: View {
                .clipShape(.rect(cornerRadius: 30))
                .shadow(color: AppColor.shadow, radius: 34, x: 0, y: 18)
                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-               .padding(.bottom, inlineEditorKeyboardPadding)
                .transition(.scale(scale: 0.82).combined(with: .opacity))
             }
          }
@@ -369,12 +347,12 @@ struct ToDosView: View {
             .foregroundStyle(AppColor.textPrimary)
 
          Text("Details, notes, tags, reminders, and NanoDos appear here when a toDō has more to show.")
-            .font(.appBody(14, relativeTo: .body))
+            .font(.appBodyStrong(15, relativeTo: .body))
             .foregroundStyle(AppColor.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .padding(22)
+      .padding(28)
    }
 
    private func toDoDetailPanelContent(for toDo: ToDo) -> some View {
@@ -399,7 +377,14 @@ struct ToDosView: View {
             }
          }
 
-         VStack(alignment: .leading, spacing: 9) {
+         LazyVGrid(
+            columns: [
+               GridItem(.flexible(), spacing: 10),
+               GridItem(.flexible(), spacing: 10)
+            ],
+            alignment: .leading,
+            spacing: 10
+         ) {
             if let dueDate = toDo.dueDate {
                toDoDetailInfoRow(
                   systemName: "calendar",
@@ -468,7 +453,7 @@ struct ToDosView: View {
          if !trimmedNotes.isEmpty {
             toDoDetailSection(title: "Notes", systemName: "note.text") {
                Text(trimmedNotes)
-                  .font(.appBody(14, relativeTo: .body))
+                  .font(.appBodyStrong(14, relativeTo: .body))
                   .foregroundStyle(AppColor.textPrimary)
                   .fixedSize(horizontal: false, vertical: true)
             }
@@ -485,13 +470,20 @@ struct ToDosView: View {
 
          ToDoLifecycleActionBar(
             isDone: toDo.isDoneState,
-            onArchive: {
-               archiveToDo(toDo)
+            removalAction: doneSwipePrimaryAction,
+            includesRemovalAction: true,
+            includesSnooze: toDo.dueDate != nil,
+            onRemoval: {
+               switch doneSwipePrimaryAction {
+               case .archive:
+                  archiveToDo(toDo)
+               case .delete:
+                  deleteToDo(toDo)
+               }
                dismissSelectedDetail()
             },
-            onTrash: {
-               deleteToDo(toDo)
-               dismissSelectedDetail()
+            onSnooze: {
+               snoozeToDo(toDo, unit: .minutes, value: 15)
             },
             onToggleDone: {
                updateCompletionState(for: toDo, isDone: !toDo.isDoneState)
@@ -519,18 +511,21 @@ struct ToDosView: View {
 
          VStack(alignment: .leading, spacing: 2) {
             Text(LocalizedStringKey(title))
-               .font(.appBodyStrong(11, relativeTo: .caption))
+               .font(.appDisplay(17, relativeTo: .subheadline))
                .foregroundStyle(AppColor.textSecondary)
+               .lineLimit(1)
+               .minimumScaleFactor(0.86)
 
             Text(value)
-               .font(.appBodyStrong(14, relativeTo: .footnote))
+               .font(.appBodyStrong(16, relativeTo: .subheadline))
                .foregroundStyle(AppColor.textPrimary)
                .fixedSize(horizontal: false, vertical: true)
          }
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(12)
-      .background(AppColor.surfaceMuted.opacity(0.7), in: .rect(cornerRadius: 16))
+      .padding(14)
+      .frame(minHeight: 76, alignment: .topLeading)
+      .background(AppColor.surfaceMuted.opacity(0.7), in: .rect(cornerRadius: 18))
    }
 
    private func toDoDetailSection<Content: View>(
@@ -546,8 +541,8 @@ struct ToDosView: View {
          content()
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-      .padding(14)
-      .background(AppColor.surfaceMuted.opacity(0.55), in: .rect(cornerRadius: 18))
+      .padding(16)
+      .background(AppColor.surfaceMuted.opacity(0.55), in: .rect(cornerRadius: 20))
    }
 
    private func toDoHasExtendedDetails(_ toDo: ToDo) -> Bool {
@@ -701,10 +696,8 @@ struct ToDosView: View {
 
    private var regularNewToDoButton: some View {
       Button {
-         if onboardingManager.currentStep == .highlightAddButton {
-            onboardingManager.advance(to: .openAddView)
-         }
-         openNewToDoComposer()
+         AppLog.info("Regular create button action fired")
+         handleCreateToDoTap()
       } label: {
          AddToDoPlusMark(size: 24, thickness: 5)
             .frame(width: 42, height: 42)
@@ -717,8 +710,10 @@ struct ToDosView: View {
             .appInteractiveCircleGlass(tint: AppColor.main)
       }
       .buttonStyle(.plain)
+      .contentShape(Circle())
       .disabled(isComposeButtonSuppressed)
       .opacity(isComposeButtonSuppressed ? 0.42 : 1)
+      .zIndex(50)
       .onboardingSpotlightAnchor(.addButton)
    }
 
@@ -780,6 +775,12 @@ struct ToDosView: View {
    private var bottomOverlayBar: some View {
       if isBulkEditing {
          bulkActionBar
+      } else if !usesRegularWidthLayout {
+         HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            composeButton(containerWidth: 0)
+         }
+         .frame(maxWidth: .infinity)
       }
    }
 
@@ -852,7 +853,7 @@ struct ToDosView: View {
       let fill = sectionHeaderFillColor
 
       return HStack(alignment: .center, spacing: 10) {
-         Text(title)
+         Text(LocalizedStringKey(title))
             .font(.appSubtitle(11, relativeTo: .caption))
             .foregroundStyle(accent)
             .textCase(nil)
@@ -955,12 +956,8 @@ struct ToDosView: View {
 
    private func composeButton(containerWidth: CGFloat) -> some View {
       Button {
-         if !isComposerPresented {
-            if onboardingManager.currentStep == .highlightAddButton {
-               onboardingManager.advance(to: .openAddView)
-            }
-            openNewToDoComposer()
-         }
+         AppLog.info("Compact create button action fired")
+         handleCreateToDoTap()
       } label: {
          AddToDoPlusMark(size: 31, thickness: 6)
             .frame(width: 56, height: 56)
@@ -973,6 +970,7 @@ struct ToDosView: View {
             .appInteractiveCircleGlass(tint: AppColor.main)
       }
       .buttonStyle(.plain)
+      .contentShape(Circle())
       .disabled(isComposeButtonSuppressed)
       .allowsHitTesting(!isComposeButtonSuppressed)
       .opacity(isComposeButtonSuppressed ? 0 : 1)
@@ -984,37 +982,39 @@ struct ToDosView: View {
    }
 
    @ViewBuilder
-   private var composerSheetContent: some View {
-      if let editingToDo {
-         ToDoView(
-            mode: .edit(editingToDo, context: .sheet),
-            onFinish: { savedToDo in
-               closeComposer(savedToDo: savedToDo)
-            }
+   private func activeSheetContent(for sheet: ActiveSheet) -> some View {
+      switch sheet {
+      case .bulkTagPicker:
+         BulkTagPickerView(
+            selectedTagID: selectedTagID,
+            tags: tagList,
+            onApply: applyBulkTag,
+            onClear: clearBulkTags
          )
-      } else if let viewingToDo {
-         ToDoView(
-            mode: .view(viewingToDo, context: .sheet),
-            onFinish: { _ in
-               closeComposer()
-            },
-            onEdit: {
-               editViewedToDo(viewingToDo)
-            }
-         )
-      } else {
-         ToDoView(
-            mode: .create(preselectedTagID: selectedTagID),
-            onFinish: { savedToDo in
-               closeComposer(savedToDo: savedToDo)
-            },
-            onboardingManager: onboardingManager
-         )
+      case .syncReview:
+         NavigationStack {
+            SyncConflictReviewView(
+               conflicts: unresolvedSyncConflicts,
+               toDos: scopedToDos
+            )
+         }
+      case .settings:
+         NavigationStack {
+            SettingsView(onClose: closeSettingsPanel)
+         }
+         .presentationCornerRadius(34)
+         .presentationBackground(AppColor.surface)
+         .presentationDragIndicator(.hidden)
       }
    }
 
    private var isBulkEditing: Bool {
       isSelectionMode
+   }
+
+   private var isSettingsPresented: Bool {
+      guard case .settings = activeSheet else { return false }
+      return true
    }
 
    private var isComposeButtonSuppressed: Bool {
@@ -1038,7 +1038,7 @@ struct ToDosView: View {
    }
 
    private var regularDashboardMaxWidth: CGFloat {
-      isBulkEditing ? 900 : 1240
+      isBulkEditing ? 900 : 1320
    }
 
    private var regularDashboardCurrentMaxWidth: CGFloat {
@@ -1047,33 +1047,12 @@ struct ToDosView: View {
    }
 
    private var regularWorkingPanelMaxWidth: CGFloat {
-      isBulkEditing ? 900 : regularContentMaxWidth
+      if isBulkEditing { return 900 }
+      return isRegularDetailPanelVisible ? 620 : regularContentMaxWidth
    }
 
    private var regularDetailPanelWidth: CGFloat {
-      420
-   }
-
-   private var inlineEditorKeyboardPadding: CGFloat {
-      guard isInlineEditingDetail else { return 0 }
-      return min(keyboardHeight, 340)
-   }
-
-   private var keyboardHeightPublisher: AnyPublisher<CGFloat, Never> {
-      #if canImport(UIKit)
-      let willShow = NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)
-         .map { notification -> CGFloat in
-            guard let frame = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect else {
-               return 0
-            }
-            return frame.height
-         }
-      let willHide = NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)
-         .map { _ in CGFloat.zero }
-      return Publishers.Merge(willShow, willHide).eraseToAnyPublisher()
-      #else
-      return Just(CGFloat.zero).eraseToAnyPublisher()
-      #endif
+      480
    }
 
    private var regularDashboardBottomPadding: CGFloat {
@@ -1081,7 +1060,7 @@ struct ToDosView: View {
    }
 
    private var regularPanelSpacing: CGFloat {
-      20
+      18
    }
 
    private var regularDashboardHorizontalPadding: CGFloat {
@@ -1203,8 +1182,23 @@ struct ToDosView: View {
       isUtilityTrayPresented || isSearchVisible || isFilterVisible || isBulkEditing
    }
 
+   private var homeSwipeGesture: some Gesture {
+      DragGesture(minimumDistance: 24)
+         .onEnded { value in
+            let horizontalDistance = value.translation.width
+            let verticalDistance = abs(value.translation.height)
+
+            guard value.startLocation.x <= 44 else { return }
+            guard horizontalDistance > 120 else { return }
+            guard verticalDistance < 40 else { return }
+            guard horizontalDistance > (verticalDistance * 2) else { return }
+
+            goHome()
+         }
+   }
+
    private var headerPanelTransition: AnyTransition {
-      .offset(y: -12).combined(with: .opacity)
+      .move(edge: .top).combined(with: .opacity)
    }
 
    private var headerSurface: some View {
@@ -1217,24 +1211,25 @@ struct ToDosView: View {
          .font(.appAccent(15, relativeTo: .caption))
          .foregroundStyle(AppColor.textSecondary)
          .multilineTextAlignment(.center)
-         .frame(maxWidth: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, alignment: .center)
 
          ZStack {
             Text("toD\(Text("ō").foregroundStyle(AppColor.main))")
-               .font(.appDisplay(headerTitleFontSize, relativeTo: .largeTitle))
+               .font(.appBrand(headerTitleFontSize, relativeTo: .largeTitle))
                .foregroundStyle(AppColor.textPrimary)
                .lineLimit(1)
                .frame(maxWidth: .infinity, alignment: .center)
 
             HStack {
                HStack(spacing: 10) {
-                  toolbarButton(systemName: "gearshape.fill", label: "Open settings", tint: AppColor.main, isToggled: false) {
-                     if onboardingManager.currentStep == .highlightSettings {
-                        onboardingManager.advance(to: .signInAndSync)
-                     }
-                     openSettingsPanel()
+                  toolbarButton(
+                     systemName: "house.fill",
+                     label: "Back to Home",
+                     tint: AppColor.main,
+                     isToggled: false
+                  ) {
+                     goHome()
                   }
-                  .onboardingSpotlightAnchor(.settingsButton)
                }
 
                Spacer(minLength: 12)
@@ -1320,11 +1315,11 @@ struct ToDosView: View {
 
    private var syncNeedsReviewBanner: some View {
       Button {
-         isShowingSyncReview = true
+         activeSheet = .syncReview
       } label: {
          HStack(alignment: .center, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-               .font(.appDisplay(14, relativeTo: .caption))
+               .font(.system(size: 14, weight: .black, design: .rounded))
                .foregroundStyle(AppColor.secondary)
 
             Text(unresolvedSyncConflicts.count == 1
@@ -1355,19 +1350,19 @@ struct ToDosView: View {
          VStack(spacing: 0) {
             Divider()
             HStack(spacing: 14) {
-               bulkActionButton(systemName: "checkmark.circle.fill", label: "Complete", intent: .proceed, disabled: selectedToDoIDs.isEmpty) {
+               bulkActionButton(systemName: "checkmark.circle.fill", label: "Complete", tint: AppColor.actionSuccess, disabled: selectedToDoIDs.isEmpty) {
                   applyBulkCompletion(true)
                }
-               bulkActionButton(systemName: "arrow.uturn.backward.circle", label: "Reopen", intent: .neutral, disabled: selectedToDoIDs.isEmpty) {
+               bulkActionButton(systemName: "arrow.uturn.backward.circle", label: "Reopen", tint: AppColor.secondary, disabled: selectedToDoIDs.isEmpty) {
                   applyBulkCompletion(false)
                }
-               bulkActionButton(systemName: "tag", label: "Tag", intent: .neutral, disabled: selectedToDoIDs.isEmpty) {
-                  isShowingBulkTagPicker = true
+               bulkActionButton(systemName: "tag", label: "Tag", tint: AppColor.main, disabled: selectedToDoIDs.isEmpty) {
+                  activeSheet = .bulkTagPicker
                }
-               bulkActionButton(systemName: "trash", label: "Delete", intent: .cancel, disabled: selectedToDoIDs.isEmpty) {
+               bulkActionButton(systemName: "trash", label: "Delete", tint: AppColor.actionDestructive, disabled: selectedToDoIDs.isEmpty) {
                   deleteSelected()
                }
-               bulkActionButton(systemName: "xmark", label: "Cancel", intent: .neutral, disabled: false) {
+               bulkActionButton(systemName: "xmark", label: "Cancel", tint: AppColor.textSecondary, disabled: false) {
                   setSelectionMode(active: false)
                }
             }
@@ -1389,12 +1384,12 @@ struct ToDosView: View {
             .multilineTextAlignment(.center)
 
          Text(emptyStateSubtitle)
-            .font(.appBody(15, relativeTo: .body))
+            .font(.appBodyStrong(15, relativeTo: .body))
             .foregroundStyle(AppColor.textSecondary)
             .multilineTextAlignment(.center)
 
          Button {
-            openNewToDoComposer()
+            handleCreateToDoTap()
          } label: {
             Text(emptyStateActionTitle)
          }
@@ -1587,7 +1582,7 @@ struct ToDosView: View {
 
       return Button(action: action) {
          Image(systemName: systemName)
-            .font(.appDisplay(16, relativeTo: .subheadline))
+            .font(.system(size: 16, weight: .black, design: .rounded))
             .contentTransition(.symbolEffect(.replace))
             .animation(AppAnimation.easeStandard, value: systemName)
       }
@@ -1626,20 +1621,20 @@ struct ToDosView: View {
    private func bulkActionButton(
       systemName: String,
       label: String,
-      intent: AppActionIntent,
+      tint: Color,
       disabled: Bool,
       action: @escaping () -> Void
    ) -> some View {
       VStack(spacing: 5) {
          Button(action: action) {
             Image(systemName: systemName)
-               .font(.appDisplay(14, relativeTo: .caption))
+               .font(.system(size: 14, weight: .black, design: .rounded))
          }
-         .buttonStyle(AppCircleActionButtonStyle(intent: intent, size: 34))
+         .buttonStyle(AppCircleActionButtonStyle(intent: .neutral, size: 34, tint: tint))
          .interactionDisabled(disabled)
 
          Text(LocalizedStringKey(label))
-            .font(.appDisplay(11, relativeTo: .caption))
+            .font(.appBodyStrong(11, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
       }
       .frame(width: 54)
@@ -1660,7 +1655,7 @@ struct ToDosView: View {
 
          HStack(alignment: .center, spacing: 10) {
             Text("Tags")
-               .font(.appDisplay(12, relativeTo: .caption))
+               .font(.appBodyStrong(12, relativeTo: .caption))
                .foregroundStyle(AppColor.textSecondary)
                .frame(width: 42, alignment: .leading)
 
@@ -1688,7 +1683,7 @@ struct ToDosView: View {
             Button("Reset Filters") {
                clearFilters()
             }
-            .font(.appDisplay(12, relativeTo: .caption))
+            .font(.appBodyStrong(12, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .center)
@@ -1706,7 +1701,7 @@ struct ToDosView: View {
    ) -> some View {
       HStack(alignment: .center, spacing: 10) {
          Text(LocalizedStringKey(title))
-            .font(.appDisplay(12, relativeTo: .caption))
+            .font(.appBodyStrong(12, relativeTo: .caption))
             .foregroundStyle(AppColor.textSecondary)
             .frame(width: 42, alignment: .leading)
 
@@ -1731,7 +1726,7 @@ struct ToDosView: View {
       Button(action: action) {
          HStack(spacing: 6) {
             Text(LocalizedStringKey(title))
-               .font(.appDisplay(13, relativeTo: .subheadline))
+               .font(.appBodyStrong(13, relativeTo: .subheadline))
 
             if let direction {
                Image(systemName: direction)
@@ -2218,21 +2213,6 @@ struct ToDosView: View {
       }
    }
 
-   private func closeComposer(savedToDo: ToDo? = nil) {
-      withAnimation(AppAnimation.easeStandard) {
-         isShowingNewToDo = false
-         editingToDo = nil
-         viewingToDo = nil
-         if let savedToDo {
-            expandedToDoID = savedToDo.id
-         }
-      }
-
-      if let savedToDo, onboardingManager.isActive {
-         onboardingManager.recordCreatedToDo(savedToDo)
-      }
-   }
-
    private func handleOnboardingPrimaryAction(_ step: GuidedOnboardingStep) {
       switch step {
       case .welcome:
@@ -2255,13 +2235,11 @@ struct ToDosView: View {
 
       switch onboardingManager.currentStep {
       case .openAddView, .enterToDoText, .saveToDo:
-         if !isComposerPresented {
-            Task { @MainActor in
-               openNewToDoComposer()
-            }
+         Task { @MainActor in
+            openNewToDoComposer()
          }
       case .signInAndSync, .notificationPermission, .archiveVsDelete, .completion:
-         if !isShowingSettings {
+         if !isSettingsPresented {
             Task { @MainActor in
                openSettingsPanel()
             }
@@ -2272,30 +2250,19 @@ struct ToDosView: View {
    }
 
    private func openToDo(_ toDo: ToDo) {
-      withAnimation(AppAnimation.easeStandard) {
+      withAnimation(AppAnimation.easeFast) {
          expandedToDoID = usesRegularWidthLayout ? toDo.id : nil
          inlineEditingToDoID = nil
-         isShowingNewToDo = false
-         viewingToDo = nil
-         editingToDo = toDo
       }
+      onEditToDo(toDo)
    }
 
    private func viewToDo(_ toDo: ToDo) {
-      withAnimation(AppAnimation.easeStandard) {
+      withAnimation(AppAnimation.easeFast) {
          expandedToDoID = usesRegularWidthLayout ? toDo.id : nil
          inlineEditingToDoID = nil
-         isShowingNewToDo = false
-         editingToDo = nil
-         viewingToDo = toDo
       }
-   }
-
-   private func editViewedToDo(_ toDo: ToDo) {
-      withAnimation(AppAnimation.easeStandard) {
-         viewingToDo = nil
-         editingToDo = toDo
-      }
+      onViewToDo(toDo)
    }
 
    private func openNotificationToDo(
@@ -2318,8 +2285,7 @@ struct ToDosView: View {
       pendingNotificationToDoRoute = nil
       isSelectionMode = false
       selectedToDoIDs.removeAll()
-      isShowingSettings = false
-      isShowingSyncReview = false
+      activeSheet = nil
       viewToDo(toDo)
    }
 
@@ -2374,16 +2340,19 @@ struct ToDosView: View {
    }
 
    private func openNewToDoComposer() {
-      editingToDo = nil
-      viewingToDo = nil
-      isShowingNewToDo = false
+      onCreateToDo(selectedTagID)
+   }
 
-      Task { @MainActor in
-         await Task.yield()
-         withAnimation(AppAnimation.easeStandard) {
-            isShowingNewToDo = true
-         }
+   private func handleCreateToDoTap() {
+      AppLog.info(
+         "Create toDō button tapped: suppressed=\(isComposeButtonSuppressed), selection=\(isSelectionMode), activeSheet=\(activeSheet?.id ?? "nil"), inlineEditing=\(inlineEditingToDoID != nil)"
+      )
+
+      if onboardingManager.currentStep == .highlightAddButton {
+         onboardingManager.advance(to: .openAddView)
       }
+
+      openNewToDoComposer()
    }
 
    private func selectToDoForDetail(_ toDo: ToDo) {
@@ -2433,22 +2402,6 @@ struct ToDosView: View {
       persistChanges("Failed to delete toDō")
    }
 
-   private var isComposerPresented: Bool {
-      isShowingNewToDo || editingToDo != nil || viewingToDo != nil
-   }
-
-   private var composerSheetIsPresented: Binding<Bool> {
-      Binding(
-         get: { isComposerPresented },
-         set: { shouldPresent in
-            guard !shouldPresent else { return }
-            isShowingNewToDo = false
-            editingToDo = nil
-            viewingToDo = nil
-         }
-      )
-   }
-
    private func setSelectionMode(active: Bool) {
       if !active {
          selectedToDoIDs.removeAll()
@@ -2475,7 +2428,7 @@ struct ToDosView: View {
    }
 
    private func openSettingsPanel() {
-      isShowingSettings = true
+      activeSheet = .settings
       isUtilityTrayPresented = false
       isSearchVisible = false
       isFilterVisible = false
@@ -2483,7 +2436,16 @@ struct ToDosView: View {
    }
 
    private func closeSettingsPanel() {
-      isShowingSettings = false
+      if isSettingsPresented {
+         activeSheet = nil
+      }
+   }
+
+   private func goHome() {
+      dismiss()
+
+      // Future:
+      // navigationCoordinator.destination = .home
    }
 
    private func applyScreenshotPresentationIfNeeded() {
@@ -2498,14 +2460,12 @@ struct ToDosView: View {
          }
       case "todo", "todoview", "detail":
          DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-            guard let target = scopedToDos.first(where: { $0.task == "Hello world!" }) ?? scopedToDos.first else {
+            guard let target = scopedToDos.first(where: { $0.task == "Ship toDō 3.0 TestFlight" }) ?? scopedToDos.first else {
                return
             }
-            isShowingSettings = false
+            activeSheet = nil
             inlineEditingToDoID = nil
-            isShowingNewToDo = false
-            editingToDo = nil
-            viewingToDo = target
+            onViewToDo(target)
             expandedToDoID = target.id
          }
       default:
@@ -2648,15 +2608,16 @@ struct ToDosView: View {
 private struct AddToDoPlusMark: View {
    let size: CGFloat
    let thickness: CGFloat
+   @Environment(\.colorScheme) private var colorScheme
 
    var body: some View {
       ZStack {
          Rectangle()
-            .fill(AppColor.black)
+            .fill(AppColor.brandYellowForeground(for: colorScheme))
             .frame(width: size, height: thickness)
 
          Rectangle()
-            .fill(AppColor.black)
+            .fill(AppColor.brandYellowForeground(for: colorScheme))
             .frame(width: thickness, height: size)
       }
       .frame(width: size, height: size)

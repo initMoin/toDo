@@ -13,6 +13,7 @@ struct ToDoApp: App {
    @UIApplicationDelegateAdaptor(PushNotificationAppDelegate.self) private var pushNotificationDelegate
    @Environment(\.scenePhase) private var scenePhase
    @StateObject private var supabaseAuthStore: SupabaseAuthStore
+   @StateObject private var toDoPresentationService = ToDoPresentationService.shared
    @State private var didRunInitialStartupMaintenance = false
    @State private var isRunningForegroundMaintenance = false
    @AppStorage("todo.lastForegroundRemoteRefreshAt") private var lastForegroundRemoteRefreshAt = 0.0
@@ -76,7 +77,7 @@ struct ToDoApp: App {
             if isRunningInPreview {
                PreviewBootstrapView()
             } else {
-               ToDosView()
+               AppRootView()
                   .task {
                      guard !didRunInitialStartupMaintenance else { return }
                      didRunInitialStartupMaintenance = true
@@ -97,8 +98,10 @@ struct ToDoApp: App {
             }
          }
          .appBaseTypography()
+         .appHapticFeedbackHost()
          .preferredColorScheme(preferredAppColorScheme)
          .environmentObject(supabaseAuthStore)
+         .environmentObject(toDoPresentationService)
          .onOpenURL { url in
             guard !isRunningInPreview else { return }
             Task {
@@ -170,7 +173,7 @@ struct ToDoApp: App {
             )
             return try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: configuration)
          } catch {
-            fatalError("Failed to initialize in-memory SwiftData container: \(error)")
+            preconditionFailure("Failed to initialize in-memory SwiftData container: \(error)")
          }
       }
 
@@ -200,7 +203,8 @@ struct ToDoApp: App {
             do {
                return try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: fallbackConfiguration)
             } catch {
-               fatalError("Failed to initialize SwiftData container: \(error)")
+               AppLog.error("Failed to initialize iCloud fallback SwiftData container: \(error)", logger: AppLog.app)
+               return makeRecoveryModelContainer(after: error)
             }
          }
 
@@ -210,7 +214,8 @@ struct ToDoApp: App {
          } catch {
             let fallbackMode = AppPreferences.sanitizedSyncMode(preferredSyncMode)
             guard fallbackMode != preferredSyncMode else {
-               fatalError("Failed to initialize SwiftData container: \(error)")
+               AppLog.error("Failed to initialize SwiftData container: \(error)", logger: AppLog.app)
+               return makeRecoveryModelContainer(after: error)
             }
 
             UserDefaults.standard.set(fallbackMode.rawValue, forKey: AppPreferences.Keys.syncMode)
@@ -225,9 +230,23 @@ struct ToDoApp: App {
             do {
                return try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: fallbackConfiguration)
             } catch {
-               fatalError("Failed to initialize SwiftData container: \(error)")
+               AppLog.error("Failed to initialize sanitized fallback SwiftData container: \(error)", logger: AppLog.app)
+               return makeRecoveryModelContainer(after: error)
             }
          }
+      }
+   }
+
+   private static func makeRecoveryModelContainer(after error: Error) -> ModelContainer {
+      AppLog.error("Using in-memory recovery SwiftData container after persistent store failure: \(error)", logger: AppLog.app)
+      do {
+         let configuration = ModelConfiguration(
+            isStoredInMemoryOnly: true,
+            cloudKitDatabase: .none
+         )
+         return try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: configuration)
+      } catch {
+         preconditionFailure("Failed to initialize recovery SwiftData container: \(error)")
       }
    }
 
@@ -436,16 +455,17 @@ private enum ScreenshotDataSeeder {
 
       let calendar = Calendar.current
       let now = Date()
-      let personal = Tag(name: "personal", createdAt: calendar.date(byAdding: .day, value: -8, to: now) ?? now)
-      let work = Tag(name: "work", createdAt: calendar.date(byAdding: .day, value: -7, to: now) ?? now)
-      let health = Tag(name: "health", createdAt: calendar.date(byAdding: .day, value: -6, to: now) ?? now)
-      let planning = Tag(name: "planning", createdAt: calendar.date(byAdding: .day, value: -5, to: now) ?? now)
+      let release = Tag(name: "release", createdAt: calendar.date(byAdding: .day, value: -10, to: now) ?? now)
+      let design = Tag(name: "design", createdAt: calendar.date(byAdding: .day, value: -9, to: now) ?? now)
+      let qa = Tag(name: "qa", createdAt: calendar.date(byAdding: .day, value: -8, to: now) ?? now)
+      let sync = Tag(name: "sync", createdAt: calendar.date(byAdding: .day, value: -7, to: now) ?? now)
+      let testFlight = Tag(name: "testflight", createdAt: calendar.date(byAdding: .day, value: -6, to: now) ?? now)
 
-      [personal, work, health, planning].forEach(context.insert)
+      [release, design, qa, sync, testFlight].forEach(context.insert)
 
-      let hello = ToDo(
-         task: "Hello world!",
-         notes: "Use this ToDo to verify the full detail view: due date, tags, NanoDos, recurrence, and notes should all feel intentional.",
+      let launch = ToDo(
+         task: "Ship toDō 3.0 TestFlight",
+         notes: "Use toDō to manage the release of toDō: final QA, screenshots, tester notes, localization review, and the build handoff all stay visible in one focused place.",
          createdAt: calendar.date(byAdding: .day, value: -3, to: now) ?? now,
          updatedAt: calendar.date(byAdding: .hour, value: -2, to: now),
          dueDate: calendar.date(byAdding: .hour, value: 4, to: now),
@@ -460,89 +480,102 @@ private enum ScreenshotDataSeeder {
          locationReminderRadius: 250,
          locationReminderTrigger: .arriving,
          locationReminderLabel: "Apple Park",
-         tags: [personal, work, planning]
+         tags: [release, design, qa, testFlight]
       )
 
-      let outline = NanoDo(
-         task: "Confirm localized screenshots",
+      let screenshotPass = NanoDo(
+         task: "Capture launch screenshots",
          createdAt: calendar.date(byAdding: .day, value: -2, to: now) ?? now,
          dueDate: calendar.date(byAdding: .hour, value: 2, to: now),
          isDone: false,
-         toDo: hello,
-         tag: work
+         toDo: launch,
+         tag: testFlight
       )
-      let polish = NanoDo(
-         task: "Review visual spacing",
+      let testerNotes = NanoDo(
+         task: "Send focused tester instructions",
          createdAt: calendar.date(byAdding: .day, value: -2, to: now) ?? now,
          isDone: true,
-         toDo: hello,
-         tag: planning
+         toDo: launch,
+         tag: qa
       )
-      let send = NanoDo(
-         task: "Capture App Store screenshots",
+      let liveActivityCheck = NanoDo(
+         task: "Verify Live Activity on iPhone + Watch",
          createdAt: calendar.date(byAdding: .day, value: -1, to: now) ?? now,
          isDone: false,
-         toDo: hello,
-         tag: personal
+         toDo: launch,
+         tag: sync
       )
-      hello.nanoDos = [outline, polish, send]
+      let localizationSweep = NanoDo(
+         task: "Spot-check Arabic, Urdu, Japanese",
+         createdAt: calendar.date(byAdding: .hour, value: -18, to: now) ?? now,
+         dueDate: calendar.date(byAdding: .hour, value: 6, to: now),
+         isDone: false,
+         toDo: launch,
+         tag: qa
+      )
+      launch.nanoDos = [screenshotPass, testerNotes, liveActivityCheck, localizationSweep]
 
       let review = ToDo(
-         task: "Review beta feedback",
-         notes: "Prioritize crash reports, sync issues, and unclear interaction copy before visual polish.",
+         task: "Triage tester feedback",
+         notes: "Prioritize crash reports, sync issues, notification behavior, unclear copy, and Watch-specific friction before visual polish.",
          createdAt: calendar.date(byAdding: .day, value: -2, to: now) ?? now,
          dueDate: calendar.date(byAdding: .day, value: 1, to: now),
          reminderIntent: .due,
-         tags: [work, planning]
+         tags: [release, qa]
       )
       review.nanoDos = [
-         NanoDo(task: "Read TestFlight notes", isDone: true, toDo: review, tag: work),
-         NanoDo(task: "Tag follow-up fixes", isDone: false, toDo: review, tag: planning)
+         NanoDo(task: "Read TestFlight notes", isDone: true, toDo: review, tag: qa),
+         NanoDo(task: "Tag follow-up fixes", isDone: false, toDo: review, tag: release)
       ]
 
-      let workout = ToDo(
-         task: "Evening walk",
-         notes: "Keep the reminder gentle unless the day is packed.",
+      let stats = ToDo(
+         task: "Polish Stats dashboard",
+         notes: "Make the dashboard feel useful without becoming noisy. Private insights should feel earned, not generic.",
          createdAt: calendar.date(byAdding: .day, value: -1, to: now) ?? now,
          dueDate: calendar.date(bySettingHour: 18, minute: 30, second: 0, of: now),
-         reminderIntent: .soft,
-         tags: [health, personal]
+         reminderIntent: .due,
+         tags: [design, qa]
       )
+      stats.nanoDos = [
+         NanoDo(task: "Check iPad section rhythm", isDone: false, toDo: stats, tag: design),
+         NanoDo(task: "Confirm Private Insights copy", isDone: true, toDo: stats, tag: design)
+      ]
 
       let overdue = ToDo(
-         task: "Send invoice",
-         notes: "Overdue item included so the list looks like an active user's real day.",
+         task: "Finish localization QA notes",
+         notes: "Overdue item included so the screenshots show urgency and localized date behavior in a realistic release week.",
          createdAt: calendar.date(byAdding: .day, value: -5, to: now) ?? now,
          dueDate: calendar.date(byAdding: .hour, value: -3, to: now),
          reminderIntent: .timeSensitive,
-         tags: [work]
+         tags: [qa, release]
       )
 
-      let groceries = ToDo(
-         task: "Pick up groceries",
+      let syncAudit = ToDo(
+         task: "Confirm sync across iPhone, iPad, Watch",
          createdAt: calendar.date(byAdding: .hour, value: -12, to: now) ?? now,
          dueDate: calendar.date(byAdding: .hour, value: 8, to: now),
          reminderIntent: .due,
-         locationReminderLatitude: 37.3318,
-         locationReminderLongitude: -122.0312,
+         locationReminderLatitude: 37.3317,
+         locationReminderLongitude: -122.0307,
          locationReminderRadius: 180,
          locationReminderTrigger: .arriving,
-         locationReminderLabel: "Market",
-         tags: [personal]
+         locationReminderLabel: "Test desk",
+         tags: [sync, qa]
       )
 
       let done = ToDo(
-         task: "Archive old screenshots",
+         task: "Lock v3.0 build number",
          createdAt: calendar.date(byAdding: .day, value: -4, to: now) ?? now,
          updatedAt: calendar.date(byAdding: .hour, value: -6, to: now),
          lifecycleState: .done,
          isDone: true,
-         tags: [planning]
+         tags: [release]
       )
 
-      [hello, review, workout, overdue, groceries, done].forEach(context.insert)
-      [outline, polish, send].forEach(context.insert)
+      [launch, review, stats, overdue, syncAudit, done].forEach(context.insert)
+      [screenshotPass, testerNotes, liveActivityCheck, localizationSweep].forEach(context.insert)
       review.nanoDos.forEach(context.insert)
+      stats.nanoDos.forEach(context.insert)
 
       do {
          try context.save()

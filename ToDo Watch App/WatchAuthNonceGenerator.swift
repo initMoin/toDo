@@ -5,7 +5,7 @@ import Security
 enum WatchAuthNonceGenerator {
    private static let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
 
-   static func random(length: Int = 32) -> String {
+   static func random(length: Int = 32) -> String? {
       precondition(length > 0)
       var result = ""
       var remainingLength = length
@@ -14,7 +14,7 @@ enum WatchAuthNonceGenerator {
          var random: UInt8 = 0
          let status = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
          guard status == errSecSuccess else {
-            fatalError("Unable to generate a secure nonce.")
+            return nil
          }
 
          if random < charset.count {

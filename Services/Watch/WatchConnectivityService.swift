@@ -152,7 +152,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          let syncMode = SyncCoordinator.shared.effectiveSyncMode
          let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.scopedOwnerUserID : nil
          let visibleToDos = allToDos
-            .filter { $0.ownerUserID == ownerUserID && !$0.isArchived }
+            .filter { $0.ownerUserID == ownerUserID && $0.lifecycleState != .archived && $0.lifecycleState != .trashed && $0.trashedAt == nil }
             .sorted(by: watchSort)
             .prefix(20)
          let items = visibleToDos.map { toDo in
@@ -161,6 +161,8 @@ final class WatchConnectivityService: NSObject, ObservableObject {
                cloudID: toDo.cloudID,
                task: toDo.task,
                isDone: toDo.isDoneState,
+               lifecycleState: toDo.lifecycleState == .done ? .done : .active,
+               trashedAt: toDo.trashedAt,
                dueDate: toDo.dueDate,
                isTimeSensitive: toDo.reminderIntent == .timeSensitive,
                createdAt: toDo.createdAt,
@@ -239,12 +241,34 @@ final class WatchConnectivityService: NSObject, ObservableObject {
       }()
       let syncMode = SyncCoordinator.shared.effectiveSyncMode
       let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.scopedOwnerUserID : nil
+      let cloudID = syncMode == .syncEverywhere ? (action.cloudID ?? UUID()) : nil
 
       do {
+         if let cloudID,
+            let existingToDo = try context.fetch(FetchDescriptor<ToDo>()).first(where: { $0.cloudID == cloudID }) {
+            existingToDo.task = task
+            existingToDo.dueDate = dueDate
+            existingToDo.reminderIntent = reminderIntent
+            existingToDo.ownerUserID = ownerUserID
+            existingToDo.lifecycleState = .active
+            existingToDo.trashedAt = nil
+            existingToDo.markUpdated()
+            try context.save()
+            NotificationManager.shared.scheduleRefresh()
+            WidgetSnapshotService.shared.writeSnapshot(from: context)
+            LiveActivityService.shared.refresh(from: context, preferredToDo: existingToDo)
+            SyncCoordinator.shared.scheduleLocalSync()
+            flushWatchOriginatedSyncIfPossible()
+            refreshSnapshot()
+            send(receipt: WatchToDoActionReceipt(actionID: action.id, accepted: true))
+            return
+         }
+
          let toDo = ToDo(
             task: task,
             dueDate: dueDate,
             reminderIntent: reminderIntent,
+            cloudID: cloudID,
             ownerUserID: ownerUserID
          )
          context.insert(toDo)
@@ -253,6 +277,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          WidgetSnapshotService.shared.writeSnapshot(from: context)
          LiveActivityService.shared.refresh(from: context, preferredToDo: toDo)
          SyncCoordinator.shared.scheduleLocalSync()
+         flushWatchOriginatedSyncIfPossible()
          refreshSnapshot()
          send(receipt: WatchToDoActionReceipt(actionID: action.id, accepted: true))
       } catch {
@@ -350,7 +375,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
                toDo.reminderIntent = .soft
             } else if action.isTimeSensitive == true {
                toDo.reminderIntent = .timeSensitive
-            } else if toDo.reminderIntent == .soft {
+            } else if action.isTimeSensitive == false || toDo.reminderIntent == .soft {
                toDo.reminderIntent = .due
             }
             toDo.markUpdated()
@@ -390,6 +415,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          WidgetSnapshotService.shared.writeSnapshot(from: context)
          LiveActivityService.shared.refresh(from: context, preferredToDo: toDo)
          SyncCoordinator.shared.scheduleLocalSync()
+         flushWatchOriginatedSyncIfPossible()
          refreshSnapshot()
          send(receipt: WatchToDoActionReceipt(actionID: action.id, accepted: true))
       } catch {
@@ -426,6 +452,18 @@ final class WatchConnectivityService: NSObject, ObservableObject {
       }
 
       return nil
+   }
+
+   private func flushWatchOriginatedSyncIfPossible() {
+      guard SyncCoordinator.shared.effectiveSyncMode == .syncEverywhere,
+            let userID = SupabaseAuthStore.shared.currentUserID else {
+         return
+      }
+
+      Task {
+         try? await Task.sleep(nanoseconds: 250_000_000)
+         await SyncCoordinator.shared.flushLocalSync(userID: userID)
+      }
    }
 
    private func watchSort(_ lhs: ToDo, _ rhs: ToDo) -> Bool {

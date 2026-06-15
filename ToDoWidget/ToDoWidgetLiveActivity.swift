@@ -8,9 +8,8 @@ struct ToDoWidgetLiveActivity: Widget {
    var body: some WidgetConfiguration {
       ActivityConfiguration(for: ToDoLiveActivityAttributes.self) { context in
          ToDoLiveActivitySurfaceView(context: context)
-            .widgetURL(context.attributes.deepLinkURL)
-            .activityBackgroundTint(.clear)
-            .activitySystemActionForegroundColor(Color(hex: 0xE9A700))
+            .activityBackgroundTint(Color(hex: 0x0E1011))
+            .activitySystemActionForegroundColor(Color(hex: 0xF0B42D))
       } dynamicIsland: { context in
          DynamicIsland {
             DynamicIslandExpandedRegion(.center) {
@@ -40,7 +39,7 @@ struct ToDoWidgetLiveActivity: Widget {
                .foregroundStyle(context.state.accentColor)
          } compactTrailing: {
             LiveActivityShortDueTimeText(dueDate: context.state.dueDate, size: 12)
-               .foregroundStyle(Color(hex: 0xEBEBEB))
+               .foregroundStyle(Color(hex: 0xF4F1E8))
          } minimal: {
             Image(systemName: context.state.statusSystemImage)
                .foregroundStyle(context.state.accentColor)
@@ -76,11 +75,14 @@ private struct ToDoLiveActivityLockScreenView: View {
    let context: ActivityViewContext<ToDoLiveActivityAttributes>
 
    var body: some View {
-      if usesRegularWidthLayout {
-         regularWidthLayout
-      } else {
-         compactWidthLayout
+      Group {
+         if usesRegularWidthLayout {
+            regularWidthLayout
+         } else {
+            compactWidthLayout
+         }
       }
+      .widgetURL(context.attributes.deepLinkURL)
    }
 
    private var usesRegularWidthLayout: Bool {
@@ -90,11 +92,6 @@ private struct ToDoLiveActivityLockScreenView: View {
    private var compactWidthLayout: some View {
       VStack(alignment: .leading, spacing: 10) {
          HStack(alignment: .center, spacing: 8) {
-            LiveActivityDueDateTimeText(dueDate: context.state.dueDate, size: 11)
-               .padding(.horizontal, 9)
-               .padding(.vertical, 5)
-               .background(Color.white.opacity(0.10), in: Capsule())
-
             Spacer(minLength: 6)
 
             LiveActivityUpdatedText(updatedAt: context.state.updatedAt, size: 10)
@@ -121,18 +118,33 @@ private struct ToDoLiveActivityLockScreenView: View {
          }
          .frame(maxWidth: .infinity, alignment: .leading)
 
-         LiveActivitySegmentedCountdownView(
-            dueDate: context.state.dueDate,
-            isOverdue: context.state.isOverdue,
-            valueSize: 22,
-            labelSize: 7,
-            spacing: 5
-         )
-         .foregroundStyle(.white)
-         .padding(.horizontal, 12)
-         .padding(.vertical, 7)
-         .background(Color.white.opacity(0.10), in: Capsule())
-         .frame(maxWidth: .infinity, alignment: .center)
+         HStack(alignment: .center, spacing: 10) {
+            Image(systemName: "arrow.up.right")
+               .font(.system(size: 14, weight: .black, design: .rounded))
+               .foregroundStyle(Color(hex: 0x101010))
+               .frame(width: 32, height: 32)
+               .background(context.state.accentColor, in: Circle())
+               .accessibilityLabel("Open toDō")
+
+            VStack(alignment: .leading, spacing: 3) {
+               Text(String(localized: "Due"))
+                  .font(WidgetTypography.accent(9, relativeTo: .caption2))
+                  .foregroundStyle(context.state.accentColor)
+                  .textCase(.uppercase)
+
+               LiveActivityShortDueDateTimeText(
+                  dueDate: context.state.dueDate,
+                  dateSize: 13,
+                  timeSize: 16,
+                  spacing: 7
+               )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+         }
+         .padding(.horizontal, 10)
+         .padding(.vertical, 8)
+         .background(Color.white.opacity(0.10), in: .rect(cornerRadius: 18))
+         .frame(maxWidth: .infinity, alignment: .leading)
       }
       .padding(.horizontal, 14)
       .padding(.vertical, 12)
@@ -144,53 +156,81 @@ private struct ToDoLiveActivityLockScreenView: View {
    }
 
    private var regularWidthLayout: some View {
-      VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: 14) {
          HStack(alignment: .center, spacing: 10) {
-            LiveActivityDueDateTimeText(dueDate: context.state.dueDate, size: 14)
-               .padding(.horizontal, 11)
-               .padding(.vertical, 6)
-               .background(Color.white.opacity(0.10), in: Capsule())
+            statusIcon(size: 24, frame: 40)
 
-            Spacer(minLength: 8)
-
-            LiveActivityUpdatedText(updatedAt: context.state.updatedAt, size: 12)
-         }
-         .frame(maxWidth: .infinity, alignment: .leading)
-
-         HStack(alignment: .center, spacing: 10) {
-            statusIcon(size: 22, frame: 32)
-
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                Text(context.state.title)
-                  .font(.custom("CalSans-Regular", size: 22, relativeTo: .title3))
+                  .font(.custom("BebasNeue-Regular", size: 25, relativeTo: .title3))
                   .foregroundStyle(.white)
                   .lineLimit(1)
-                  .minimumScaleFactor(0.78)
+                  .minimumScaleFactor(0.74)
                   .frame(maxWidth: .infinity, alignment: .leading)
 
                Text(context.state.statusTitle)
-                  .font(.custom("Jura-Bold", size: 12, relativeTo: .caption))
+                  .font(.custom("Jura-SemiBold", size: 12, relativeTo: .caption))
                   .foregroundStyle(context.state.accentColor)
                   .textCase(.uppercase)
                   .lineLimit(1)
-
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+
+            Spacer(minLength: 8)
+
+            Image(systemName: "arrow.up.right")
+               .font(.system(size: 20, weight: .black, design: .rounded))
+               .foregroundStyle(Color(hex: 0x101010))
+               .frame(width: 44, height: 44)
+               .background(context.state.accentColor, in: Circle())
+               .accessibilityLabel("Open toDō")
          }
          .frame(maxWidth: .infinity, alignment: .leading)
 
-         LiveActivitySegmentedCountdownView(
-            dueDate: context.state.dueDate,
-            isOverdue: context.state.isOverdue,
-            valueSize: 32,
-            labelSize: 9,
-            spacing: 8
-         )
-         .foregroundStyle(.white)
-         .padding(.horizontal, 18)
-         .padding(.vertical, 9)
-         .background(Color.white.opacity(0.10), in: Capsule())
-         .frame(maxWidth: .infinity, alignment: .center)
+         HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+               Text(String(localized: "Due"))
+                  .font(.custom("Jura-SemiBold", size: 11, relativeTo: .caption2))
+                  .foregroundStyle(context.state.accentColor)
+                  .textCase(.uppercase)
+
+               LiveActivityShortDueDateTimeText(
+                  dueDate: context.state.dueDate,
+                  dateSize: 18,
+                  timeSize: 24,
+                  spacing: 10
+               )
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+               RoundedRectangle(cornerRadius: 22, style: .continuous)
+                  .fill(Color.white.opacity(0.10))
+                  .overlay(alignment: .leading) {
+                     RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(context.state.accentColor)
+                        .frame(width: 4)
+                  }
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+               Text(String(localized: "Updated"))
+                  .font(.custom("Jura-SemiBold", size: 11, relativeTo: .caption2))
+                  .foregroundStyle(Color(hex: 0xF4F1E8, opacity: 0.58))
+                  .textCase(.uppercase)
+                  .lineLimit(1)
+
+               LiveActivityUpdatedText(updatedAt: context.state.updatedAt, size: 14)
+                  .foregroundStyle(Color(hex: 0xF4F1E8, opacity: 0.78))
+                  .lineLimit(1)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.white.opacity(0.07), in: .rect(cornerRadius: 22))
+         }
+         .frame(maxWidth: .infinity, alignment: .leading)
       }
       .padding(.horizontal, 22)
       .padding(.vertical, 16)
@@ -270,59 +310,79 @@ private struct ToDoWatchLiveActivityView: View {
    let context: ActivityViewContext<ToDoLiveActivityAttributes>
 
    var body: some View {
-      VStack(alignment: .leading, spacing: 8) {
-         HStack(alignment: .center, spacing: 7) {
+      VStack(alignment: .leading, spacing: 5) {
+         HStack(alignment: .center, spacing: 6) {
             Image(systemName: context.state.statusSystemImage)
-               .font(.system(size: 17, weight: .bold))
-               .foregroundStyle(context.state.accentColor)
-               .frame(width: 22, height: 22)
+               .font(.system(size: 12, weight: .black, design: .rounded))
+               .foregroundStyle(Color(hex: 0x101010))
+               .frame(width: 20, height: 20)
+               .background(context.state.accentColor, in: Circle())
 
             Text(context.state.title)
-               .font(.custom("CalSans-Regular", size: 18, relativeTo: .headline))
-               .foregroundStyle(Color(hex: 0xEBEBEB))
-               .lineLimit(2)
-               .minimumScaleFactor(0.78)
+               .font(.custom("BebasNeue-Regular", size: 14, relativeTo: .headline))
+               .foregroundStyle(Color(hex: 0xF4F1E8))
+               .lineLimit(1)
+               .minimumScaleFactor(0.64)
          }
+         .frame(maxWidth: .infinity, alignment: .leading)
 
-         HStack(alignment: .center, spacing: 6) {
-            VStack(alignment: .leading, spacing: 2) {
+         HStack(alignment: .center, spacing: 7) {
+            VStack(alignment: .leading, spacing: 1) {
                Text(context.state.watchStatusText)
-                  .font(.custom("Jura-Bold", size: 10, relativeTo: .caption2))
+                  .font(.custom("Jura-SemiBold", size: 8, relativeTo: .caption2))
                   .foregroundStyle(context.state.accentColor)
                   .textCase(.uppercase)
+                  .lineLimit(1)
 
-               LiveActivityDueDateTimeText(dueDate: context.state.dueDate, size: 10)
-
-               LiveActivityUpdatedText(updatedAt: context.state.updatedAt, size: 9)
+               LiveActivityWatchDueText(dueDate: context.state.dueDate)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Spacer(minLength: 4)
-
-            LiveActivityAnimatedCountdownView(
-               dueDate: context.state.dueDate,
-               isOverdue: context.state.isOverdue,
-               size: 12,
-               weight: .semibold
-            )
-               .foregroundStyle(Color(hex: 0xEBEBEB))
-         }
-
-         Button(intent: CompleteWidgetToDoIntent(
-            toDoID: context.attributes.toDoLocalIdentifier ?? context.attributes.toDoIdentifier,
-            cloudID: context.attributes.toDoCloudIdentifier.flatMap(UUID.init(uuidString:))
-         )) {
-            Image(systemName: "checkmark")
-               .font(.system(size: 12, weight: .bold))
+            Image(systemName: "arrow.up.right")
+               .font(.system(size: 13, weight: .black, design: .rounded))
                .foregroundStyle(Color(hex: 0x101010))
-               .frame(width: 24, height: 24)
+               .frame(width: 28, height: 28)
                .background(context.state.accentColor, in: Circle())
+               .accessibilityLabel("Open toDō")
          }
-         .buttonStyle(.plain)
-         .accessibilityLabel("Mark Done")
-         .frame(maxWidth: .infinity, alignment: .trailing)
+         .frame(maxWidth: .infinity, alignment: .leading)
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 8)
+      .padding(.horizontal, 9)
+      .padding(.vertical, 7)
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+      .containerBackground(for: .widget) {
+         watchActivityBackground
+      }
+      .widgetURL(context.attributes.deepLinkURL)
+   }
+
+   private var watchActivityBackground: LinearGradient {
+      LinearGradient(
+         colors: [
+            Color(hex: 0x181A1B),
+            Color(hex: 0x101214),
+            context.state.backgroundAccentColor.opacity(0.42)
+         ],
+         startPoint: .topLeading,
+         endPoint: .bottomTrailing
+      )
+   }
+}
+
+private struct LiveActivityWatchDueText: View {
+   let dueDate: Date?
+
+   var body: some View {
+      Text(dueText)
+         .font(.system(size: 9, weight: .semibold, design: .rounded))
+         .foregroundStyle(Color(hex: 0xD8D8D8))
+         .lineLimit(1)
+         .minimumScaleFactor(0.68)
+   }
+
+   private var dueText: String {
+      guard let dueDate else { return String(localized: "No Due Date") }
+      return WidgetFormatting.dateTimeString(dueDate)
    }
 }
 
@@ -338,8 +398,8 @@ private struct ToDoDynamicIslandTitleRow: View {
             .background(context.state.accentColor.opacity(0.18), in: Circle())
 
          Text(context.state.title)
-            .font(.custom("CalSans-Regular", size: 17, relativeTo: .headline))
-            .foregroundStyle(Color(hex: 0xEBEBEB))
+            .font(.custom("BebasNeue-Regular", size: 17, relativeTo: .headline))
+            .foregroundStyle(Color(hex: 0xF4F1E8))
             .lineLimit(1)
             .truncationMode(.tail)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -354,7 +414,7 @@ private struct LiveActivityDueDateTimeText: View {
 
    var body: some View {
       if let dueDate {
-         Text("\(String(localized: "Due")) \(dueDate.formatted(date: .abbreviated, time: .shortened))")
+         Text("\(String(localized: "Due")) \(WidgetFormatting.dateTimeString(dueDate))")
             .font(.system(size: size, weight: .semibold, design: .rounded))
             .foregroundStyle(Color(hex: 0xD8D8D8))
             .lineLimit(1)
@@ -379,12 +439,12 @@ private struct LiveActivityShortDueDateTimeText: View {
          HStack(alignment: .firstTextBaseline, spacing: spacing) {
             Text(LiveActivityShortDueFormatter.dateText(for: dueDate))
                .font(.system(size: dateSize, weight: .semibold, design: .rounded))
-               .foregroundStyle(Color(hex: 0xEBEBEB, opacity: 0.76))
+               .foregroundStyle(Color(hex: 0xF4F1E8, opacity: 0.76))
                .monospacedDigit()
 
             Text(LiveActivityShortDueFormatter.timeText(for: dueDate))
                .font(.system(size: timeSize, weight: .bold, design: .rounded))
-               .foregroundStyle(Color(hex: 0xEBEBEB))
+               .foregroundStyle(Color(hex: 0xF4F1E8))
                .monospacedDigit()
          }
          .lineLimit(1)
@@ -454,7 +514,7 @@ private struct LiveActivityUpdatedText: View {
    var body: some View {
       Text("\(String(localized: "Updated")) \(formattedUpdatedText)")
          .font(.system(size: size, weight: .semibold, design: .rounded))
-         .foregroundStyle(Color(hex: 0xEBEBEB, opacity: 0.68))
+         .foregroundStyle(Color(hex: 0xF4F1E8, opacity: 0.68))
          .lineLimit(1)
          .minimumScaleFactor(0.74)
    }
@@ -521,7 +581,7 @@ private struct LiveActivitySegmentedCountdownView: View {
    private var countdownSeparator: some View {
       Text(":")
          .font(.system(size: max(valueSize - 4, 10), weight: .bold, design: .rounded))
-         .foregroundStyle(Color(hex: 0xEBEBEB, opacity: 0.58))
+         .foregroundStyle(Color(hex: 0xF4F1E8, opacity: 0.58))
          .baselineOffset(labelSize + 1)
    }
 
@@ -529,12 +589,12 @@ private struct LiveActivitySegmentedCountdownView: View {
       VStack(spacing: 1) {
          Text(value)
             .font(.system(size: valueSize, weight: .bold, design: .rounded))
-            .foregroundStyle(Color(hex: 0xEBEBEB))
+            .foregroundStyle(Color(hex: 0xF4F1E8))
             .monospacedDigit()
 
          Text(label)
             .font(.system(size: labelSize, weight: .semibold, design: .rounded))
-            .foregroundStyle(Color(hex: 0xEBEBEB, opacity: 0.64))
+            .foregroundStyle(Color(hex: 0xF4F1E8, opacity: 0.64))
             .lineLimit(1)
             .minimumScaleFactor(0.6)
       }
@@ -618,7 +678,7 @@ private extension ToDoLiveActivityAttributes.ContentState {
    }
 
    var accentColor: Color {
-      isOverdue ? Color(hex: 0xD40000) : Color(hex: 0xE9A700)
+      isOverdue ? Color(hex: 0xFF3B30) : Color(hex: 0xF0B42D)
    }
 
    var backgroundAccentColor: Color {

@@ -44,7 +44,12 @@ final class Tag {
 
     var displayName: String {
         let normalized = Self.normalizeName(name)
-        return Self.defaultTagNames.contains(normalized) ? String(localized: String.LocalizationValue(normalized)) : normalized
+        return Self.defaultTagNames.contains(normalized) ? Self.localizedDefaultName(normalized) : normalized
+    }
+
+    static func localizedDefaultName(_ name: String) -> String {
+        let normalized = normalizeName(name)
+        return defaultTagNames.contains(normalized) ? String(localized: String.LocalizationValue(normalized)) : normalized
     }
 
     var allToDos: [ToDo] {

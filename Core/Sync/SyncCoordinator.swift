@@ -244,12 +244,21 @@ final class SyncCoordinator: ObservableObject {
 
    func availableOptions(isAuthenticated: Bool) -> [SyncModeOption] {
       SyncMode.allCases.map { mode in
-         let isAvailable = mode != .iCloud || CloudKitConfig.isAvailable
+         let isAvailable = switch mode {
+         case .deviceOnly:
+            true
+         case .iCloud:
+            CloudKitConfig.isAvailable
+         case .syncEverywhere:
+            SupabaseConfig.isConfigured
+         }
          return SyncModeOption(
             mode: mode,
             isAvailable: isAvailable,
-            detailText: !isAvailable
+            detailText: !isAvailable && mode == .iCloud
             ? "Unavailable right now while toDō's CloudKit data model is being hardened."
+            : !isAvailable && mode == .syncEverywhere
+            ? "Unavailable until toDō Sync is configured for this build."
             : mode == .syncEverywhere && !isAuthenticated
             ? "Best for iPhone, Android, and web. Sign in to activate it."
             : mode.subtitle,

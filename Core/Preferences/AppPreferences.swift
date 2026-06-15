@@ -110,7 +110,34 @@ enum AppPreferences {
          case .archive:
             return String(localized: "Move to Archives")
          case .delete:
-            return String(localized: "Delete Permanently")
+            return String(localized: "Move to Trash")
+         }
+      }
+
+      var compactTitle: String {
+         switch self {
+         case .archive:
+            return String(localized: "Archive")
+         case .delete:
+            return String(localized: "Trash")
+         }
+      }
+
+      var systemImage: String {
+         switch self {
+         case .archive:
+            return "archivebox.fill"
+         case .delete:
+            return "trash.fill"
+         }
+      }
+
+      var accessibilityLabel: String {
+         switch self {
+         case .archive:
+            return String(localized: "Archive toDō")
+         case .delete:
+            return String(localized: "Move toDō to trash")
          }
       }
    }
@@ -292,11 +319,36 @@ enum AppPreferences {
    }
 
    static func sanitizedSyncMode(_ mode: SyncMode) -> SyncMode {
+      guard mode != .syncEverywhere || isSupabaseConfiguredForCurrentBundle() else {
+         return .deviceOnly
+      }
+
       guard mode == .iCloud, !CloudKitConfig.isAvailable else {
          return mode
       }
 
       return .deviceOnly
+   }
+
+   private static func isSupabaseConfiguredForCurrentBundle() -> Bool {
+      guard !Bundle.main.bundlePath.hasSuffix(".appex") else {
+         return true
+      }
+
+      guard let rawURL = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String,
+            let url = URL(string: rawURL),
+            let scheme = url.scheme?.lowercased(),
+            ["http", "https"].contains(scheme),
+            url.host != nil,
+            let publishableKey = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_PUBLISHABLE_KEY") as? String,
+            !publishableKey.isEmpty,
+            let rawRedirectURL = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_REDIRECT_URL") as? String,
+            URL(string: rawRedirectURL) != nil
+      else {
+         return false
+      }
+
+      return true
    }
 }
 

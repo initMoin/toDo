@@ -40,12 +40,12 @@ struct WidgetHeader: View {
 
          Spacer(minLength: 6)
 
-         Text("\(count)")
+         Text(WidgetFormatting.numberString(count))
             .font(WidgetTypography.title(countSize, relativeTo: .title3))
             .foregroundStyle(WidgetPalette.secondary)
             .monospacedDigit()
             .frame(minWidth: countBadgeSize, minHeight: countBadgeSize)
-            .accessibilityLabel("\(count) incomplete toDōs")
+            .accessibilityLabel(String(format: String(localized: "%@ incomplete toDōs"), WidgetFormatting.numberString(count)))
       }
       .padding(.horizontal, headerHorizontalPadding)
       .padding(.vertical, headerVerticalPadding)

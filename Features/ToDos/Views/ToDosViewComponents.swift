@@ -9,7 +9,9 @@ struct RowContextMenuModifier<MenuContent: View>: ViewModifier {
    @ViewBuilder
    func body(content: Content) -> some View {
       if isEnabled {
-         content.contextMenu(menuItems: menuContent)
+         content.contextMenu {
+            menuContent()
+         }
       } else {
          content
       }
@@ -81,7 +83,7 @@ struct DoneDrawerRowView: View {
       HStack(alignment: .top, spacing: 12) {
          Button(action: onReopen) {
             Image(systemName: "checkmark.circle.fill")
-               .font(.appDisplay(20, relativeTo: .headline))
+               .font(.system(size: 20, weight: .black, design: .rounded))
                .foregroundStyle(AppColor.actionPrimary)
                .frame(width: 22, height: 22)
          }
@@ -92,7 +94,7 @@ struct DoneDrawerRowView: View {
             VStack(alignment: .leading, spacing: 6) {
                HStack(alignment: .firstTextBaseline, spacing: 8) {
                   Text(toDo.task)
-                     .font(.appDisplay(20, relativeTo: .headline))
+                     .font(.appUserEntry(20, relativeTo: .headline))
                      .foregroundStyle(AppColor.textPrimary)
                      .strikethrough(true, color: AppColor.textPrimary.opacity(0.35))
                      .frame(maxWidth: .infinity, alignment: .leading)
@@ -172,6 +174,7 @@ struct ToDoRowView: View {
          rowBackgroundColor,
          in: .rect(cornerRadius: 18)
       )
+      .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
       .overlay(
          RoundedRectangle(cornerRadius: 18, style: .continuous)
             .inset(by: 2)
@@ -196,7 +199,7 @@ struct ToDoRowView: View {
             }
          } label: {
             Image(systemName: leadingCircleSymbol)
-               .font(.appDisplay(20, relativeTo: .headline))
+               .font(.system(size: 20, weight: .black, design: .rounded))
                .foregroundStyle(leadingCircleColor)
                .frame(width: leadingCircleSymbolSize, height: leadingCircleSymbolSize)
          }
@@ -210,7 +213,6 @@ struct ToDoRowView: View {
                   isCompleted: showsCompletedState,
                   phase: completionAnimationPhase,
                   textColor: taskTextColor,
-                  lineColor: taskTextColor.opacity(0.72),
                   firstLineHeightProbe: AnyView(firstLineHeightProbe)
                )
 
@@ -377,7 +379,7 @@ struct ToDoRowView: View {
 
    private var firstLineHeightProbe: some View {
       Text(toDo.task)
-         .font(.appDisplay(22, relativeTo: .headline))
+         .font(.appUserEntry(22, relativeTo: .headline))
          .lineLimit(1)
          .fixedSize(horizontal: false, vertical: true)
          .hidden()
@@ -527,26 +529,32 @@ private struct AnimatedCompletionTaskText: View {
    let isCompleted: Bool
    let phase: ToDoCompletionAnimationPhase
    let textColor: Color
-   let lineColor: Color
    let firstLineHeightProbe: AnyView
 
    @State private var strikeProgress: CGFloat = 0
 
    var body: some View {
-      Text(text)
-         .font(.appDisplay(22, relativeTo: .headline))
-         .foregroundStyle(textColor)
-         .frame(maxWidth: .infinity, alignment: .leading)
-         .background(firstLineHeightProbe)
-         .overlay(alignment: .leading) {
-            GeometryReader { proxy in
-               Capsule(style: .continuous)
-                  .fill(lineColor)
-                  .frame(width: proxy.size.width * strikeProgress, height: 2.2)
-                  .offset(y: max(0, proxy.size.height * 0.53))
+      HStack(spacing: 0) {
+         Text(text)
+            .font(isVisuallyCompleted ? .appBody(22, relativeTo: .headline) : .appUserEntry(22, relativeTo: .headline))
+            .italic(isVisuallyCompleted)
+            .foregroundStyle(textColor)
+            .strikethrough(isCompleted && phase == .none, color: textColor.opacity(0.72))
+            .background(firstLineHeightProbe)
+            .overlay(alignment: .topLeading) {
+               if phase.isAnimating {
+                  Text(progressiveStrikeText)
+                     .font(.appBody(22, relativeTo: .headline))
+                     .italic()
+                     .foregroundStyle(Color.clear)
+                     .strikethrough(true, color: textColor.opacity(0.72))
+                     .accessibilityHidden(true)
+               }
             }
-            .allowsHitTesting(false)
-         }
+
+         Spacer(minLength: 0)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
          .onAppear {
             strikeProgress = isCompleted || phase != .none ? 1 : 0
          }
@@ -568,6 +576,16 @@ private struct AnimatedCompletionTaskText: View {
                strikeProgress = newValue ? 1 : 0
             }
          }
+   }
+
+   private var isVisuallyCompleted: Bool {
+      isCompleted || phase.isAnimating
+   }
+
+   private var progressiveStrikeText: String {
+      guard !text.isEmpty else { return "" }
+      let count = max(0, min(text.count, Int((CGFloat(text.count) * strikeProgress).rounded(.up))))
+      return String(text.prefix(count))
    }
 }
 
@@ -672,12 +690,14 @@ struct SyncFeedbackOverlay: View {
    ToDosView()
       .modelContainer(PreviewContainerFactory.makeToDosViewContainer())
       .environmentObject(SupabaseAuthStore.preview)
+      .environmentObject(ToDoPresentationService.shared)
 }
 
 #Preview("iPad") {
    ToDosView()
       .modelContainer(PreviewContainerFactory.makeToDosViewContainer())
       .environmentObject(SupabaseAuthStore.preview)
+      .environmentObject(ToDoPresentationService.shared)
       .environment(\.horizontalSizeClass, .regular)
       .frame(width: 1366, height: 1024)
 }
@@ -1059,7 +1079,7 @@ struct OnboardingHitShield: View {
 struct GuidedOnboardingPrimaryButtonStyle: ButtonStyle {
    func makeBody(configuration: Configuration) -> some View {
       configuration.label
-         .font(.appBodyStrong(15, relativeTo: .subheadline))
+         .font(.appButton(17, relativeTo: .headline))
          .foregroundStyle(AppColor.onAction)
          .padding(.horizontal, 16)
          .padding(.vertical, 14)
@@ -1076,7 +1096,7 @@ struct GuidedOnboardingPrimaryButtonStyle: ButtonStyle {
 struct GuidedOnboardingSecondaryButtonStyle: ButtonStyle {
    func makeBody(configuration: Configuration) -> some View {
       configuration.label
-         .font(.appBodyStrong(15, relativeTo: .subheadline))
+         .font(.appButton(17, relativeTo: .headline))
          .foregroundStyle(AppColor.textPrimary)
          .padding(.horizontal, 16)
          .padding(.vertical, 14)

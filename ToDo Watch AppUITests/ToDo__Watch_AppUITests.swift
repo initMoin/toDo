@@ -2,42 +2,67 @@
 //  ToDo_Watch_AppUITests.swift
 //  ToDo Watch AppUITests
 //
-//  Created by Moinuddin Ahmad on 5/13/26.
-//
 
 import XCTest
 
+@MainActor
 final class ToDo_Watch_AppUITests: XCTestCase {
+   override func setUpWithError() throws {
+      continueAfterFailure = false
+   }
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+   func testCaptureWatchHomeView() throws {
+      let app = launchScreenshotApp(screen: "home")
+      XCTAssertTrue(app.otherElements["watch.home"].waitForExistence(timeout: 8))
+      capture("watch-01-HomeView", app: app)
+   }
 
-        // In UI tests it is usually best to stop immediately when a failure occurs.
-        continueAfterFailure = false
+   func testCaptureWatchToDosView() throws {
+      let app = launchScreenshotApp(screen: "todos")
+      XCTAssertTrue(app.otherElements["watch.todos"].waitForExistence(timeout: 8))
+      capture("watch-02-ToDosView", app: app)
+   }
 
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
+   func testCaptureWatchToDoCreateView() throws {
+      let app = launchScreenshotApp(screen: "create")
+      XCTAssertTrue(app.otherElements["watch.todo.create"].waitForExistence(timeout: 8))
+      capture("watch-03-ToDoView-create", app: app)
+   }
 
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
+   func testCaptureWatchToDoDetailView() throws {
+      let app = launchScreenshotApp(screen: "detail")
+      XCTAssertTrue(app.otherElements["watch.todo.view"].waitForExistence(timeout: 8))
+      capture("watch-04-ToDoView-view", app: app)
+   }
 
-    @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
-        let app = XCUIApplication()
-        app.launch()
+   func testCaptureWatchStatsView() throws {
+      let app = launchScreenshotApp(screen: "stats")
+      XCTAssertTrue(app.otherElements["watch.stats"].waitForExistence(timeout: 8))
+      capture("watch-05-StatsView", app: app)
+   }
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
-    }
+   private func launchScreenshotApp(screen: String) -> XCUIApplication {
+      let app = XCUIApplication()
+      app.launchArguments = [
+         "-UITestScreenshotMode",
+         "-ScreenshotScreen", screen,
+         "-AppleLanguages", "(en)",
+         "-AppleLocale", "en_US",
+         "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryM"
+      ]
+      app.launch()
+      return app
+   }
 
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
-    }
+   private func capture(_ name: String, app: XCUIApplication) {
+      settle()
+      let attachment = XCTAttachment(screenshot: app.screenshot())
+      attachment.name = name
+      attachment.lifetime = .keepAlways
+      add(attachment)
+   }
+
+   private func settle() {
+      RunLoop.current.run(until: Date().addingTimeInterval(0.8))
+   }
 }

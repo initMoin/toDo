@@ -1,7 +1,4 @@
 import SwiftUI
-#if canImport(UIKit)
-import UIKit
-#endif
 
 enum AppAnimation {
     static let snappyFast = Animation.snappy(duration: 0.2)
@@ -124,7 +121,7 @@ enum AppThemeOption: String, CaseIterable, Identifiable {
         case .shift:
             return AppThemePalette(
                 main: AppThemePalette.color(hex: 0xB50000),
-                secondary: AppThemePalette.adaptiveColor(light: 0x22181C, dark: 0xFCFCFC),
+                secondary: Color("shiftThemeSecondary"),
                 tertiary: AppThemePalette.color(hex: 0xC6F91F),
                 destructive: AppThemePalette.color(hex: 0xB50000),
                 actionPrimary: AppThemePalette.color(hex: 0xB50000),
@@ -161,22 +158,6 @@ struct AppThemePalette {
             blue: Double(hex & 0xFF) / 255.0
         )
     }
-
-    static func adaptiveColor(light: Int, dark: Int) -> Color {
-        #if canImport(UIKit)
-        return Color(UIColor { traits in
-            let hex = traits.userInterfaceStyle == .dark ? dark : light
-            return UIColor(
-                red: CGFloat((hex >> 16) & 0xFF) / 255.0,
-                green: CGFloat((hex >> 8) & 0xFF) / 255.0,
-                blue: CGFloat(hex & 0xFF) / 255.0,
-                alpha: 1
-            )
-        })
-        #else
-        return color(hex: light)
-        #endif
-    }
 }
 
 enum AppColor {
@@ -202,6 +183,9 @@ enum AppColor {
     static var actionNeutral: Color { secondary }
     static var actionDestructive: Color { destructive }
     static var onAction: Color { palette.onAction }
+    static func brandYellowForeground(for colorScheme: ColorScheme) -> Color {
+        colorScheme == .dark ? black : white
+    }
 
     static let textPrimary = Color("appTextPrimary")
     static let textSecondary = Color("appTextSecondary")
@@ -232,44 +216,76 @@ enum AppColor {
 }
 
 enum AppTypography {
-    private static let displayFontName = "CalSans-Regular"
-    private static let bodyLightFontName = "Jura-Light"
-    private static let bodyRegularFontName = "Jura-Regular"
-    private static let subtitleBoldFontName = "Jura-Bold"
+    private static let brandFontName = "CalSans-Regular"
+    private static let displayFontName = "BebasNeue-Regular"
+    private static let uiFamilyName = "Jura"
+    private static let aleoFamilyName = "Aleo"
+
+    static func brand(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
+        .custom(brandFontName, size: size, relativeTo: textStyle)
+    }
+
+    static func display(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .title2) -> Font {
+        .custom(displayFontName, size: size, relativeTo: textStyle)
+    }
+
+    static func button(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .headline) -> Font {
+        .custom(displayFontName, size: size, relativeTo: textStyle)
+    }
 
     static func title(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
-        .custom(displayFontName, size: size, relativeTo: textStyle)
+        .custom(uiFamilyName, size: size, relativeTo: textStyle)
+            .weight(.bold)
     }
 
     static func headline(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .headline) -> Font {
-        .custom(displayFontName, size: size, relativeTo: textStyle)
+        .custom(uiFamilyName, size: size, relativeTo: textStyle)
+            .weight(.semibold)
     }
 
     static func subtitle(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .subheadline) -> Font {
-        .custom(subtitleBoldFontName, size: size, relativeTo: textStyle)
+        .custom(uiFamilyName, size: size, relativeTo: textStyle)
+            .weight(.medium)
     }
 
     static func body(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-        .custom(bodyFontName(for: textStyle), size: size, relativeTo: textStyle)
+        .custom(uiFamilyName, size: size, relativeTo: textStyle)
+            .weight(.regular)
     }
 
     static func bodyStrong(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-        .custom(bodyRegularFontName, size: size, relativeTo: textStyle)
+        .custom(uiFamilyName, size: size, relativeTo: textStyle)
+            .weight(.semibold)
     }
 
-    private static func bodyFontName(for textStyle: Font.TextStyle) -> String {
-        switch textStyle {
-        case .caption, .caption2, .footnote:
-            return bodyRegularFontName
-        default:
-            return bodyLightFontName
-        }
+    static func badge(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .caption) -> Font {
+        .custom(uiFamilyName, size: size, relativeTo: textStyle)
+            .weight(.bold)
+    }
+
+    static func longForm(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
+        .custom(aleoFamilyName, size: size, relativeTo: textStyle)
+            .weight(.regular)
+            .italic()
+    }
+
+    static func userEntry(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
+        .custom(aleoFamilyName, size: size, relativeTo: textStyle)
+            .weight(.medium)
     }
 }
 
 extension Font {
+    static func appBrand(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
+        AppTypography.brand(size, relativeTo: textStyle)
+    }
+
     static func appDisplay(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .title2) -> Font {
-        AppTypography.headline(size, relativeTo: textStyle)
+        AppTypography.display(size, relativeTo: textStyle)
+    }
+
+    static func appButton(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .headline) -> Font {
+        AppTypography.button(size, relativeTo: textStyle)
     }
 
     static func appTitle(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
@@ -288,12 +304,24 @@ extension Font {
         AppTypography.bodyStrong(size, relativeTo: textStyle)
     }
 
+    static func appBadge(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .caption) -> Font {
+        AppTypography.badge(size, relativeTo: textStyle)
+    }
+
     static func appSubtitle(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .subheadline) -> Font {
         AppTypography.subtitle(size, relativeTo: textStyle)
     }
 
     static func appAccent(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
         AppTypography.subtitle(size, relativeTo: textStyle)
+    }
+
+    static func appLongForm(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
+        AppTypography.longForm(size, relativeTo: textStyle)
+    }
+
+    static func appUserEntry(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
+        AppTypography.userEntry(size, relativeTo: textStyle)
     }
 }
 
@@ -307,6 +335,24 @@ extension View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.hidden, for: .navigationBar)
+    }
+
+    func settingsNativeNavigationTitle(_ title: String, colorScheme: ColorScheme, background: Color) -> some View {
+        self
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(background, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar {
+               ToolbarItem(placement: .principal) {
+                    Text(LocalizedStringKey(title))
+                        .font(.appTitle(33, relativeTo: .title))
+                        .foregroundStyle(AppColor.headerForeground(for: colorScheme))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                        .accessibilityAddTraits(.isHeader)
+                }
+            }
     }
 
     func appListChrome() -> some View {
@@ -374,7 +420,7 @@ struct AppLargeScreenTitle: View {
     let title: String
 
     var body: some View {
-        Text(title)
+        Text(LocalizedStringKey(title))
             .font(.appTitle(34, relativeTo: .largeTitle))
             .foregroundStyle(AppColor.textPrimary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -385,84 +431,80 @@ struct AppLargeScreenTitle: View {
 }
 
 struct AppSettingsDetailHeader<Trailing: View>: View {
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.settingsDetailPresentation) private var settingsDetailPresentation
     let title: String
-    let backAccessibilityLabel: String
     let background: Color
     private let trailing: Trailing
 
     init(
         title: String,
-        backAccessibilityLabel: String = "Go back to Settings",
         background: Color = AppColor.main,
         @ViewBuilder trailing: () -> Trailing
     ) {
         self.title = title
-        self.backAccessibilityLabel = backAccessibilityLabel
         self.background = background
         self.trailing = trailing()
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(alignment: .center, spacing: 14) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(AppColor.headerControlForeground(for: colorScheme))
-                        .frame(width: 36, height: 36)
-                        .background {
-                            if #unavailable(iOS 26.0) {
-                                Circle()
-                                    .fill(headerButtonBackground)
-                            }
-                        }
-                        .appInteractiveCircleGlass(tint: headerButtonBackground)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(backAccessibilityLabel)
+        if settingsDetailPresentation == .sidePanel {
+            HStack(spacing: 10) {
+                Capsule()
+                    .fill(AppColor.main)
+                    .frame(width: 5, height: 28)
 
-                Text(title)
-                    .font(.appTitle(28, relativeTo: .title))
-                    .foregroundStyle(headerForeground)
+                Text(LocalizedStringKey(title))
+                    .font(.appTitle(24, relativeTo: .title2))
+                    .foregroundStyle(AppColor.textPrimary)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                    .accessibilityAddTraits(.isHeader)
+                    .minimumScaleFactor(0.86)
 
                 Spacer(minLength: 0)
 
                 trailing
             }
+            .padding(.horizontal, 18)
+            .padding(.top, 18)
+            .padding(.bottom, 12)
+            .background(AppColor.surface)
+            .accessibilityAddTraits(.isHeader)
+        } else {
+            VStack(spacing: 0) {
+                HStack(alignment: .center, spacing: 14) {
+                    Text(LocalizedStringKey(title))
+                        .font(.appTitle(28, relativeTo: .title))
+                        .foregroundStyle(headerForeground)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.82)
+                        .accessibilityAddTraits(.isHeader)
+
+                    Spacer(minLength: 0)
+
+                    trailing
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 14)
+                .background(background)
+            }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
-            .background(background)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var headerForeground: Color {
         AppColor.headerForeground(for: colorScheme)
-    }
-
-    private var headerButtonBackground: Color {
-        AppColor.headerControlBackground(for: colorScheme)
     }
 }
 
 extension AppSettingsDetailHeader where Trailing == EmptyView {
     init(
         title: String,
-        backAccessibilityLabel: String = "Go back to Settings",
         background: Color = AppColor.main
     ) {
         self.init(
             title: title,
-            backAccessibilityLabel: backAccessibilityLabel,
             background: background
         ) {
             EmptyView()
@@ -473,19 +515,20 @@ extension AppSettingsDetailHeader where Trailing == EmptyView {
 struct AppCircleActionButtonStyle: ButtonStyle {
     let intent: AppActionIntent
     var size: CGFloat = 34
+    var tint: Color? = nil
+    var foreground: Color? = nil
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         let foreground: Color = {
             guard isEnabled else { return AppColor.textSecondary }
-//            return AppColor.onAction
-           return AppColor.black
+            return self.foreground ?? AppColor.black
         }()
 
         let background: Color = {
             guard isEnabled else { return AppColor.iconCircle.opacity(0.28) }
 //            return configuration.isPressed ? intent.pressedBackground : AppColor.iconCircle
-           return AppColor.main
+           return tint ?? AppColor.main
         }()
 
         return configuration.label
@@ -509,6 +552,31 @@ struct AppCircleActionButtonStyle: ButtonStyle {
     }
 }
 
+struct AppOutlinedIconButtonStyle: ButtonStyle {
+    let tint: Color
+    var size: CGFloat = 34
+    var symbolSize: CGFloat = 16
+    var lineWidth: CGFloat = 2.2
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let resolvedTint = isEnabled ? tint : tint.opacity(0.68)
+        return configuration.label
+            .font(.system(size: symbolSize, weight: .black, design: .rounded))
+            .foregroundStyle(resolvedTint)
+            .frame(width: size, height: size)
+            .background(Circle().fill(Color.clear))
+            .overlay(
+                Circle()
+                    .stroke(resolvedTint, lineWidth: lineWidth)
+            )
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .opacity(isEnabled ? 1 : 0.74)
+            .animation(AppAnimation.easeFast, value: configuration.isPressed)
+            .animation(AppAnimation.easeFast, value: isEnabled)
+    }
+}
+
 struct AppSemanticTextButtonStyle: ButtonStyle {
     let intent: AppActionIntent
 
@@ -516,6 +584,7 @@ struct AppSemanticTextButtonStyle: ButtonStyle {
         let foreground = configuration.isPressed ? AppColor.onAction : intent.textForeground
         let background = configuration.isPressed ? intent.pressedBackground : Color.clear
         return configuration.label
+            .font(.appButton(15, relativeTo: .subheadline))
             .foregroundStyle(foreground)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

@@ -4,12 +4,18 @@ import SwiftData
 struct ArchivesView: View {
    @Environment(\.modelContext) private var context
    @Environment(\.dismiss) private var dismiss
+   @Environment(\.colorScheme) private var colorScheme
+   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
    @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
    @Query private var toDos: [ToDo]
    @State private var isShowingPurgeConfirmation = false
    @State private var editingArchivedToDo: ToDo?
    @State private var isSelectionMode = false
    @State private var selectedToDoIDs = Set<PersistentIdentifier>()
+
+   private var contentMaxWidth: CGFloat {
+      horizontalSizeClass == .regular ? 760 : .infinity
+   }
 
    var body: some View {
       ZStack(alignment: .top) {
@@ -49,6 +55,8 @@ struct ArchivesView: View {
                Color.clear
                   .frame(height: 116)
             }
+            .frame(maxWidth: contentMaxWidth, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .top)
             .padding(.horizontal, 16)
             .padding(.top, 86)
             .padding(.bottom, 24)
@@ -71,8 +79,6 @@ struct ArchivesView: View {
       .animation(AppAnimation.snappyStandard, value: isSelectionMode)
       .appBaseTypography()
       .appNavigationChrome()
-      .toolbar(.hidden, for: .navigationBar)
-      .navigationBarBackButtonHidden()
       .confirmationDialog("Purge all completed and archived toDōs?", isPresented: $isShowingPurgeConfirmation, titleVisibility: .visible) {
          Button("Purge Archives", role: .destructive) {
             purgeArchives()
@@ -102,9 +108,9 @@ struct ArchivesView: View {
                      if !isSelectionMode { selectedToDoIDs.removeAll() }
                   }
                } label: {
-                  Text(isSelectionMode ? "Done" : "Select")
-                     .font(.appBodyStrong(16, relativeTo: .headline))
-                     .foregroundStyle(AppColor.white)
+                  Label(isSelectionMode ? "Done" : "Select", systemImage: isSelectionMode ? "checkmark.circle.fill" : "checkmark.circle")
+                     .font(.appBodyStrong(15, relativeTo: .headline))
+                     .foregroundStyle(AppColor.headerForeground(for: colorScheme))
                }
                .buttonStyle(.plain)
             }
@@ -138,9 +144,9 @@ struct ArchivesView: View {
 
    private func archiveSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
       VStack(alignment: .leading, spacing: 10) {
-         Text(title)
-            .font(.appSubtitle(15, relativeTo: .subheadline))
-            .foregroundStyle(AppColor.textPrimary)
+         Text(LocalizedStringKey(title))
+            .font(.appDisplay(22, relativeTo: .title3))
+            .foregroundStyle(AppColor.secondary)
 
          VStack(alignment: .leading, spacing: 14) {
             content()
@@ -170,7 +176,7 @@ struct ArchivesView: View {
                .lineLimit(2)
 
             if let dueDate = toDo.dueDate {
-               Text("Due \(dueDate.formatted(date: .abbreviated, time: .omitted))")
+               Text(String(format: String(localized: "Due %@"), AppLocalization.dateString(dueDate)))
                   .font(.appBody(12, relativeTo: .caption))
                   .foregroundStyle(AppColor.textSecondary)
             }
@@ -221,10 +227,7 @@ struct ArchivesView: View {
          .padding(.horizontal, 16)
          .padding(.vertical, 14)
          .frame(maxWidth: .infinity)
-         .background(
-            AppColor.actionDestructive,
-            in: .rect(corners: .concentric, isUniform: true)
-         )
+         .background(AppColor.actionDestructive, in: .rect(cornerRadius: 22))
       }
       .buttonStyle(.plain)
       .disabled(isArchivesEmpty)
@@ -240,6 +243,7 @@ struct ArchivesView: View {
                AppColor.surfaceElevated,
                in: .rect(cornerRadius: 28)
             )
+            .frame(maxWidth: contentMaxWidth)
             .padding(.horizontal, 12)
             .padding(.bottom, 10)
       }
@@ -319,6 +323,8 @@ struct ArchivesView: View {
          .padding(.vertical, 12)
          .background(AppColor.surface)
       }
+      .frame(maxWidth: contentMaxWidth)
+      .frame(maxWidth: .infinity)
    }
 
    private func bulkActionButton(systemName: String, label: String, isDestructive: Bool = false, disabled: Bool, action: @escaping () -> Void) -> some View {

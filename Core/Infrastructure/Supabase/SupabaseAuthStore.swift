@@ -19,7 +19,15 @@ enum AuthProviderInProgress: Equatable {
     case authCallback
 }
 
-struct SupabaseProfileRecord: Codable, Equatable, Identifiable {
+private enum SecureNonceError: LocalizedError {
+    case generationFailed(OSStatus)
+
+    var errorDescription: String? {
+        "Sign-in could not prepare securely. Try again."
+    }
+}
+
+nonisolated struct SupabaseProfileRecord: Codable, Equatable, Identifiable, Sendable {
     let id: UUID
     var username: String?
     var displayName: String?
@@ -43,7 +51,7 @@ struct SupabaseProfileRecord: Codable, Equatable, Identifiable {
     }
 }
 
-private struct SupabaseProfileUpsertPayload: Encodable {
+nonisolated private struct SupabaseProfileUpsertPayload: Encodable, Sendable {
     let id: UUID
     let displayName: String?
     let givenName: String?
@@ -59,7 +67,7 @@ private struct SupabaseProfileUpsertPayload: Encodable {
     }
 }
 
-private struct DeviceTokenUpsertPayload: Encodable {
+nonisolated private struct DeviceTokenUpsertPayload: Encodable, Sendable {
     let userID: UUID
     let installationID: String
     let platform: String
@@ -83,7 +91,7 @@ private struct DeviceTokenUpsertPayload: Encodable {
     }
 }
 
-private struct DeviceTokenDeactivatePayload: Encodable {
+nonisolated private struct DeviceTokenDeactivatePayload: Encodable, Sendable {
     let isActive: Bool
     let lastSeenAt: Date
 
@@ -98,7 +106,7 @@ enum LiveActivityTokenType: String {
     case update
 }
 
-private struct LiveActivityTokenUpsertPayload: Encodable {
+nonisolated private struct LiveActivityTokenUpsertPayload: Encodable, Sendable {
     let userID: UUID
     let installationID: String
     let platform: String
@@ -128,7 +136,7 @@ private struct LiveActivityTokenUpsertPayload: Encodable {
     }
 }
 
-private struct LiveActivityTokenDeactivatePayload: Encodable {
+nonisolated private struct LiveActivityTokenDeactivatePayload: Encodable, Sendable {
     let isActive: Bool
     let lastSeenAt: Date
 
@@ -280,6 +288,14 @@ final class SupabaseAuthStore: ObservableObject {
         }
         isStarted = true
 
+        guard SupabaseConfig.isConfigured else {
+            let message = SupabaseConfig.configurationIssue ?? "toDō Sync is not configured for this build."
+            lastErrorMessage = message
+            authLog.error("\(message, privacy: .public)")
+            await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
+            return
+        }
+
         applyActiveSession(supabase.auth.currentSession)
         logAuthConfiguration()
 
@@ -296,6 +312,7 @@ final class SupabaseAuthStore: ObservableObject {
     func handleScenePhase(_ phase: ScenePhase) {
         guard isStarted else { return }
         guard !isPreviewMode else { return }
+        guard SupabaseConfig.isConfigured else { return }
         switch phase {
         case .active:
             Task {
@@ -312,8 +329,26 @@ final class SupabaseAuthStore: ObservableObject {
         }
     }
 
+    private func prepareForConfiguredSupabaseAction() -> Bool {
+        guard SupabaseConfig.isConfigured else {
+            let message = SupabaseConfig.configurationIssue ?? "toDō Sync is not configured for this build."
+            authProviderInProgress = nil
+            lastErrorMessage = message
+            authLog.error("\(message, privacy: .public)")
+            SyncCoordinator.shared.showTransientFeedback(
+                title: "toDō Sync Unavailable",
+                message: "Account sync is not configured for this build.",
+                style: .failure
+            )
+            return false
+        }
+
+        return true
+    }
+
     func signInWithApple(idToken: String, rawNonce: String, fullName: PersonNameComponents?) async {
         guard !isPreviewMode else { return }
+        guard prepareForConfiguredSupabaseAction() else { return }
         authProviderInProgress = .apple
         lastErrorMessage = nil
 
@@ -355,6 +390,7 @@ final class SupabaseAuthStore: ObservableObject {
 
     func signInWithGoogle() async {
         guard !isPreviewMode else { return }
+        guard prepareForConfiguredSupabaseAction() else { return }
         lastErrorMessage = nil
         authProviderInProgress = .google
         #if DEBUG
@@ -362,7 +398,7 @@ final class SupabaseAuthStore: ObservableObject {
         #endif
 
         do {
-            let rawNonce = AuthNonceGenerator.random()
+            let rawNonce = try AuthNonceGenerator.random()
             let hashedNonce = AuthNonceGenerator.sha256(rawNonce)
             let authSession = try await signInWithNativeGoogle(
                 rawNonce: rawNonce,
@@ -402,6 +438,7 @@ final class SupabaseAuthStore: ObservableObject {
 
     func handleIncomingURL(_ url: URL) async {
         guard !isPreviewMode else { return }
+        guard SupabaseConfig.isConfigured else { return }
         authLog.debug("Incoming auth URL received. scheme=\(url.scheme ?? "none", privacy: .public) host=\(url.host ?? "none", privacy: .public)")
         if GIDSignIn.sharedInstance.handle(url) {
             return
@@ -411,6 +448,7 @@ final class SupabaseAuthStore: ObservableObject {
 
     func handleAuthCallback(_ url: URL) async {
         guard !isPreviewMode else { return }
+        guard SupabaseConfig.isConfigured else { return }
         guard url.scheme?.caseInsensitiveCompare(SupabaseConfig.callbackScheme) == .orderedSame else { return }
 
         authProviderInProgress = .authCallback
@@ -447,6 +485,16 @@ final class SupabaseAuthStore: ObservableObject {
 
     func signOut() async {
         guard !isPreviewMode else { return }
+        guard SupabaseConfig.isConfigured else {
+            session = nil
+            currentUser = nil
+            profile = nil
+            lastErrorMessage = nil
+            clearStoredSignInProvider()
+            await applyPreferredSyncModeIfNeeded(userID: nil)
+            return
+        }
+
         let previousUserID = currentUserID
         let shouldPrepareDeviceOnlySnapshot = effectiveSyncMode == .syncEverywhere
         do {
@@ -1053,17 +1101,17 @@ private enum NativeGoogleSignInError: LocalizedError {
 }
 
 private enum AuthNonceGenerator {
-    static func random(length: Int = 32) -> String {
+    static func random(length: Int = 32) throws -> String {
         let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
         var result = ""
         var remainingLength = length
 
         while remainingLength > 0 {
-            let randoms: [UInt8] = (0..<16).map { _ in
+            let randoms: [UInt8] = try (0..<16).map { _ in
                 var random: UInt8 = 0
                 let status = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
                 if status != errSecSuccess {
-                    fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(status)")
+                    throw SecureNonceError.generationFailed(status)
                 }
                 return random
             }
