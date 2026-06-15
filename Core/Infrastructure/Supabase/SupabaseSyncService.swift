@@ -1232,7 +1232,7 @@ final class SupabaseSyncService {
             continue
          }
          
-         var clonedCloudID = remoteTagsByName[sourceTag.displayName]?.id ?? UUID()
+         let clonedCloudID = remoteTagsByName[sourceTag.displayName]?.id ?? UUID()
          
          let clonedTag = Tag(
             name: sourceTag.name,
