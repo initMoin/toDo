@@ -1,4 +1,3 @@
-cat > ci_scripts/ci_post_clone.sh <<'EOF'
 #!/bin/zsh
 set -euo pipefail
 
@@ -14,6 +13,3 @@ else
   echo "Expected ./Scripts/validate_release_readiness.sh or ./ToDo/Scripts/validate_release_readiness.sh" >&2
   exit 1
 fi
-EOF
-
-chmod +x ci_scripts/ci_post_clone.sh
