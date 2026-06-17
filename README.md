@@ -14,6 +14,10 @@ A productivity system for the user.
   <img src="Screenshots/watch.png" width="17%" alt="Apple Watch">
 </p>
 
+<p align="center">
+  Home • Tasks • Details • Statistics • Watch
+</p>
+
 ---
 
 ## What is toDō?
