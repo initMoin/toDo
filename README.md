@@ -7,11 +7,11 @@ A productivity system for the user.
 [![Swift 6](https://img.shields.io/badge/Swift-6.0-orange.svg)](#)
 
 <p align="center">
-  <img src="Screenshots/home.png" width="22%" alt="Home">
-  <img src="Screenshots/todosview.png" width="22%" alt="ToDosView">
-  <img src="Screenshots/todo-detail.png" width="22%" alt="ToDo Detail">
-  <img src="Screenshots/stats.png" width="22%" alt="Stats">
-  <img src="Screenshots/watch.png" width="22%" alt="Apple Watch">
+  <img src="Screenshots/home.png" width="20%" alt="Home">
+  <img src="Screenshots/todosview.png" width="20%" alt="ToDosView">
+  <img src="Screenshots/todo-detail.png" width="20%" alt="ToDo Detail">
+  <img src="Screenshots/stats.png" width="20%" alt="Stats">
+  <img src="Screenshots/watch.png" width="20%" alt="Apple Watch">
 </p>
 
 ---
