@@ -15,7 +15,7 @@ A productivity system for the user.
 </p>
 
 <p align="center">
-  Home • Tasks • Details • Statistics • Watch
+  Home   •   Tasks   •   Details   •   Statistics   •   Watch
 </p>
 
 ---
