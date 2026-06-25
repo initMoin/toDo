@@ -248,6 +248,7 @@ final class WatchToDoStore: NSObject, ObservableObject, WCSessionDelegate {
    @Published private(set) var isPhoneReachable = false
    private weak var authStore: WatchAuthStore?
    private let actionQueue = WatchActionQueueStore()
+   private let directSyncClient = WatchDirectSyncClient()
    private var isConfigured = false
 
    private var session: WCSession? {
@@ -374,7 +375,11 @@ final class WatchToDoStore: NSObject, ObservableObject, WCSessionDelegate {
 
    func requestRefresh() {
       guard let session, session.isReachable else {
-         statusText = queuedActionCount > 0 ? "Queued" : "Open toDō on iPhone"
+         if let standaloneSession = authStore?.standaloneSession {
+            refreshDirectly(authSession: standaloneSession)
+         } else {
+            statusText = queuedActionCount > 0 ? "Queued" : "Open toDō on iPhone"
+         }
          return
       }
 
@@ -507,6 +512,8 @@ final class WatchToDoStore: NSObject, ObservableObject, WCSessionDelegate {
                   self?.statusText = error.localizedDescription
                }
             }
+         } else if let standaloneSession = authStore?.standaloneSession {
+            applyDirectly(action, authSession: standaloneSession)
          } else {
             actionQueue.enqueue(action)
             queuedActionCount = actionQueue.load().count
@@ -517,6 +524,55 @@ final class WatchToDoStore: NSObject, ObservableObject, WCSessionDelegate {
          }
       } catch {
          statusText = error.localizedDescription
+      }
+   }
+
+   private func refreshDirectly(authSession: WatchAuthSession) {
+      guard let directSyncClient else {
+         statusText = "Direct sync unavailable"
+         return
+      }
+
+      statusText = "Syncing"
+      Task {
+         do {
+            let remoteItems = try await directSyncClient.fetchToDos(authSession: authSession)
+            await MainActor.run {
+               items = remoteItems
+               lastUpdated = .now
+               statusText = remoteItems.isEmpty ? "No toDōs" : "Updated"
+            }
+         } catch {
+            await MainActor.run {
+               statusText = error.localizedDescription
+            }
+         }
+      }
+   }
+
+   private func applyDirectly(_ action: WatchToDoAction, authSession: WatchAuthSession) {
+      guard let directSyncClient else {
+         statusText = "Direct sync unavailable"
+         return
+      }
+
+      statusText = "Syncing"
+      Task {
+         do {
+            try await directSyncClient.apply(action, authSession: authSession)
+            let remoteItems = try await directSyncClient.fetchToDos(authSession: authSession)
+            await MainActor.run {
+               items = remoteItems
+               lastUpdated = .now
+               pendingActionIDs.remove(action.id)
+               statusText = "Saved"
+            }
+         } catch {
+            await MainActor.run {
+               pendingActionIDs.remove(action.id)
+               statusText = error.localizedDescription
+            }
+         }
       }
    }
 
@@ -803,6 +859,7 @@ struct ToDosView: View {
 	         WKInterfaceDevice.current().play(.notification)
 	      }
       .task {
+         authStore.start()
          store.configure(authStore: authStore)
          applyScreenshotPresentationIfNeeded()
 	      }
@@ -1386,6 +1443,8 @@ private struct WatchMetricItem: Identifiable {
 }
 
 private struct WatchMetricGrid: View {
+   @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
    let items: [WatchMetricItem]
    private let columns = [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)]
 
@@ -1417,6 +1476,15 @@ private struct WatchMetricGrid: View {
             }
             .padding(10)
             .background(WatchAppColor.surfaceElevated, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+               if differentiateWithoutColor {
+                  RoundedRectangle(cornerRadius: 18, style: .continuous)
+                     .strokeBorder(
+                        WatchAppColor.textPrimary.opacity(0.78),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+                     )
+               }
+            }
          }
       }
    }

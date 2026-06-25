@@ -12,6 +12,7 @@ struct SupabaseSchemaContractTests {
         #expect(keys.contains("task"))
         #expect(keys.contains("is_done"))
         #expect(keys.contains("updated_at"))
+        #expect(keys.contains("complete_when_all_nanodos_done"))
         #expect(!keys.contains("missive"))
         #expect(!keys.contains("title"))
     }

@@ -21,8 +21,13 @@ final class LocationTimeZoneService: NSObject, ObservableObject {
         switch manager.authorizationStatus {
         case .notDetermined:
             manager.requestWhenInUseAuthorization()
+        #if os(macOS)
+        case .authorizedAlways:
+            manager.requestLocation()
+        #else
         case .authorizedAlways, .authorizedWhenInUse:
             manager.requestLocation()
+        #endif
         case .restricted, .denied:
             break
         @unknown default:
@@ -37,9 +42,15 @@ extension LocationTimeZoneService: CLLocationManagerDelegate {
 
         Task { @MainActor in
             authorizationStatus = status
+            #if os(macOS)
+            if status == .authorizedAlways {
+                self.manager.requestLocation()
+            }
+            #else
             if status == .authorizedAlways || status == .authorizedWhenInUse {
                 self.manager.requestLocation()
             }
+            #endif
         }
     }
 

@@ -54,6 +54,7 @@ final class NotificationManager: NSObject, ObservableObject {
 
    private let center = UNUserNotificationCenter.current()
    private let notificationPrefix = "todo.due."
+   private let nanoDoNotificationPrefix = "todo.nanodo.due."
    private let categoryIdentifier = "TODO_DUE_REMINDER"
    private let markDoneActionIdentifier = "todo.markDone"
    private let snoozeActionPrefix = "todo.snooze."
@@ -118,21 +119,22 @@ final class NotificationManager: NSObject, ObservableObject {
    }
 
    func registerForRemoteNotifications() {
-      guard authorizationStatus == .authorized
-               || authorizationStatus == .provisional
-               || authorizationStatus == .ephemeral else {
+      guard Self.isNotificationDeliveryAllowed(authorizationStatus) else {
+         return
+      }
+
+      guard let remoteNotificationRegistrar else {
+         registrationState = .idle
          return
       }
 
       registrationState = .requesting
-      remoteNotificationRegistrar?()
+      remoteNotificationRegistrar()
    }
 
    func scheduleSoundPreviewNotification(after seconds: TimeInterval = 3) async throws {
       let settings = await center.notificationSettings()
-      guard settings.authorizationStatus == .authorized
-               || settings.authorizationStatus == .provisional
-               || settings.authorizationStatus == .ephemeral else {
+      guard Self.isNotificationDeliveryAllowed(settings.authorizationStatus) else {
          return
       }
 
@@ -145,7 +147,8 @@ final class NotificationManager: NSObject, ObservableObject {
          body: String(localized: "This reminder uses your selected notification sound."),
          isTimeSensitive: false,
          isQuiet: false,
-         soundOption: preferredSoundOption
+         soundOption: preferredSoundOption,
+         customSoundName: preferredCustomSoundName
       )
       content.badge = nil
 
@@ -191,7 +194,9 @@ final class NotificationManager: NSObject, ObservableObject {
       #endif
 
       Task {
+         #if !os(macOS)
          await SupabaseAuthStore.shared.syncCurrentDeviceTokenIfPossible()
+         #endif
       }
    }
 
@@ -249,6 +254,9 @@ final class NotificationManager: NSObject, ObservableObject {
 
    func handleRemoteNotification(_ userInfo: [AnyHashable: Any]) async -> RemoteNotificationHandlingResult {
       if isRemoteSyncRefreshPayload(userInfo) {
+         #if os(macOS)
+         return .noData
+         #else
          guard let userID = SupabaseAuthStore.shared.currentUserID else {
             return .noData
          }
@@ -256,6 +264,7 @@ final class NotificationManager: NSObject, ObservableObject {
          await SyncCoordinator.shared.refreshFromRemote(userID: userID)
          await syncScheduledNotifications()
          return .newData
+         #endif
       }
 
       guard let action = userInfo["todoAction"] as? String,
@@ -348,22 +357,43 @@ final class NotificationManager: NSObject, ObservableObject {
 
       do {
          let toDos = try context.fetch(FetchDescriptor<ToDo>())
+         let nanoDos = try context.fetch(FetchDescriptor<NanoDo>())
          let now = Date()
          let activeToDos = toDos.filter(\.isActive)
          let futureDueToDos = activeToDos.filter { toDo in
             toDo.dueDate.map { $0 > now } ?? false
          }
          let schedulableOccurrences = limitedScheduledOccurrences(for: activeToDos, now: now)
+         let schedulableNanoDos = nanoDos
+            .filter { nanoDo in
+               !nanoDo.isDone
+                  && nanoDo.toDo?.isActive == true
+                  && nanoDo.dueDate.map { $0 > now } == true
+            }
+            .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
          let settings = await center.notificationSettings()
+         authorizationStatus = settings.authorizationStatus
+         timeSensitiveSetting = settings.timeSensitiveSetting
          AppLog.info(
             "Notification sync started: auth=\(Self.authorizationDescription(settings.authorizationStatus)), alert=\(Self.settingDescription(settings.alertSetting)), sound=\(Self.settingDescription(settings.soundSetting)), timeSensitive=\(Self.settingDescription(settings.timeSensitiveSetting)), sourceToDos=\(toDos.count), active=\(activeToDos.count), futureDue=\(futureDueToDos.count), schedulable=\(schedulableOccurrences.count).",
             logger: AppLog.notifications
          )
          await updateAppIconBadge(for: toDos, now: now)
 
+         guard Self.isNotificationDeliveryAllowed(settings.authorizationStatus) else {
+            AppLog.info(
+               "Notification scheduling skipped because permission is \(Self.authorizationDescription(settings.authorizationStatus)).",
+               logger: AppLog.notifications
+            )
+            return
+         }
+
          let pendingIdentifiers = await center.pendingNotificationRequests()
             .map(\.identifier)
-            .filter { $0.hasPrefix(notificationPrefix) }
+            .filter {
+               $0.hasPrefix(notificationPrefix)
+                  || $0.hasPrefix(nanoDoNotificationPrefix)
+            }
 
          if !pendingIdentifiers.isEmpty {
             center.removePendingNotificationRequests(withIdentifiers: pendingIdentifiers)
@@ -383,7 +413,8 @@ final class NotificationManager: NSObject, ObservableObject {
                body: notificationBody(for: occurrence.toDo),
                isTimeSensitive: isTimeSensitive,
                isQuiet: occurrence.toDo.reminderIntent == .soft,
-               soundOption: preferredSoundOption
+               soundOption: preferredSoundOption,
+               customSoundName: preferredCustomSoundName
             )
             content.badge = NSNumber(value: appIconBadgeCount(for: toDos, now: occurrence.fireDate))
 
@@ -414,6 +445,39 @@ final class NotificationManager: NSObject, ObservableObject {
             )
 
             try await center.add(request)
+            scheduledCount += 1
+         }
+         let remainingCapacity = max(maxScheduledNotificationRequests - scheduledCount, 0)
+         for nanoDo in schedulableNanoDos.prefix(remainingCapacity) {
+            guard let fireDate = nanoDo.dueDate,
+                  let parentToDo = nanoDo.toDo else { continue }
+            let content = NotificationContentBuilder.content(
+               for: .toDoDue,
+               title: String(localized: "NanoDo: due"),
+               body: nanoDo.task.trimmingCharacters(in: .whitespacesAndNewlines),
+               isTimeSensitive: false,
+               isQuiet: false,
+               soundOption: preferredSoundOption,
+               customSoundName: preferredCustomSoundName
+            )
+            content.userInfo = [
+               "schemaVersion": 1,
+               "type": RemoteNotificationType.toDoDue.rawValue,
+               "todoIdentifier": persistentIdentifierString(for: parentToDo),
+               "nanoDoIdentifier": persistentIdentifierString(for: nanoDo),
+               "isNanoDo": true,
+               "isRecurring": false,
+               "isTimeSensitive": false
+            ]
+            let triggerDate = Calendar.current.dateComponents(
+               [.year, .month, .day, .hour, .minute, .second],
+               from: fireDate
+            )
+            try await center.add(UNNotificationRequest(
+               identifier: nanoDoNotificationIdentifier(for: nanoDo, fireDate: fireDate),
+               content: content,
+               trigger: UNCalendarNotificationTrigger(dateMatching: triggerDate, repeats: false)
+            ))
             scheduledCount += 1
          }
          let nextFireDate = schedulableOccurrences.first?.fireDate.formatted(date: .numeric, time: .standard) ?? "none"
@@ -535,6 +599,10 @@ final class NotificationManager: NSObject, ObservableObject {
       notificationPrefix + persistentIdentifierString(for: toDo) + ".\(occurrenceIndex).\(Int(fireDate.timeIntervalSince1970))"
    }
 
+   private func nanoDoNotificationIdentifier(for nanoDo: NanoDo, fireDate: Date) -> String {
+      nanoDoNotificationPrefix + persistentIdentifierString(for: nanoDo) + ".\(Int(fireDate.timeIntervalSince1970))"
+   }
+
    private func notificationTitle(for toDo: ToDo, fireDate: Date) -> String {
       guard toDo.dueDate != nil else {
          return String(localized: "toDō reminder")
@@ -590,19 +658,45 @@ final class NotificationManager: NSObject, ObservableObject {
       String(describing: toDo.id)
    }
 
+   private func persistentIdentifierString(for nanoDo: NanoDo) -> String {
+      String(describing: nanoDo.id)
+   }
+
    private var preferredSoundOption: AppPreferences.NotificationSoundOption {
       let rawValue = UserDefaults.standard.string(forKey: AppPreferences.Keys.notificationSoundOption)
       return rawValue.flatMap(AppPreferences.NotificationSoundOption.init(rawValue:)) ?? .defaultSound
    }
 
+   private var preferredCustomSoundName: String? {
+      NotificationSoundLibrary.currentCustomSoundName()
+   }
+
    private func notificationSound(for option: AppPreferences.NotificationSoundOption) -> UNNotificationSound? {
       guard option != .silent else { return nil }
+
+      if option == .custom,
+         let customSoundName = preferredCustomSoundName {
+         return UNNotificationSound(named: UNNotificationSoundName(rawValue: customSoundName))
+      }
 
       if let bundledSoundName = option.bundledSoundName {
          return UNNotificationSound(named: UNNotificationSoundName(rawValue: bundledSoundName))
       }
 
       return .default
+   }
+
+   private static func isNotificationDeliveryAllowed(_ status: UNAuthorizationStatus) -> Bool {
+      switch status {
+      case .authorized, .provisional:
+         return true
+      #if !os(macOS)
+      case .ephemeral:
+         return true
+      #endif
+      default:
+         return false
+      }
    }
 
    #if DEBUG
@@ -804,13 +898,50 @@ final class NotificationManager: NSObject, ObservableObject {
       let occurrenceIndex: Int
    }
 
-   private func applyAction(identifier: String, toDoIdentifier: String?, toDoCloudIdentifier: UUID?) async {
+   private func applyAction(
+      identifier: String,
+      toDoIdentifier: String?,
+      toDoCloudIdentifier: UUID?,
+      nanoDoIdentifier: String?
+   ) async {
       guard let container = modelContainer else { return }
 
       let context = ModelContext(container)
 
       do {
          let toDos = try context.fetch(FetchDescriptor<ToDo>())
+         if let nanoDoIdentifier {
+            let nanoDos = try context.fetch(FetchDescriptor<NanoDo>())
+            guard let nanoDo = nanoDos.first(where: {
+               persistentIdentifierString(for: $0) == nanoDoIdentifier
+            }) else {
+               return
+            }
+
+            if identifier == markDoneActionIdentifier {
+               nanoDo.isDone = true
+               nanoDo.markUpdated()
+               _ = nanoDo.toDo?.completeIfAllNanoDosAreDone()
+            } else if identifier.hasPrefix(snoozeActionPrefix),
+                      let descriptor = SnoozeDescriptor(
+                        identifier: String(identifier.dropFirst(snoozeActionPrefix.count))
+                      ) {
+               let baseDate = max(nanoDo.dueDate ?? .now, .now)
+               nanoDo.dueDate = Calendar.current.date(
+                  byAdding: descriptor.unit.calendarComponent,
+                  value: descriptor.value,
+                  to: baseDate
+               )
+               nanoDo.markUpdated()
+            } else {
+               return
+            }
+
+            try context.save()
+            SyncCoordinator.shared.scheduleLocalSync()
+            await syncScheduledNotifications()
+            return
+         }
          guard let toDo = toDo(
             matchingLocalIdentifier: toDoIdentifier,
             cloudIdentifier: toDoCloudIdentifier,
@@ -824,7 +955,9 @@ final class NotificationManager: NSObject, ObservableObject {
             if toDo.calendarEventIdentifier != nil {
                try CalendarIntegrationService.shared.removeCalendarEvent(for: toDo)
             }
+            #if !os(macOS)
             LiveActivityService.shared.endActivity(for: toDo)
+            #endif
          } else if identifier.hasPrefix(snoozeActionPrefix),
                    let descriptor = SnoozeDescriptor(
                      identifier: String(identifier.dropFirst(snoozeActionPrefix.count))
@@ -935,6 +1068,7 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
 
          let toDoIdentifier = content.userInfo["todoIdentifier"] as? String
          let toDoCloudIdentifier = (content.userInfo["todoCloudIdentifier"] as? String).flatMap(UUID.init(uuidString:))
+         let nanoDoIdentifier = content.userInfo["nanoDoIdentifier"] as? String
 
          guard toDoIdentifier != nil || toDoCloudIdentifier != nil else {
             return
@@ -943,7 +1077,8 @@ extension NotificationManager: UNUserNotificationCenterDelegate {
          await NotificationManager.shared.applyAction(
             identifier: actionIdentifier,
             toDoIdentifier: toDoIdentifier,
-            toDoCloudIdentifier: toDoCloudIdentifier
+            toDoCloudIdentifier: toDoCloudIdentifier,
+            nanoDoIdentifier: nanoDoIdentifier
          )
       }
    }

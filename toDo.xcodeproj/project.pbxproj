@@ -66,8 +66,6 @@
 		62A100102F6D10000075F17B /* SyncTombstoneStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100112F6D10000075F17B /* SyncTombstoneStore.swift */; };
 		62A100122F6D10000075F17B /* SyncHealthStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100132F6D10000075F17B /* SyncHealthStatusView.swift */; };
 		63G100012F8000000075F17B /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 63G100002F8000000075F17B /* GoogleSignIn */; };
-		64A100012FC000000075F17B /* ToDoIntentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100022FC000000075F17B /* ToDoIntentStore.swift */; };
-		64A100032FC000000075F17B /* ToDoAppIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100042FC000000075F17B /* ToDoAppIntents.swift */; };
 		64A100052FC000000075F17B /* CalendarIntegrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100062FC000000075F17B /* CalendarIntegrationService.swift */; };
 		64A100072FC000000075F17B /* LocationReminderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100082FC000000075F17B /* LocationReminderService.swift */; };
 		64A1000A2FC000000075F17B /* WidgetSnapshotService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A1000B2FC000000075F17B /* WidgetSnapshotService.swift */; };
@@ -77,6 +75,9 @@
 		64A100122FC000000075F17B /* HapticFeedbackService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100132FC000000075F17B /* HapticFeedbackService.swift */; };
 		64A100142FC000000075F17B /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100152FC000000075F17B /* AppLog.swift */; };
 		64A100162FC000000075F17B /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100152FC000000075F17B /* AppLog.swift */; };
+		64A100182FC000000075F17B /* AppleIntelligenceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100172FC000000075F17B /* AppleIntelligenceService.swift */; };
+		64A1001A2FC000000075F17B /* VoiceToDoIntentResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100192FC000000075F17B /* VoiceToDoIntentResolver.swift */; };
+		64A1001C2FC000000075F17B /* NotificationSoundLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A1001B2FC000000075F17B /* NotificationSoundLibrary.swift */; };
 		65W000012FC100000075F17B /* ToDo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611776B82F4BFC890075F17B /* ToDo.swift */; };
 		65W000022FC100000075F17B /* Tag.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611776B52F4BFC890075F17B /* Tag.swift */; };
 		65W000032FC100000075F17B /* NanoDo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611776B22F4BFC890075F17B /* NanoDo.swift */; };
@@ -95,6 +96,30 @@
 		66A000062FD500000075F17B /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 610LOC032FD000000075F17B /* Localizable.xcstrings */; };
 		66A000072FD500000075F17B /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 610LOC042FD000000075F17B /* InfoPlist.xcstrings */; };
 		66A000112FD500000075F17B /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = 61032D0B2F658DC300EB44B0 /* AppIcon.icon */; };
+		66A010012FD600000075F17B /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 61C100002F6C10000075F17B /* Supabase */; };
+		66A010022FD600000075F17B /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611776CD2F4BFC890075F17B /* AppPreferences.swift */; };
+		66A010032FD600000075F17B /* TagSortOption.swift in Sources */ = {isa = PBXBuildFile; fileRef = 611776B62F4BFC890075F17B /* TagSortOption.swift */; };
+		66A010042FD600000075F17B /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100152FC000000075F17B /* AppLog.swift */; };
+		66A010052FD600000075F17B /* SupabaseConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C100032F6C10000075F17B /* SupabaseConfig.swift */; };
+		66A010062FD600000075F17B /* SupabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C100052F6C10000075F17B /* SupabaseService.swift */; };
+		66A010072FD600000075F17B /* SupabaseSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C1000B2F6C10000075F17B /* SupabaseSyncService.swift */; };
+		66A010082FD600000075F17B /* SupabaseSyncBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A1000C2F6D10000075F17B /* SupabaseSyncBackend.swift */; };
+		66A010092FD600000075F17B /* SyncMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100022F6D10000075F17B /* SyncMode.swift */; };
+		66A0100A2FD600000075F17B /* ToDoSyncBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100042F6D10000075F17B /* ToDoSyncBackend.swift */; };
+		66A0100B2FD600000075F17B /* MigrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100062F6D10000075F17B /* MigrationService.swift */; };
+		66A0100C2FD600000075F17B /* SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100082F6D10000075F17B /* SyncCoordinator.swift */; };
+		66A0100D2FD600000075F17B /* CloudKitSyncBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A1000A2F6D10000075F17B /* CloudKitSyncBackend.swift */; };
+		66A0100E2FD600000075F17B /* CloudKitConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61C1000D2F6C10000075F17B /* CloudKitConfig.swift */; };
+		66A0100F2FD600000075F17B /* SyncDeletionMirroring.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A1000F2F6D10000075F17B /* SyncDeletionMirroring.swift */; };
+		66A010102FD600000075F17B /* SyncTombstoneStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62A100112F6D10000075F17B /* SyncTombstoneStore.swift */; };
+		66A010112FD600000075F17B /* SnoozePreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A0A0022F6A10000075F17B /* SnoozePreferences.swift */; };
+		66A010122FD600000075F17B /* CalendarIntegrationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100062FC000000075F17B /* CalendarIntegrationService.swift */; };
+		66A010132FD600000075F17B /* LocationReminderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A100082FC000000075F17B /* LocationReminderService.swift */; };
+		66A010142FD600000075F17B /* WidgetSnapshotService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A1000B2FC000000075F17B /* WidgetSnapshotService.swift */; };
+		66A010152FD600000075F17B /* NotificationSoundLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64A1001B2FC000000075F17B /* NotificationSoundLibrary.swift */; };
+		66A010162FD600000075F17B /* LocationTimeZoneService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61A09F042F6A20000075F17B /* LocationTimeZoneService.swift */; };
+		66A010172FD600000075F17B /* NavigationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61D17B522FB0E94C0078D531 /* NavigationCoordinator.swift */; };
+		67B100012FE000000075F17B /* VoiceToDoTranscriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B100022FE000000075F17B /* VoiceToDoTranscriptionService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -231,8 +256,6 @@
 		62A1000F2F6D10000075F17B /* SyncDeletionMirroring.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncDeletionMirroring.swift; sourceTree = "<group>"; };
 		62A100112F6D10000075F17B /* SyncTombstoneStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncTombstoneStore.swift; sourceTree = "<group>"; };
 		62A100132F6D10000075F17B /* SyncHealthStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncHealthStatusView.swift; sourceTree = "<group>"; };
-		64A100022FC000000075F17B /* ToDoIntentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDoIntentStore.swift; sourceTree = "<group>"; };
-		64A100042FC000000075F17B /* ToDoAppIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToDoAppIntents.swift; sourceTree = "<group>"; };
 		64A100062FC000000075F17B /* CalendarIntegrationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalendarIntegrationService.swift; sourceTree = "<group>"; };
 		64A100082FC000000075F17B /* LocationReminderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationReminderService.swift; sourceTree = "<group>"; };
 		64A1000B2FC000000075F17B /* WidgetSnapshotService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotService.swift; sourceTree = "<group>"; };
@@ -240,7 +263,11 @@
 		64A1000F2FC000000075F17B /* LiveActivityService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityService.swift; sourceTree = "<group>"; };
 		64A100132FC000000075F17B /* HapticFeedbackService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticFeedbackService.swift; sourceTree = "<group>"; };
 		64A100152FC000000075F17B /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
+		64A100172FC000000075F17B /* AppleIntelligenceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleIntelligenceService.swift; sourceTree = "<group>"; };
+		64A100192FC000000075F17B /* VoiceToDoIntentResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceToDoIntentResolver.swift; sourceTree = "<group>"; };
+		64A1001B2FC000000075F17B /* NotificationSoundLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationSoundLibrary.swift; sourceTree = "<group>"; };
 		66A000082FD500000075F17B /* ToDo Mac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ToDo Mac.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		67B100022FE000000075F17B /* VoiceToDoTranscriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceToDoTranscriptionService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -393,6 +420,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				66A010012FD600000075F17B /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -518,15 +546,6 @@
 			path = Sync;
 			sourceTree = "<group>";
 		};
-		64A100092FC000000075F17B /* AppIntents */ = {
-			isa = PBXGroup;
-			children = (
-				64A100042FC000000075F17B /* ToDoAppIntents.swift */,
-				64A100022FC000000075F17B /* ToDoIntentStore.swift */,
-			);
-			path = AppIntents;
-			sourceTree = "<group>";
-		};
 		AA0000012F3A6D0A002F8D74 /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -555,7 +574,6 @@
 		AA0000032F3A6D0A002F8D74 /* Core */ = {
 			isa = PBXGroup;
 			children = (
-				64A100092FC000000075F17B /* AppIntents */,
 				AAF100102F7000000075F17B /* Infrastructure */,
 				61D000032F6C10000075F17B /* Preview */,
 				AAF100122F7000000075F17B /* Preferences */,
@@ -755,6 +773,10 @@
 		AAF100132F7000000075F17B /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				64A100172FC000000075F17B /* AppleIntelligenceService.swift */,
+				64A100192FC000000075F17B /* VoiceToDoIntentResolver.swift */,
+				67B100022FE000000075F17B /* VoiceToDoTranscriptionService.swift */,
+				64A1001B2FC000000075F17B /* NotificationSoundLibrary.swift */,
 				64A100152FC000000075F17B /* AppLog.swift */,
 				64A100062FC000000075F17B /* CalendarIntegrationService.swift */,
 				64A100082FC000000075F17B /* LocationReminderService.swift */,
@@ -969,10 +991,12 @@
 			);
 			fileSystemSynchronizedGroups = (
 				61437FB62F5C092500D63FE0 /* Fonts */,
+				61D17B452FB0D31A0078D531 /* Notifications */,
 				66A000092FD500000075F17B /* ToDo Mac */,
 			);
 			name = "ToDo Mac";
 			packageProductDependencies = (
+				61C100002F6C10000075F17B /* Supabase */,
 			);
 			productName = "ToDo Mac";
 			productReference = 66A000082FD500000075F17B /* ToDo Mac.app */;
@@ -986,7 +1010,7 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2650;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					616BF00B2F3A6D09002F8D74 = {
 						CreatedOnToolsVersion = 26.3;
@@ -1134,8 +1158,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				64A100012FC000000075F17B /* ToDoIntentStore.swift in Sources */,
-				64A100032FC000000075F17B /* ToDoAppIntents.swift in Sources */,
 				64A100052FC000000075F17B /* CalendarIntegrationService.swift in Sources */,
 				64A100072FC000000075F17B /* LocationReminderService.swift in Sources */,
 				64A1000A2FC000000075F17B /* WidgetSnapshotService.swift in Sources */,
@@ -1143,6 +1165,10 @@
 				64A1000E2FC000000075F17B /* LiveActivityService.swift in Sources */,
 				64A100122FC000000075F17B /* HapticFeedbackService.swift in Sources */,
 				64A100142FC000000075F17B /* AppLog.swift in Sources */,
+				64A100182FC000000075F17B /* AppleIntelligenceService.swift in Sources */,
+				64A1001A2FC000000075F17B /* VoiceToDoIntentResolver.swift in Sources */,
+				67B100012FE000000075F17B /* VoiceToDoTranscriptionService.swift in Sources */,
+				64A1001C2FC000000075F17B /* NotificationSoundLibrary.swift in Sources */,
 				61C1000A2F6C10000075F17B /* AccountView.swift in Sources */,
 				61D000042F6C10000075F17B /* AuthenticationView.swift in Sources */,
 				611776D02F4BFC890075F17B /* ArchivesView.swift in Sources */,
@@ -1248,6 +1274,28 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				66A0100E2FD600000075F17B /* CloudKitConfig.swift in Sources */,
+				66A0100D2FD600000075F17B /* CloudKitSyncBackend.swift in Sources */,
+				66A0100B2FD600000075F17B /* MigrationService.swift in Sources */,
+				66A010102FD600000075F17B /* SyncTombstoneStore.swift in Sources */,
+				66A0100F2FD600000075F17B /* SyncDeletionMirroring.swift in Sources */,
+				66A0100C2FD600000075F17B /* SyncCoordinator.swift in Sources */,
+				66A0100A2FD600000075F17B /* ToDoSyncBackend.swift in Sources */,
+				66A010092FD600000075F17B /* SyncMode.swift in Sources */,
+				66A010082FD600000075F17B /* SupabaseSyncBackend.swift in Sources */,
+				66A010072FD600000075F17B /* SupabaseSyncService.swift in Sources */,
+				66A010062FD600000075F17B /* SupabaseService.swift in Sources */,
+				66A010052FD600000075F17B /* SupabaseConfig.swift in Sources */,
+				66A010042FD600000075F17B /* AppLog.swift in Sources */,
+				66A010112FD600000075F17B /* SnoozePreferences.swift in Sources */,
+				66A010122FD600000075F17B /* CalendarIntegrationService.swift in Sources */,
+				66A010132FD600000075F17B /* LocationReminderService.swift in Sources */,
+				66A010142FD600000075F17B /* WidgetSnapshotService.swift in Sources */,
+				66A010152FD600000075F17B /* NotificationSoundLibrary.swift in Sources */,
+				66A010162FD600000075F17B /* LocationTimeZoneService.swift in Sources */,
+				66A010172FD600000075F17B /* NavigationCoordinator.swift in Sources */,
+				66A010032FD600000075F17B /* TagSortOption.swift in Sources */,
+				66A010022FD600000075F17B /* AppPreferences.swift in Sources */,
 				66A000042FD500000075F17B /* AppTimePreferences.swift in Sources */,
 				66A000032FD500000075F17B /* NanoDo.swift in Sources */,
 				66A000022FD500000075F17B /* Tag.swift in Sources */,
@@ -1300,7 +1348,7 @@
 				CODE_SIGN_ENTITLEMENTS = Resources/ToDo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = YES;
@@ -1323,7 +1371,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1350,7 +1398,7 @@
 				CODE_SIGN_ENTITLEMENTS = Resources/ToDo.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = YES;
@@ -1373,7 +1421,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1620,7 +1668,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = "ToDo Watch App/ToDoWatch.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_DEBUG_DYLIB = NO;
 				ENABLE_PREVIEWS = YES;
@@ -1635,7 +1683,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
@@ -1659,7 +1707,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = "ToDo Watch App/ToDoWatch.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1673,7 +1721,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.watchkitapp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
@@ -1787,7 +1835,7 @@
 				CODE_SIGN_ENTITLEMENTS = ToDoWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_DEBUG_DYLIB = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1800,7 +1848,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.ToDoWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1825,7 +1873,7 @@
 				CODE_SIGN_ENTITLEMENTS = ToDoWidgetExtension.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 7;
+				CURRENT_PROJECT_VERSION = 11;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = ToDoWidget/Info.plist;
@@ -1837,7 +1885,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.ToDoWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1860,25 +1908,27 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = "ToDo Mac/ToDo Mac.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MacInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "toDō";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_LSUIElement = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.01;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
 				SKIP_INSTALL = NO;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1899,25 +1949,27 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = "ToDo Mac/ToDo Mac.entitlements";
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = U4DV688MTY;
 				ENABLE_DEBUG_DYLIB = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MacInfo.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "toDō";
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
-				INFOPLIST_KEY_LSUIElement = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				MARKETING_VERSION = 3.0;
+				MARKETING_VERSION = 3.01;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.iamshift.toDo.mac;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
 				SDKROOT = macosx;
 				SKIP_INSTALL = NO;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

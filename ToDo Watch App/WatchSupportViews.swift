@@ -1,3 +1,4 @@
+import AuthenticationServices
 import SwiftUI
 import WatchKit
 
@@ -75,6 +76,7 @@ struct WatchAccountView: View {
    @ObservedObject var authStore: WatchAuthStore
    @ObservedObject var store: WatchToDoStore
    let openDoneToDos: () -> Void
+   @State private var currentAppleNonce = ""
 
    var body: some View {
       ScrollView {
@@ -114,6 +116,68 @@ struct WatchAccountView: View {
                .font(.watchBody(11, relativeTo: .caption2))
                .foregroundStyle(WatchAppColor.destructive)
          }
+
+         if authStore.isSigningIn {
+            HStack(spacing: 8) {
+               ProgressView()
+                  .controlSize(.mini)
+               Text("Signing in")
+                  .font(.watchBodyStrong(12, relativeTo: .caption))
+                  .foregroundStyle(WatchAppColor.textSecondary)
+            }
+            .padding(.top, 2)
+         } else if authStore.authState.source == .apple {
+            Button(role: .destructive) {
+               authStore.signOut()
+            } label: {
+               Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+            }
+            .buttonStyle(WatchSoftButtonStyle(accent: WatchAppColor.destructive))
+         } else {
+            SignInWithAppleButton(.signIn) { request in
+               guard let nonce = WatchAuthNonceGenerator.random() else {
+                  currentAppleNonce = ""
+                  return
+               }
+               currentAppleNonce = nonce
+               request.requestedScopes = [.email]
+               request.nonce = WatchAuthNonceGenerator.sha256(nonce)
+            } onCompletion: { result in
+               handleAppleSignIn(result)
+            }
+            .signInWithAppleButtonStyle(.white)
+            .frame(height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.top, 2)
+
+            if authStore.authState.source == .iPhone {
+               Text("This Watch is using your iPhone account. Sign in here only if you want the Watch to hold its own account session.")
+                  .font(.watchBody(10, relativeTo: .caption2))
+                  .foregroundStyle(WatchAppColor.textSecondary)
+                  .fixedSize(horizontal: false, vertical: true)
+            }
+         }
+      }
+   }
+
+   private func handleAppleSignIn(_ result: Result<ASAuthorization, Error>) {
+      switch result {
+      case .success(let authorization):
+         guard let credential = authorization.credential as? ASAuthorizationAppleIDCredential,
+               let identityToken = credential.identityToken,
+               let idToken = String(data: identityToken, encoding: .utf8),
+               !currentAppleNonce.isEmpty
+         else {
+            return
+         }
+
+         let rawNonce = currentAppleNonce
+         currentAppleNonce = ""
+         Task {
+            await authStore.signInWithApple(idToken: idToken, rawNonce: rawNonce)
+         }
+      case .failure:
+         currentAppleNonce = ""
       }
    }
 

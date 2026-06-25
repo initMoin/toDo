@@ -330,6 +330,10 @@ extension View {
         modifier(AppThemeRefreshModifier())
     }
 
+    func appAccessibilityAdaptations() -> some View {
+        modifier(AppAccessibilityAdaptationsModifier())
+    }
+
     func appNavigationChrome() -> some View {
         self
             .navigationTitle("")
@@ -353,6 +357,10 @@ extension View {
                         .accessibilityAddTraits(.isHeader)
                 }
             }
+    }
+
+    func appReducedMotionBackButton(enabled: Bool) -> some View {
+        modifier(AppReducedMotionBackButtonModifier(enabled: enabled))
     }
 
     func appListChrome() -> some View {
@@ -395,6 +403,35 @@ extension View {
     }
 }
 
+private struct AppReducedMotionBackButtonModifier: ViewModifier {
+    @Environment(\.dismiss) private var dismiss
+
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .navigationBarBackButtonHidden(enabled)
+            .toolbar {
+                if enabled {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            var transaction = Transaction()
+                            transaction.animation = nil
+                            transaction.disablesAnimations = true
+                            withTransaction(transaction) {
+                                dismiss()
+                            }
+                        } label: {
+                            Image(systemName: "chevron.backward")
+                                .font(.appBodyStrong(17, relativeTo: .headline))
+                        }
+                        .accessibilityLabel("Back")
+                    }
+                }
+            }
+    }
+}
+
 private struct AppThemeRefreshModifier: ViewModifier {
     @AppStorage(AppPreferences.Keys.appTheme) private var appThemeRaw = AppThemeOption.classic.rawValue
 
@@ -402,6 +439,43 @@ private struct AppThemeRefreshModifier: ViewModifier {
         content
             .font(.appBody(17))
             .environment(\.appThemeRefreshToken, appThemeRaw)
+    }
+}
+
+private struct AppAccessibilityAdaptationsModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    func body(content: Content) -> some View {
+        content
+            .transaction { transaction in
+                if reduceMotion {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+            }
+            .environment(\.appReduceMotion, reduceMotion)
+            .environment(\.appDifferentiatesWithoutColor, differentiateWithoutColor)
+    }
+}
+
+private struct AppReduceMotionKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private struct AppDifferentiatesWithoutColorKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var appReduceMotion: Bool {
+        get { self[AppReduceMotionKey.self] }
+        set { self[AppReduceMotionKey.self] = newValue }
+    }
+
+    var appDifferentiatesWithoutColor: Bool {
+        get { self[AppDifferentiatesWithoutColorKey.self] }
+        set { self[AppDifferentiatesWithoutColorKey.self] = newValue }
     }
 }
 
@@ -518,6 +592,8 @@ struct AppCircleActionButtonStyle: ButtonStyle {
     var tint: Color? = nil
     var foreground: Color? = nil
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
+    @Environment(\.appReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         let foreground: Color = {
@@ -544,11 +620,14 @@ struct AppCircleActionButtonStyle: ButtonStyle {
             .overlay {
                 if #unavailable(iOS 26.0) {
                     Circle()
-                        .stroke(AppColor.border, lineWidth: 1)
+                        .stroke(differentiatesWithoutColor ? foreground : AppColor.border, lineWidth: differentiatesWithoutColor ? 2.2 : 1)
+                } else if differentiatesWithoutColor {
+                    Circle()
+                        .stroke(foreground, lineWidth: 2.2)
                 }
             }
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .animation(AppAnimation.easeFast, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : AppAnimation.easeFast, value: configuration.isPressed)
     }
 }
 
@@ -558,6 +637,8 @@ struct AppOutlinedIconButtonStyle: ButtonStyle {
     var symbolSize: CGFloat = 16
     var lineWidth: CGFloat = 2.2
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
+    @Environment(\.appReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         let resolvedTint = isEnabled ? tint : tint.opacity(0.68)
@@ -568,17 +649,19 @@ struct AppOutlinedIconButtonStyle: ButtonStyle {
             .background(Circle().fill(Color.clear))
             .overlay(
                 Circle()
-                    .stroke(resolvedTint, lineWidth: lineWidth)
+                    .stroke(resolvedTint, style: StrokeStyle(lineWidth: differentiatesWithoutColor ? lineWidth + 1 : lineWidth, dash: differentiatesWithoutColor ? [5, 3] : []))
             )
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .opacity(isEnabled ? 1 : 0.74)
-            .animation(AppAnimation.easeFast, value: configuration.isPressed)
-            .animation(AppAnimation.easeFast, value: isEnabled)
+            .animation(reduceMotion ? nil : AppAnimation.easeFast, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : AppAnimation.easeFast, value: isEnabled)
     }
 }
 
 struct AppSemanticTextButtonStyle: ButtonStyle {
     let intent: AppActionIntent
+    @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
+    @Environment(\.appReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         let foreground = configuration.isPressed ? AppColor.onAction : intent.textForeground
@@ -595,7 +678,13 @@ struct AppSemanticTextButtonStyle: ButtonStyle {
                 }
             }
             .appInteractiveCapsuleGlass(tint: background)
-            .animation(AppAnimation.easeFast, value: configuration.isPressed)
+            .overlay {
+                if differentiatesWithoutColor {
+                    Capsule()
+                        .stroke(foreground, lineWidth: 1.8)
+                }
+            }
+            .animation(reduceMotion ? nil : AppAnimation.easeFast, value: configuration.isPressed)
     }
 }
 
@@ -603,6 +692,8 @@ struct AppToolbarToggleButtonStyle: ButtonStyle {
     var isToggled: Bool
     var size: CGFloat = 34
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
+    @Environment(\.appReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         let isActive = isToggled && isEnabled
@@ -624,8 +715,14 @@ struct AppToolbarToggleButtonStyle: ButtonStyle {
                 }
             }
             .appInteractiveCircleGlass(tint: background)
+            .overlay {
+                if differentiatesWithoutColor {
+                    Circle()
+                        .stroke(foreground, lineWidth: isActive ? 2.4 : 1.8)
+                }
+            }
             .scaleEffect(configuration.isPressed ? 0.95 : 1)
-            .animation(AppAnimation.easeFast, value: configuration.isPressed)
+            .animation(reduceMotion ? nil : AppAnimation.easeFast, value: configuration.isPressed)
             .opacity(isEnabled ? 1 : 0.4)
     }
 }

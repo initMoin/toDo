@@ -395,6 +395,136 @@
           }
         }
       }
+    },
+    "NSMicrophoneUsageDescription" : {
+      "comment" : "Privacy - Microphone Usage Description",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستخدم toDō الميكروفون عندما تختار إملاء تُدُ."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō uses the microphone when you choose to speak a toDō."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō usa el micrófono cuando eliges dictar un toDō."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "जब आप कोई toDō बोलकर दर्ज करते हैं, तो toDō माइक्रोफ़ोन का उपयोग करता है।"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō usa il microfono quando scegli di dettare un toDō."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDōは、toDōを音声で入力するときにマイクを使用します。"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō menggunakan mikrofon apabila anda memilih untuk menyebut toDō."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō ใช้ไมโครโฟนเมื่อคุณเลือกพูด toDō"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جب آپ toDō بول کر درج کرتے ہیں تو toDō مائیکروفون استعمال کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当你选择语音输入 toDō 时，toDō 会使用麦克风。"
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription" : {
+      "comment" : "Privacy - Speech Recognition Usage Description",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحوّل toDō مهمتك المنطوقة إلى نص لتراجعها وتحفظها."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō transcribes your spoken toDō so you can review and save it."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō transcribe tu toDō hablado para que puedas revisarlo y guardarlo."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō आपके बोले गए toDō को लिखित रूप देता है ताकि आप उसकी समीक्षा करके सहेज सकें।"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō trascrive il toDō pronunciato per permetterti di rivederlo e salvarlo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDōは音声入力を文字に変換し、確認して保存できるようにします。"
+          }
+        },
+        "ms" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō menyalin toDō yang anda sebut supaya anda boleh menyemak dan menyimpannya."
+          }
+        },
+        "th" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō ถอดเสียง toDō ที่คุณพูดเพื่อให้คุณตรวจสอบและบันทึกได้"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō آپ کے بولے گئے toDō کو متن میں بدلتا ہے تاکہ آپ اسے دیکھ کر محفوظ کر سکیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "toDō 会转录你说出的 toDō，以便你检查并保存。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

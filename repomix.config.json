@@ -1,0 +1,110 @@
+{
+  "$schema": "https://repomix.com/schemas/latest/schema.json",
+
+  "input": {
+    "maxFileSize": 5242880
+  },
+
+  "output": {
+    "filePath": "../toDo-repomix.md",
+    "style": "markdown",
+    "parsableStyle": false,
+    "fileSummary": true,
+    "directoryStructure": true,
+    "files": true,
+    "removeComments": false,
+    "removeEmptyLines": false,
+    "compress": false,
+    "topFilesLength": 10,
+    "showLineNumbers": true,
+    "truncateBase64": true,
+    "copyToClipboard": false,
+    "includeFullDirectoryStructure": false,
+    "tokenCountTree": false,
+
+    "git": {
+      "sortByChanges": false,
+      "sortByChangesMaxCommits": 100,
+      "includeDiffs": false,
+      "includeLogs": false,
+      "includeLogsCount": 50
+    }
+  },
+
+  "include": [
+    "**/*.swift",
+    "**/*.xcstrings",
+    "**/*.plist",
+    "**/*.entitlements",
+    "**/*.sql",
+    "**/*.xcconfig",
+    "repomix.config.json",
+    "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "supabase/**/*.json"
+  ],
+
+  "ignore": {
+    "useGitignore": true,
+    "useDotIgnore": true,
+    "useDefaultPatterns": true,
+
+    "customPatterns": [
+      "**/Build/**",
+      "**/DerivedData/**",
+      "**/Intermediates.noindex/**",
+      "**/Index.noindex/**",
+      "**/XCBuildData/**",
+      "**/.build/**",
+      "**/.swiftpm/**",
+      "**/Pods/**",
+      "**/Carthage/**",
+      "**/SourcePackages/**",
+      "**/Packages/**",
+      "**/Generated/**",
+      "**/GeneratedSources/**",
+
+      "**/*.xcodeproj/**",
+      "**/*.xcworkspace/**",
+      "**/*.xcassets/**",
+      "**/*.pbxproj",
+      "**/*.generated.swift",
+
+      "**/*.ipa",
+      "**/*.dSYM/**",
+      "**/*.xcarchive/**",
+      "**/*.app/**",
+
+      "**/*.png",
+      "**/*.jpg",
+      "**/*.jpeg",
+      "**/*.gif",
+      "**/*.webp",
+      "**/*.heic",
+      "**/*.wav",
+      "**/*.mp3",
+      "**/*.m4a",
+      "**/*.mp4",
+      "**/*.mov",
+      "**/*.ttf",
+      "**/*.otf",
+      "**/*.zip",
+      "**/*.pdf",
+
+      "**/.DS_Store",
+      "**/*repomix*",
+      "**/*audit*",
+      "**/*dump*",
+      "**/*output*"
+    ]
+  },
+
+  "security": {
+    "enableSecurityCheck": true
+  },
+
+  "tokenCount": {
+    "encoding": "o200k_base"
+  }
+}

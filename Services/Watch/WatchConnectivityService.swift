@@ -354,6 +354,9 @@ final class WatchConnectivityService: NSObject, ObservableObject {
             case .completeNanoDo:
                nanoDo.isDone = true
                nanoDo.markUpdated()
+               if toDo.completeIfAllNanoDosAreDone() {
+                  LiveActivityService.shared.endActivity(for: toDo)
+               }
             case .reopenNanoDo:
                nanoDo.isDone = false
                nanoDo.markUpdated()

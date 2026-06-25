@@ -12,6 +12,11 @@ struct ToDoView: View {
       var dueDate: Date
    }
 
+   private struct VoiceToDoCaptureResult {
+      let transcript: String
+      let organizedToDo: AppleIntelligenceToDoDraft?
+   }
+
    private struct EditDraftSnapshot: Equatable {
       var task: String
       var notes: String
@@ -24,6 +29,7 @@ struct ToDoView: View {
       var recurrenceInterval: Int
       var recurrenceMode: ToDoRecurrenceMode
       var recurrenceCount: Int
+      var completeWhenAllNanoDosDone: Bool
       var hasLocationReminder: Bool
       var locationReminderLatitude: Double
       var locationReminderLongitude: Double
@@ -50,12 +56,15 @@ struct ToDoView: View {
    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
    @Environment(\.modelContext) private var context
    @Environment(\.dismiss) private var dismiss
+   @Environment(\.appReduceMotion) private var reduceMotion
    @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
    @Query private var tags: [Tag]
    @Query private var toDos: [ToDo]
    @Query private var nanoDos: [NanoDo]
    @AppStorage(AppPreferences.Keys.tagSortOption) private var tagSortOption = TagSortOption.name.rawValue
    @AppStorage(AppPreferences.Keys.doneSwipePrimaryAction) private var doneSwipePrimaryActionRaw = AppPreferences.DoneSwipePrimaryAction.delete.rawValue
+   @AppStorage(AppPreferences.Keys.appleIntelligenceEnabled) private var appleIntelligenceEnabled = false
+   @AppStorage(AppPreferences.Keys.hasShownFirstToDoEditTip) private var hasShownFirstToDoEditTip: Bool = false
 
    private let mode: Mode
    private let onFinish: ((ToDo?) -> Void)?
@@ -69,6 +78,7 @@ struct ToDoView: View {
    @State private var isDone: Bool
    @State private var hasDueDate: Bool
    @State private var dueDate: Date
+   @State private var hasExplicitDueTime: Bool
    @State private var reminderIntent: ToDoReminderIntent
    @State private var isRecurring: Bool
    @State private var recurrenceUnit: ToDoRecurrenceUnit
@@ -91,6 +101,7 @@ struct ToDoView: View {
    @State private var isTagExpanded: Bool
    @State private var isNanoDoExpanded: Bool
    @State private var createNanoDos: [CreateNanoDoDraft]
+   @State private var completeWhenAllNanoDosDone: Bool
    @State private var isCreateTaskCommitted: Bool
    @State private var newTagName: String
 
@@ -99,14 +110,23 @@ struct ToDoView: View {
    @State private var isShowingDiscardChangesConfirmation = false
    @State private var isShowingDeleteConfirmation = false
    @State private var isShowingNewNanoDo = false
+   @State private var isVoiceCaptureExpanded = false
+   @State private var isOrganizingVoiceToDo = false
    @State private var saveErrorMessage: String?
    @State private var editStartSnapshot: EditDraftSnapshot?
+   @State private var nanoDoMutationRevision = 0
+   @State private var shouldCompleteParentAfterDismissal = false
+   @State private var didScheduleDeferredParentCompletion = false
    @State private var hasRequestedInitialCreateFocus = false
    @State private var pendingNanoDoScrollTarget: UUID?
    @State private var pendingExistingNanoDoScrollTarget: String?
    @State private var nanoDoBottomScrollRequest = UUID()
+   @State private var pendingGeneratedTagNames: [String] = []
+   @State private var showsFirstEditTip = false
+   @State private var editButtonWiggle = false
    @StateObject private var locationReminderService = LocationReminderService.shared
    @StateObject private var placeSearch = LocationReminderPlaceSearch()
+   @StateObject private var voiceTranscriptionService = VoiceToDoTranscriptionService()
    @Namespace private var tagPillNamespace
    @FocusState private var isCreateTaskFieldFocused: Bool
    private let editingToDo: ToDo?
@@ -150,6 +170,7 @@ struct ToDoView: View {
          _isDone = State(initialValue: false)
          _hasDueDate = State(initialValue: false)
          _dueDate = State(initialValue: Date())
+         _hasExplicitDueTime = State(initialValue: false)
          _reminderIntent = State(initialValue: .due)
          _isRecurring = State(initialValue: false)
          _recurrenceUnit = State(initialValue: .days)
@@ -171,6 +192,7 @@ struct ToDoView: View {
          _isTagExpanded = State(initialValue: createTagExpanded)
          _isNanoDoExpanded = State(initialValue: false)
          _createNanoDos = State(initialValue: [])
+         _completeWhenAllNanoDosDone = State(initialValue: false)
          _isCreateTaskCommitted = State(initialValue: false)
          _newTagName = State(initialValue: "")
          _editStartSnapshot = State(initialValue: nil)
@@ -185,6 +207,7 @@ struct ToDoView: View {
          if let dueDate = toDo.dueDate {
             _hasDueDate = State(initialValue: true)
             _dueDate = State(initialValue: dueDate)
+            _hasExplicitDueTime = State(initialValue: true)
             _reminderIntent = State(initialValue: toDo.reminderIntent)
             _isRecurring = State(initialValue: toDo.isRecurring)
             _recurrenceUnit = State(initialValue: toDo.recurrenceUnit ?? .days)
@@ -195,6 +218,7 @@ struct ToDoView: View {
          } else {
             _hasDueDate = State(initialValue: false)
             _dueDate = State(initialValue: fallbackDueDate)
+            _hasExplicitDueTime = State(initialValue: false)
             _reminderIntent = State(initialValue: toDo.reminderIntent)
             _isRecurring = State(initialValue: false)
             _recurrenceUnit = State(initialValue: .days)
@@ -219,6 +243,7 @@ struct ToDoView: View {
          _isTagExpanded = State(initialValue: !initialSelectedTagIDs.isEmpty)
          _isNanoDoExpanded = State(initialValue: !toDo.nanoDos.isEmpty)
          _createNanoDos = State(initialValue: [])
+         _completeWhenAllNanoDosDone = State(initialValue: toDo.completeWhenAllNanoDosDone)
          _isCreateTaskCommitted = State(initialValue: true)
          _newTagName = State(initialValue: "")
          switch mode {
@@ -235,6 +260,7 @@ struct ToDoView: View {
                recurrenceInterval: max(toDo.recurrenceInterval ?? 1, 1),
                recurrenceMode: toDo.recurrenceMode ?? .finite,
                recurrenceCount: max(toDo.recurrenceCount ?? 1, 1),
+               completeWhenAllNanoDosDone: toDo.completeWhenAllNanoDosDone,
                hasLocationReminder: hasInitialLocationReminder,
                locationReminderLatitude: toDo.locationReminderLatitude ?? 37.3349,
                locationReminderLongitude: toDo.locationReminderLongitude ?? -122.0090,
@@ -284,9 +310,31 @@ struct ToDoView: View {
       .overlayPreferenceValue(OnboardingSpotlightPreferenceKey.self) { anchors in
          if let onboardingManager,
             onboardingManager.isActive,
-            (onboardingManager.currentStep == .enterToDoText || onboardingManager.currentStep == .saveToDo) {
-            GuidedOnboardingOverlay(manager: onboardingManager, anchors: anchors) { _ in }
+            (onboardingManager.currentStep == .enterToDoText
+             || onboardingManager.currentStep == .saveToDo
+             || onboardingManager.currentStep == .editExistingToDo) {
+            GuidedOnboardingOverlay(manager: onboardingManager, anchors: anchors) { step in
+               switch step {
+               case .enterToDoText:
+                  isCreateTaskFieldFocused = true
+               case .saveToDo:
+                  saveFromOnboardingIfNeeded()
+               case .editExistingToDo:
+                  UserDefaults.standard.set(true, forKey: AppPreferences.Keys.hasSeenToDoEditOnboarding)
+                  onboardingManager.advance(to: .highlightSettings)
+                  handleSheetDismissAttempt()
+               default:
+                  break
+               }
+            }
                .zIndex(1200)
+         }
+      }
+      .overlay {
+         if isOrganizingVoiceToDo {
+            voiceOrganizationOverlay
+               .transition(.opacity)
+               .zIndex(1500)
          }
       }
       .interactiveDismissDisabled(hasPendingChanges)
@@ -317,6 +365,23 @@ struct ToDoView: View {
             reminderIntent = .soft
             isRecurring = false
          }
+      }
+      .onChange(of: completeWhenAllNanoDosDone) { _, _ in
+         evaluateDeferredParentCompletion()
+      }
+      .onAppear {
+         if let editingToDo {
+            onboardingManager?.recordPresentedCreatedToDoIfNeeded(editingToDo)
+         }
+         showFirstEditTipIfNeeded()
+      }
+      .onDisappear {
+         Task {
+            await voiceTranscriptionService.reset()
+         }
+         // Covers interactive/system dismissal paths that do not pass through
+         // the custom close button.
+         scheduleDeferredParentCompletionIfNeeded()
       }
       .alert("Discard changes?", isPresented: $isShowingDiscardChangesConfirmation) {
          Button("Keep Editing", role: .cancel) {}
@@ -380,6 +445,26 @@ struct ToDoView: View {
                   .onboardingSpotlightAnchor(.taskField)
 
                   Button {
+                     isCreateTaskFieldFocused = false
+                     withAnimation(AppAnimation.easeStandard) {
+                        isVoiceCaptureExpanded.toggle()
+                     }
+                     if !isVoiceCaptureExpanded {
+                        Task {
+                           await voiceTranscriptionService.reset()
+                        }
+                     }
+                  } label: {
+                     Image(systemName: "mic.fill")
+                        .font(.appHeadline(18, relativeTo: .headline))
+                        .frame(width: 30, height: 30, alignment: .center)
+                  }
+                  .buttonStyle(.plain)
+                  .foregroundStyle(AppColor.actionPrimary)
+                  .accessibilityLabel("Speak your toDō")
+                  .accessibilityHint("Transcribes your words and fills in the toDō details for review.")
+
+                  Button {
                      handleCreateTitleAction()
                   } label: {
                      Image(systemName: createTitleActionSymbol)
@@ -390,19 +475,17 @@ struct ToDoView: View {
                   }
                   .buttonStyle(.plain)
                   .foregroundStyle(createEntryActionForeground)
-//                  .background {
-//                     if #unavailable(iOS 26.0) {
-//                        Circle()
-//                           .fill(createEntryActionBackground)
-//                     }
-//                  }
-//                  .appInteractiveCircleGlass(tint: createEntryActionBackground)
                   .animation(AppAnimation.easeStandard, value: isCreateTaskCommitted)
                   .animation(AppAnimation.easeStandard, value: hasEnteredTaskText)
                   .interactionDisabled(isCreateTitleActionDisabled)
                }
 
                taskCharacterCounter
+
+               if isVoiceCaptureExpanded {
+                  inlineVoiceCapture
+                     .transition(.opacity.combined(with: .move(edge: .top)))
+               }
             }
 
             if isCreateExpanded {
@@ -452,6 +535,20 @@ struct ToDoView: View {
                      Color.clear
                         .frame(height: 1)
                         .id(nanoDoBottomAnchorID)
+                  }
+
+                  if !createNanoDos.isEmpty {
+                     Toggle(isOn: $completeWhenAllNanoDosDone) {
+                        VStack(alignment: .leading, spacing: 3) {
+                           Text("Complete toDō with its NanoDos")
+                              .font(.appBodyStrong(15, relativeTo: .body))
+                           Text("When every NanoDo is done, mark the parent toDō done too.")
+                              .font(.appBody(12, relativeTo: .caption))
+                              .foregroundStyle(AppColor.textSecondary)
+                        }
+                     }
+                     .tint(AppColor.actionSuccess)
+                     .padding(.top, 4)
                   }
                }
             }
@@ -531,18 +628,37 @@ struct ToDoView: View {
                .accessibilityLabel(primaryActionAccessibilityLabel)
                .onboardingSpotlightAnchor(.saveButton)
             } else if isViewMode {
-               Button {
-                  HapticFeedbackService.play(.selection)
-                  onEdit?()
-               } label: {
-                  Image(systemName: "arrow.up.right.circle.fill")
-                     .resizable()
-                     .scaledToFit()
-                     .frame(width: 34, height: 34, alignment: .center)
+               VStack(alignment: .trailing, spacing: 8) {
+                  Button {
+                     hasShownFirstToDoEditTip = true
+                     showsFirstEditTip = false
+                     HapticFeedbackService.play(.selection)
+                     onEdit?()
+                  } label: {
+                     Image(systemName: "arrow.up.right.circle.fill")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 34, height: 34, alignment: .center)
+                        .rotationEffect(.degrees(editButtonWiggle ? -9 : 9))
+                        .animation(
+                           reduceMotion ? nil : .easeInOut(duration: 0.13).repeatCount(6, autoreverses: true),
+                           value: editButtonWiggle
+                        )
+                  }
+                  .buttonStyle(.plain)
+                  .foregroundStyle(AppColor.secondary)
+                  .accessibilityLabel("Edit toDō")
+                  .accessibilityHint("Opens this toDō for editing")
+                  .onboardingSpotlightAnchor(.editButton)
+                  
+                  if showsFirstEditTip {
+                     FirstEditTip {
+                        hasShownFirstToDoEditTip = true
+                        showsFirstEditTip = false
+                     }
+                     .transition(.opacity.combined(with: .move(edge: .top)))
+                  }
                }
-               .buttonStyle(.plain)
-               .foregroundStyle(AppColor.secondary)
-               .accessibilityLabel("Edit toDō")
             } else {
                Button {
                   save()
@@ -667,7 +783,11 @@ struct ToDoView: View {
             } else {
                VStack(spacing: 10) {
                   ForEach(toDo.nanoDos) { nanoDo in
-                     NanoDoRowView(nanoDo: nanoDo) {
+                     NanoDoRowView(
+                        nanoDo: nanoDo,
+                        completesParentImmediately: false,
+                        onMutation: handleNanoDoMutation
+                     ) {
                         deleteNanoDo(nanoDo)
                      }
                      .id(existingNanoDoScrollID(nanoDo))
@@ -702,7 +822,7 @@ struct ToDoView: View {
 
             Spacer(minLength: 0)
 
-            DatePicker("Time", selection: $dueDate, displayedComponents: .hourAndMinute)
+            DatePicker("Time", selection: dueTimeBinding, displayedComponents: .hourAndMinute)
                .labelsHidden()
                .datePickerStyle(.compact)
                .environment(\.locale, AppLocalization.displayLocale)
@@ -712,6 +832,12 @@ struct ToDoView: View {
                .tint(AppColor.actionPrimary)
                .disabled(!hasSelectedDueDate)
                .opacity(hasSelectedDueDate ? 1 : 0.45)
+               .padding(.horizontal, 9)
+               .padding(.vertical, 6)
+               .background(
+                  hasSelectedDueDate && hasExplicitDueTime ? AppColor.main : .clear,
+                  in: Capsule()
+               )
          }
          .padding(.horizontal, 12)
          .padding(.vertical, 10)
@@ -1192,9 +1318,14 @@ struct ToDoView: View {
             sectionTitle("NanoDos")
             VStack(alignment: .leading, spacing: 10) {
                ForEach(toDo.nanoDos) { nanoDo in
-                  SwipeableNanoDoRow(nanoDo: nanoDo, onDelete: {
-                     deleteNanoDo(nanoDo)
-                  })
+                  SwipeableNanoDoRow(
+                     nanoDo: nanoDo,
+                     completesParentImmediately: false,
+                     onMutation: handleNanoDoMutation,
+                     onDelete: {
+                        deleteNanoDo(nanoDo)
+                     }
+                  )
                }
             }
          }
@@ -1462,12 +1593,12 @@ struct ToDoView: View {
    @ViewBuilder
    private var tagSelectionRepoView: some View {
       VStack(alignment: .leading, spacing: 12) {
-         if !selectedTags.isEmpty {
+         if !selectedTags.isEmpty || !pendingGeneratedTagNames.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                Text(
                   String(
                      format: String(localized: "Selected (%@/%@)"),
-                     AppLocalization.numberString(selectedTags.count),
+                     AppLocalization.numberString(selectedTags.count + pendingGeneratedTagNames.count),
                      AppLocalization.numberString(ToDo.maxTagSelection)
                   )
                )
@@ -1483,9 +1614,24 @@ struct ToDoView: View {
                         toggleTagSelection(tag)
                      }
                   }
+
+                  ForEach(pendingGeneratedTagNames, id: \.self) { tagName in
+                     Button {
+                        pendingGeneratedTagNames.removeAll { $0 == tagName }
+                     } label: {
+                        Label(tagName, systemImage: "xmark")
+                     }
+                     .buttonStyle(.plain)
+                     .font(.appBadge(14, relativeTo: .subheadline))
+                     .foregroundStyle(AppColor.textPrimary)
+                     .padding(.horizontal, 12)
+                     .padding(.vertical, 8)
+                     .background(AppColor.surfaceMuted, in: Capsule())
+                     .accessibilityLabel(String(format: String(localized: "Remove %@"), tagName))
+                  }
                }
+               .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .transition(.move(edge: .top).combined(with: .opacity))
          }
 
          VStack(alignment: .leading, spacing: 8) {
@@ -1574,7 +1720,7 @@ struct ToDoView: View {
    }
 
    private var tagAnimationKey: String {
-      "\(selectedTags.map(\.name).joined(separator: ","))-\(tagList.count)-\(availableTags.count)"
+      "\(selectedTags.map(\.name).joined(separator: ","))-\(pendingGeneratedTagNames.joined(separator: ","))-\(tagList.count)-\(availableTags.count)"
    }
 
    private var selectedTagIDSet: Set<PersistentIdentifier> {
@@ -1597,7 +1743,7 @@ struct ToDoView: View {
    }
 
    private var selectedTagLimitReached: Bool {
-      selectedTagIDs.count >= ToDo.maxTagSelection
+      selectedTagIDs.count + pendingGeneratedTagNames.count >= ToDo.maxTagSelection
    }
 
    private func toggleTagSelection(_ tag: Tag) {
@@ -1625,6 +1771,7 @@ struct ToDoView: View {
          recurrenceInterval: recurrenceInterval,
          recurrenceMode: recurrenceMode,
          recurrenceCount: recurrenceCount,
+         completeWhenAllNanoDosDone: completeWhenAllNanoDosDone,
          hasLocationReminder: hasLocationReminder,
          locationReminderLatitude: locationReminderLatitude,
          locationReminderLongitude: locationReminderLongitude,
@@ -1637,6 +1784,9 @@ struct ToDoView: View {
 
    private var hasPendingEditChanges: Bool {
       guard let editStartSnapshot else { return false }
+      if nanoDoMutationRevision > 0 {
+         return true
+      }
       var current = currentEditSnapshot
       var start = editStartSnapshot
 
@@ -1686,7 +1836,7 @@ struct ToDoView: View {
       guard case .create = mode else { return false }
       let hasTask = hasEnteredTaskText
       let hasNotes = !notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      let changedTag = selectedTagIDs != initialCreateSelectedTagIDs
+      let changedTag = selectedTagIDs != initialCreateSelectedTagIDs || !pendingGeneratedTagNames.isEmpty
       let changedReminderIntent = hasDueDate && reminderIntent != .due
       let changedRecurrence = hasDueDate && isRecurring
       return hasTask || hasNotes || isDone || hasDueDate || hasLocationReminder || changedTag || changedReminderIntent || changedRecurrence || !createNanoDos.isEmpty
@@ -1705,6 +1855,7 @@ struct ToDoView: View {
    }
 
    private func dismissComposer(savedToDo: ToDo? = nil) {
+      scheduleDeferredParentCompletionIfNeeded()
       if let onFinish {
          onFinish(savedToDo)
       } else {
@@ -1783,6 +1934,199 @@ struct ToDoView: View {
          .frame(maxWidth: .infinity, alignment: .trailing)
    }
 
+   private var inlineVoiceCapture: some View {
+      VStack(alignment: .leading, spacing: 12) {
+         HStack(spacing: 10) {
+            Image(systemName: voiceTranscriptionService.isListening ? "waveform" : "mic.fill")
+               .font(.appHeadline(16, relativeTo: .headline))
+               .foregroundStyle(AppColor.actionPrimary)
+
+            Text(voiceCaptureStatusTitle)
+               .font(.appBodyStrong(15, relativeTo: .body))
+               .foregroundStyle(AppColor.textPrimary)
+
+            Spacer()
+
+            if voiceTranscriptionService.isListening {
+               ProgressView()
+                  .controlSize(.small)
+                  .tint(AppColor.actionPrimary)
+            }
+         }
+
+         if !voiceTranscriptionService.transcript.isEmpty {
+            Text(voiceTranscriptionService.transcript)
+               .font(.appUserEntry(17, relativeTo: .body))
+               .foregroundStyle(AppColor.textPrimary)
+               .frame(maxWidth: .infinity, alignment: .leading)
+               .padding(14)
+               .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 16))
+         }
+
+         if case .failed(let message) = voiceTranscriptionService.state {
+            Label(message, systemImage: "exclamationmark.triangle.fill")
+               .font(.appBodyStrong(13, relativeTo: .footnote))
+               .foregroundStyle(AppColor.actionDestructive)
+         }
+
+         Button {
+            handleInlineVoiceAction()
+         } label: {
+            HStack(spacing: 8) {
+               if isOrganizingVoiceToDo {
+                  ProgressView()
+                     .controlSize(.small)
+                     .tint(AppColor.onAction)
+               } else {
+                  Image(systemName: inlineVoiceActionSymbol)
+                     .font(.appHeadline(15, relativeTo: .headline))
+               }
+
+               Text(inlineVoiceActionTitle)
+                  .font(.appButton(15, relativeTo: .body))
+            }
+            .foregroundStyle(AppColor.onAction)
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .background(AppColor.actionPrimary, in: .rect(cornerRadius: 16))
+            .contentShape(Rectangle())
+         }
+         .buttonStyle(.plain)
+         .disabled(isOrganizingVoiceToDo || voiceTranscriptionService.isRequestingPermission)
+      }
+      .padding(14)
+      .background(AppColor.surfaceElevated.opacity(0.72), in: .rect(cornerRadius: 20))
+   }
+
+   private var voiceCaptureStatusTitle: LocalizedStringKey {
+      if isOrganizingVoiceToDo {
+         return "Organizing your toDō…"
+      }
+      if voiceTranscriptionService.isListening {
+         return "Listening…"
+      }
+      if voiceTranscriptionService.transcript.isEmpty {
+         return "Speak naturally"
+      }
+      return "Review what you said"
+   }
+
+   private var inlineVoiceActionTitle: LocalizedStringKey {
+      if isOrganizingVoiceToDo {
+         return "Organizing your toDō…"
+      }
+      if voiceTranscriptionService.isListening {
+         return voiceTranscriptionService.transcript.isEmpty ? "Stop listening" : "Use what I said"
+      }
+      if voiceTranscriptionService.transcript.isEmpty {
+         return "Start speaking"
+      }
+      return "Continue"
+   }
+
+   private var inlineVoiceActionSymbol: String {
+      if voiceTranscriptionService.isListening {
+         return voiceTranscriptionService.transcript.isEmpty ? "stop.fill" : "arrow.up.circle.fill"
+      }
+      if voiceTranscriptionService.transcript.isEmpty {
+         return "mic.fill"
+      }
+      return "arrow.right"
+   }
+
+   private func handleInlineVoiceAction() {
+      if voiceTranscriptionService.isListening {
+         let transcript = voiceTranscriptionService.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+         guard !transcript.isEmpty else {
+            Task {
+               await voiceTranscriptionService.stop()
+            }
+            return
+         }
+         submitVoiceTranscript(transcript)
+         return
+      }
+
+      let transcript = voiceTranscriptionService.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !transcript.isEmpty else {
+         Task {
+            await voiceTranscriptionService.start()
+         }
+         return
+      }
+
+      submitVoiceTranscript(transcript)
+   }
+
+   private func submitVoiceTranscript(_ transcript: String) {
+      let normalizedTranscript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !normalizedTranscript.isEmpty else { return }
+
+      // Snapshot and apply before any suspension. Recorder teardown and speech
+      // callbacks cannot invalidate the visible transcription after this point.
+      task = String(normalizedTranscript.prefix(Self.taskCharacterLimit))
+      isCreateTaskCommitted = hasEnteredTaskText
+      isCreateExpanded = hasEnteredTaskText
+      withAnimation(AppAnimation.easeStandard) {
+         isVoiceCaptureExpanded = false
+      }
+
+      guard appleIntelligenceEnabled else {
+         Task {
+            await voiceTranscriptionService.reset()
+         }
+         return
+      }
+
+      withAnimation(AppAnimation.easeStandard) {
+         isOrganizingVoiceToDo = true
+      }
+      Task {
+         await voiceTranscriptionService.stop()
+         let organizedToDo = await AppleIntelligenceService.parseSpokenToDo(
+            normalizedTranscript,
+            isEnabled: true
+         )
+         await voiceTranscriptionService.reset()
+         applyVoiceCapture(VoiceToDoCaptureResult(
+            transcript: normalizedTranscript,
+            organizedToDo: organizedToDo
+         ))
+         withAnimation(AppAnimation.easeStandard) {
+            isOrganizingVoiceToDo = false
+         }
+      }
+   }
+
+   private var voiceOrganizationOverlay: some View {
+      ZStack {
+         AppColor.surface.opacity(0.9)
+            .ignoresSafeArea()
+
+         VStack(spacing: 18) {
+            Image(systemName: "apple.intelligence")
+               .font(.system(size: 52, weight: .semibold))
+               .foregroundStyle(AppColor.actionPrimary)
+               .symbolEffect(.pulse.byLayer, options: .repeating)
+
+            Text("Apple Intelligence is organizing your toDō…")
+               .font(.appDisplay(26, relativeTo: .title2))
+               .foregroundStyle(AppColor.textPrimary)
+               .multilineTextAlignment(.center)
+
+            ProgressView()
+               .controlSize(.large)
+               .tint(AppColor.actionPrimary)
+         }
+         .padding(30)
+         .frame(maxWidth: 360)
+         .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 28))
+         .padding(24)
+      }
+      .contentShape(Rectangle())
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("Apple Intelligence is organizing your toDō…")
+   }
+
    private var notesBinding: Binding<String> {
       $notes
    }
@@ -1794,6 +2138,7 @@ struct ToDoView: View {
             guard let selectedComponent = selectedDateComponent(from: newValue) else {
                dueDateSelection = []
                hasDueDate = false
+               hasExplicitDueTime = false
                return
             }
 
@@ -1802,7 +2147,10 @@ struct ToDoView: View {
             hasDueDate = true
 
             let calendar = Calendar.current
-            let time = calendar.dateComponents([.hour, .minute, .second], from: dueDate)
+            let scheduledDate = hasExplicitDueTime
+               ? dueDate
+               : AppPreferences.applyingDefaultDueTime(to: calendar.date(from: normalizedSelection) ?? dueDate)
+            let time = calendar.dateComponents([.hour, .minute, .second], from: scheduledDate)
             var merged = normalizedSelection
             merged.hour = time.hour
             merged.minute = time.minute
@@ -1823,12 +2171,16 @@ struct ToDoView: View {
             guard let newValue else {
                dueDateSelection = []
                hasDueDate = false
+               hasExplicitDueTime = false
                return
             }
 
             let calendar = Calendar.current
             let selectedDay = Self.selectionComponents(for: newValue)
-            let time = calendar.dateComponents([.hour, .minute, .second], from: dueDate)
+            let scheduledDate = hasExplicitDueTime
+               ? dueDate
+               : AppPreferences.applyingDefaultDueTime(to: newValue)
+            let time = calendar.dateComponents([.hour, .minute, .second], from: scheduledDate)
             var merged = selectedDay
             merged.hour = time.hour
             merged.minute = time.minute
@@ -1837,6 +2189,16 @@ struct ToDoView: View {
             dueDateSelection = [Self.normalizedSelectionComponents(selectedDay)]
             hasDueDate = true
             dueDate = calendar.date(from: merged) ?? newValue
+         }
+      )
+   }
+
+   private var dueTimeBinding: Binding<Date> {
+      Binding(
+         get: { dueDate },
+         set: { newValue in
+            dueDate = newValue
+            hasExplicitDueTime = true
          }
       )
    }
@@ -2020,6 +2382,7 @@ struct ToDoView: View {
 
    private func addTagInline() {
       let normalized = Tag.normalizeName(newTagName)
+      pendingGeneratedTagNames.removeAll { Tag.normalizeName($0) == normalized }
       guard !normalized.isEmpty else { return }
       if let existingTag = tagList.first(where: { $0.displayName == normalized }) {
          withAnimation(AppAnimation.tagTransition) {
@@ -2151,8 +2514,27 @@ struct ToDoView: View {
       let resolvedRecurrenceCount: Int? = (hasDueDate && isRecurring && recurrenceMode == .finite) ? max(recurrenceCount, 1) : nil
       let resolvedRecurrenceAnchorDate: Date? = (hasDueDate && isRecurring) ? dueDate : nil
       let indexedTags = tagsByID
-      let selectedTags = selectedTagIDs.compactMap { id in
+      var selectedTags = selectedTagIDs.compactMap { id in
          indexedTags[id]
+      }
+      for generatedName in pendingGeneratedTagNames {
+         guard selectedTags.count < ToDo.maxTagSelection else { break }
+         let normalizedName = Tag.normalizeName(generatedName)
+         guard !normalizedName.isEmpty else { continue }
+         if let existingTag = tagList.first(where: { Tag.normalizeName($0.name) == normalizedName }) {
+            if !selectedTags.contains(where: { $0.id == existingTag.id }) {
+               selectedTags.append(existingTag)
+            }
+            continue
+         }
+
+         let generatedTag = Tag(
+            name: normalizedName,
+            cloudID: syncEverywhereCloudID(),
+            ownerUserID: visibleOwnerUserID
+         )
+         context.insert(generatedTag)
+         selectedTags.append(generatedTag)
       }
       let firstSelectedTag = selectedTags.first
       var savedToDo: ToDo?
@@ -2175,6 +2557,7 @@ struct ToDoView: View {
             locationReminderTrigger: hasLocationReminder ? locationReminderTrigger : nil,
             locationReminderLabel: hasLocationReminder ? locationReminderLabel.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
             lifecycleState: isDone ? .done : .active,
+            completeWhenAllNanoDosDone: completeWhenAllNanoDosDone,
             tag: firstSelectedTag,
             tags: selectedTags,
             cloudID: syncEverywhereCloudID(),
@@ -2207,6 +2590,7 @@ struct ToDoView: View {
          toDo.task = trimmedTask
          toDo.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
          toDo.transition(to: pendingLifecycleState ?? (isDone ? .done : .active))
+         toDo.completeWhenAllNanoDosDone = completeWhenAllNanoDosDone
          toDo.dueDate = resolvedDueDate
          toDo.reminderIntent = resolvedReminderIntent
          toDo.recurrenceUnit = resolvedRecurrenceUnit
@@ -2262,6 +2646,91 @@ struct ToDoView: View {
       }
 
       dismissComposer(savedToDo: savedToDo)
+   }
+
+   private func applyVoiceCapture(_ result: VoiceToDoCaptureResult) {
+      guard case .create = mode else { return }
+
+      guard let organizedToDo = result.organizedToDo else {
+         task = String(result.transcript.prefix(Self.taskCharacterLimit))
+         isCreateTaskCommitted = hasEnteredTaskText
+         if hasEnteredTaskText {
+            isCreateExpanded = true
+         }
+         return
+      }
+
+      let initialTranscriptTask = String(result.transcript.prefix(Self.taskCharacterLimit))
+      if task == initialTranscriptTask {
+         task = String(organizedToDo.title.prefix(Self.taskCharacterLimit))
+      }
+      notes = organizedToDo.notes
+      hasDueDate = organizedToDo.dueDate != nil
+      if let organizedDueDate = organizedToDo.dueDate {
+         hasExplicitDueTime = AppleIntelligenceService.containsExplicitTime(in: result.transcript)
+         dueDate = hasExplicitDueTime
+            ? organizedDueDate
+            : AppPreferences.applyingDefaultDueTime(to: organizedDueDate)
+         dueDateSelection = [Self.selectionComponents(for: dueDate)]
+      } else {
+         dueDateSelection = []
+         hasExplicitDueTime = false
+      }
+      reminderIntent = hasDueDate ? organizedToDo.reminderIntent : .soft
+
+      let hasRecurrence = hasDueDate
+         && organizedToDo.recurrenceUnit != nil
+         && organizedToDo.recurrenceInterval != nil
+         && organizedToDo.recurrenceMode != nil
+      isRecurring = hasRecurrence
+      if let unit = organizedToDo.recurrenceUnit {
+         recurrenceUnit = unit
+      }
+      if let interval = organizedToDo.recurrenceInterval {
+         recurrenceInterval = max(interval, 1)
+      }
+      if let recurrence = organizedToDo.recurrenceMode {
+         recurrenceMode = recurrence
+      }
+      if let count = organizedToDo.recurrenceCount {
+         recurrenceCount = max(count, 1)
+      }
+
+      applyGeneratedTags(organizedToDo.tagNames)
+      createNanoDos = organizedToDo.nanoDoTitles.map {
+         CreateNanoDoDraft(id: UUID(), task: $0, hasDueDate: false, dueDate: .now)
+      }
+
+      if let locationLabel = organizedToDo.locationLabel {
+         locationReminderLabel = locationLabel
+         locationSearchText = locationLabel
+         locationReminderTrigger = organizedToDo.locationTrigger ?? .arriving
+         isLocationExpanded = true
+      }
+
+      isCreateTaskCommitted = hasEnteredTaskText
+      isCreateExpanded = true
+      isNotesExpanded = !notes.isEmpty
+      isTagExpanded = !selectedTagIDs.isEmpty || !pendingGeneratedTagNames.isEmpty
+      isNanoDoExpanded = !createNanoDos.isEmpty
+   }
+
+   private func applyGeneratedTags(_ names: [String]) {
+      var pendingNames: [String] = []
+      for name in names {
+         guard selectedTagIDs.count + pendingNames.count < ToDo.maxTagSelection else { break }
+         let normalizedName = Tag.normalizeName(name)
+         guard !normalizedName.isEmpty else { continue }
+
+         if let existingTag = tagList.first(where: { Tag.normalizeName($0.name) == normalizedName }) {
+            if !selectedTagIDs.contains(existingTag.id) {
+               selectedTagIDs.append(existingTag.id)
+            }
+         } else if !pendingNames.contains(normalizedName) {
+            pendingNames.append(normalizedName)
+         }
+      }
+      pendingGeneratedTagNames = pendingNames
    }
 
    private func syncCalendarMirrorIfNeeded(for toDo: ToDo?) {
@@ -2412,6 +2881,7 @@ struct ToDoView: View {
       toDo.nanoDos.removeAll { $0 === nanoDo }
       context.delete(nanoDo)
       toDo.markUpdated()
+      handleNanoDoMutation()
 
       do {
          try context.save()
@@ -2438,6 +2908,7 @@ struct ToDoView: View {
       toDo.nanoDos.append(nanoDo)
       context.insert(nanoDo)
       toDo.markUpdated()
+      handleNanoDoMutation()
 
       do {
          try context.save()
@@ -2455,6 +2926,80 @@ struct ToDoView: View {
             error.localizedDescription
          )
          AppLog.error("Failed to add inline nanoDo: \(error)", logger: AppLog.app)
+      }
+   }
+
+   private func handleNanoDoMutation() {
+      nanoDoMutationRevision += 1
+      if let toDo = editingToDo {
+         // NanoDos persist immediately, so keep the parent option on the same
+         // model before evaluating completion or dismissing the detail view.
+         toDo.completeWhenAllNanoDosDone = completeWhenAllNanoDosDone
+         toDo.markUpdated()
+      }
+      evaluateDeferredParentCompletion()
+   }
+
+   private func evaluateDeferredParentCompletion() {
+      guard let toDo = editingToDo else {
+         shouldCompleteParentAfterDismissal = false
+         return
+      }
+
+      shouldCompleteParentAfterDismissal =
+         completeWhenAllNanoDosDone &&
+         toDo.isActive &&
+         !toDo.nanoDos.isEmpty &&
+         toDo.nanoDos.allSatisfy(\.isDone)
+   }
+
+   private func scheduleDeferredParentCompletionIfNeeded() {
+      guard !didScheduleDeferredParentCompletion,
+            let toDo = editingToDo else { return }
+
+      // Recompute from the model at dismissal instead of trusting transient
+      // SwiftUI state established by the last row mutation.
+      let shouldComplete =
+         completeWhenAllNanoDosDone &&
+         toDo.isActive &&
+         !toDo.nanoDos.isEmpty &&
+         toDo.nanoDos.allSatisfy(\.isDone)
+      guard shouldComplete else { return }
+
+      didScheduleDeferredParentCompletion = true
+      toDo.completeWhenAllNanoDosDone = true
+      toDo.markUpdated()
+      do {
+         try context.save()
+         SyncCoordinator.shared.scheduleLocalSync()
+      } catch {
+         AppLog.error("Failed to persist deferred parent completion: \(error)", logger: AppLog.app)
+         didScheduleDeferredParentCompletion = false
+         return
+      }
+
+      Task { @MainActor in
+         try? await Task.sleep(for: .seconds(1.5))
+         guard toDo.isActive,
+               toDo.completeWhenAllNanoDosDone,
+               !toDo.nanoDos.isEmpty,
+               toDo.nanoDos.allSatisfy(\.isDone)
+         else { return }
+
+         toDo.transition(to: .done)
+
+         do {
+            try context.save()
+            NotificationManager.shared.scheduleRefresh()
+            WidgetSnapshotService.shared.writeSnapshot(from: context)
+            LiveActivityService.shared.endActivity(for: toDo)
+            SyncCoordinator.shared.scheduleLocalSync()
+         } catch {
+            AppLog.error(
+               "Failed to complete parent toDō after NanoDo dismissal: \(error)",
+               logger: AppLog.app
+            )
+         }
       }
    }
 
@@ -2634,6 +3179,47 @@ struct ToDoView: View {
          value: recurrenceInterval * recurrenceCount,
          to: dueDate
       )
+   }
+   
+   private func showFirstEditTipIfNeeded() {
+      guard isViewMode else { return }
+      guard !hasShownFirstToDoEditTip else { return }
+      guard UserDefaults.standard.bool(forKey: AppPreferences.Keys.didCompleteOnboarding) else { return }
+      guard UserDefaults.standard.bool(forKey: AppPreferences.Keys.hasSeenToDoEditOnboarding) else { return }
+
+      hasShownFirstToDoEditTip = true
+
+      Task { @MainActor in
+         try? await Task.sleep(nanoseconds: 600_000_000)
+         withAnimation(AppAnimation.snappySection) {
+            showsFirstEditTip = true
+         }
+
+         guard !reduceMotion else { return }
+         editButtonWiggle.toggle()
+      }
+   }
+   
+   private struct FirstEditTip: View {
+      let onDismiss: () -> Void
+
+      var body: some View {
+         VStack(alignment: .leading, spacing: 8) {
+            Text("Need to make a change?")
+               .font(.appBodyStrong(13, relativeTo: .caption))
+
+            Text("Tap here to edit this toDō.")
+               .font(.appBody(12, relativeTo: .caption))
+               .foregroundStyle(AppColor.textSecondary)
+
+            Button("Got it", action: onDismiss)
+               .font(.appBodyStrong(12, relativeTo: .caption))
+         }
+         .padding(12)
+         .frame(maxWidth: 220, alignment: .leading)
+         .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 16))
+         .shadow(color: AppColor.shadow, radius: 14, x: 0, y: 8)
+      }
    }
 
 }

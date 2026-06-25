@@ -5,6 +5,8 @@ import CoreLocation
 import MapKit
 
 struct ToDoLifecycleActionBar: View {
+   @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
+
    let isDone: Bool
    let removalAction: AppPreferences.DoneSwipePrimaryAction
    var includesRemovalAction = true
@@ -70,20 +72,38 @@ struct ToDoLifecycleActionBar: View {
       action: @escaping () -> Void
    ) -> some View {
       Button(action: action) {
-         Image(systemName: systemName)
-            .font(.appDisplay(18, relativeTo: .headline))
-            .foregroundStyle(foreground)
-            .frame(width: 34, height: 34)
-            .background {
-               if #unavailable(iOS 26) {
-                  Circle().fill(background)
+         ZStack(alignment: .bottomTrailing) {
+            Image(systemName: systemName)
+               .font(.appDisplay(18, relativeTo: .headline))
+               .foregroundStyle(foreground)
+               .frame(width: 34, height: 34)
+               .background {
+                  if #unavailable(iOS 26) {
+                     Circle().fill(background)
+                  }
                }
+               .appInteractiveCircleGlass(tint: background)
+               .contentShape(Circle())
+               .overlay {
+                  if differentiatesWithoutColor {
+                     Circle()
+                        .strokeBorder(foreground, style: StrokeStyle(lineWidth: 2.5, dash: [4, 3]))
+                  }
+               }
+
+            if differentiatesWithoutColor {
+               Image(systemName: "checkmark")
+                  .font(.system(size: 8, weight: .black))
+                  .foregroundStyle(foreground)
+                  .padding(3)
+                  .background(background, in: Circle())
+                  .accessibilityHidden(true)
             }
-            .appInteractiveCircleGlass(tint: background)
-            .contentShape(Circle())
+         }
       }
       .buttonStyle(.plain)
       .accessibilityLabel(accessibilityLabel)
+      .accessibilityInputLabels([Text(accessibilityLabel)])
    }
 }
 
@@ -315,8 +335,11 @@ struct ToDoDueDateCalendar: View {
 }
 
 struct NanoDoRowView: View {
+   @Environment(\.modelContext) private var context
    @Bindable var nanoDo: NanoDo
    var allowsTextEditing = true
+   var completesParentImmediately = true
+   var onMutation: () -> Void = {}
    let onDelete: () -> Void
 
    var body: some View {
@@ -327,6 +350,18 @@ struct NanoDoRowView: View {
                withAnimation(AppAnimation.easeFast) {
                   nanoDo.isDone.toggle()
                   nanoDo.markUpdated()
+                  if completesParentImmediately {
+                     let completedParent = nanoDo.toDo?.completeIfAllNanoDosAreDone() ?? false
+                     if completedParent, let parent = nanoDo.toDo {
+                        LiveActivityService.shared.endActivity(for: parent)
+                     }
+                  }
+                  // Update the parent before saving so child and parent state
+                  // are persisted and synced as one mutation.
+                  onMutation()
+                  try? context.save()
+                  NotificationManager.shared.scheduleRefresh()
+                  WidgetSnapshotService.shared.writeSnapshot(from: context)
                   SyncCoordinator.shared.scheduleLocalSync()
                }
             } label: {
@@ -338,6 +373,10 @@ struct NanoDoRowView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(nanoDo.isDone ? "Mark nanoDo active" : "Mark nanoDo done")
+            .accessibilityInputLabels([
+               Text(nanoDo.isDone ? "Mark nanoDo active" : "Mark nanoDo done"),
+               Text(nanoDo.isDone ? "Reopen nanoDo" : "Complete nanoDo")
+            ])
 
             if allowsTextEditing {
                TextField("NanoDo", text: Binding(
@@ -346,6 +385,7 @@ struct NanoDoRowView: View {
                      nanoDo.task = $0
                      nanoDo.markUpdated()
                      SyncCoordinator.shared.scheduleLocalSync()
+                     onMutation()
                   }
                ))
                .font(.appUserEntry(18, relativeTo: .headline))
@@ -370,6 +410,10 @@ struct NanoDoRowView: View {
                }
                .buttonStyle(AppOutlinedIconButtonStyle(tint: AppColor.actionDestructive, size: 28, symbolSize: 12, lineWidth: 2))
                .accessibilityLabel("Delete nanoDo")
+               .accessibilityInputLabels([
+                  Text("Delete nanoDo"),
+                  Text("Remove nanoDo")
+               ])
             }
          }
 
@@ -384,9 +428,11 @@ struct NanoDoRowView: View {
                   set: {
                      nanoDo.dueDate = $0
                      nanoDo.markUpdated()
+                     NotificationManager.shared.scheduleRefresh()
                      SyncCoordinator.shared.scheduleLocalSync()
+                     onMutation()
                   }
-               ), displayedComponents: .date)
+               ), displayedComponents: [.date, .hourAndMinute])
                .labelsHidden()
                .datePickerStyle(.compact)
                .font(.appBodyStrong(12, relativeTo: .caption))
@@ -395,7 +441,9 @@ struct NanoDoRowView: View {
                Button {
                   nanoDo.dueDate = nil
                   nanoDo.markUpdated()
+                  NotificationManager.shared.scheduleRefresh()
                   SyncCoordinator.shared.scheduleLocalSync()
+                  onMutation()
                } label: {
                   Image(systemName: "xmark.circle.fill")
                      .font(.appBodyStrong(13, relativeTo: .caption))
@@ -405,9 +453,11 @@ struct NanoDoRowView: View {
                .accessibilityLabel("Clear due date")
             } else {
                Button {
-                  nanoDo.dueDate = Date()
+                  nanoDo.dueDate = Calendar.current.date(byAdding: .hour, value: 1, to: .now) ?? .now
                   nanoDo.markUpdated()
+                  NotificationManager.shared.scheduleRefresh()
                   SyncCoordinator.shared.scheduleLocalSync()
+                  onMutation()
                } label: {
                   Label("Add due date", systemImage: "calendar.badge.plus")
                      .font(.appBodyStrong(13, relativeTo: .caption))
@@ -432,6 +482,8 @@ struct NanoDoRowView: View {
 
 struct SwipeableNanoDoRow: View {
    @Bindable var nanoDo: NanoDo
+   var completesParentImmediately = true
+   var onMutation: () -> Void = {}
    let onDelete: () -> Void
    @State private var dragOffset: CGFloat = 0
 
@@ -458,8 +510,17 @@ struct SwipeableNanoDoRow: View {
          .padding(.trailing, 10)
          .buttonStyle(.plain)
          .accessibilityLabel("Delete nanoDo")
+         .accessibilityInputLabels([
+            Text("Delete nanoDo"),
+            Text("Remove nanoDo")
+         ])
 
-         NanoDoRowView(nanoDo: nanoDo, allowsTextEditing: false) {
+         NanoDoRowView(
+            nanoDo: nanoDo,
+            allowsTextEditing: false,
+            completesParentImmediately: completesParentImmediately,
+            onMutation: onMutation
+         ) {
             onDelete()
          }
          .frame(maxWidth: .infinity, alignment: .leading)

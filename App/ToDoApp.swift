@@ -98,6 +98,7 @@ struct ToDoApp: App {
             }
          }
          .appBaseTypography()
+         .appAccessibilityAdaptations()
          .appHapticFeedbackHost()
          .preferredColorScheme(preferredAppColorScheme)
          .environmentObject(supabaseAuthStore)

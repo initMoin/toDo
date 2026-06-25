@@ -5,7 +5,9 @@ struct StatsView: View {
    @Environment(\.dismiss) private var dismiss
    @Environment(\.colorScheme) private var colorScheme
    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+   @Environment(\.appReduceMotion) private var reduceMotion
    @AppStorage(AppPreferences.Keys.statsInsightsEnabled) private var statsInsightsEnabled = false
+   @AppStorage(AppPreferences.Keys.appleIntelligenceEnabled) private var appleIntelligenceEnabled = false
    @Query private var toDos: [ToDo]
    @Query private var nanoDos: [NanoDo]
    @Query private var tags: [Tag]
@@ -62,7 +64,11 @@ struct StatsView: View {
                   StatsPressureCard(snapshot: currentSnapshot)
                }
 
-               StatsInsightCard(snapshot: currentSnapshot, isEnabled: $statsInsightsEnabled)
+               StatsInsightCard(
+                  snapshot: currentSnapshot,
+                  isEnabled: $statsInsightsEnabled,
+                  isAppleIntelligenceEnabled: $appleIntelligenceEnabled
+               )
             }
             .frame(maxWidth: statsContentMaxWidth, alignment: .top)
             .frame(maxWidth: .infinity, alignment: .top)
@@ -74,6 +80,7 @@ struct StatsView: View {
       .background(AppColor.surface)
       .appBaseTypography()
       .settingsNativeNavigationTitle("Stats", colorScheme: colorScheme, background: AppColor.secondary)
+      .appReducedMotionBackButton(enabled: reduceMotion)
       .accessibilityIdentifier("stats.view")
    }
 
@@ -296,6 +303,19 @@ private struct ToDoStatsSnapshot {
       }
 
       return String(localized: "You're caught up. Nothing needs urgent attention right now.")
+   }
+
+   var appleIntelligenceInput: AppleIntelligenceSummaryInput {
+      AppleIntelligenceSummaryInput(
+         activeCount: activeToDos,
+         overdueCount: overdueToDos,
+         dueTodayCount: dueTodayToDos,
+         timeSensitiveCount: timeSensitiveToDos,
+         completedLastSevenDaysCount: completedLastSevenDays,
+         staleCount: staleFourteenDays,
+         focusPressureScore: focusPressureScore,
+         strongestDeterministicInsight: strongestInsight
+      )
    }
 
    private static func tagUsage(from toDos: [ToDo]) -> [String: Int] {
@@ -525,10 +545,14 @@ private struct StatsPressureCard: View {
 
 private struct StatsInsightCard: View {
    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+   @Environment(\.openURL) private var openURL
    let snapshot: ToDoStatsSnapshot
    @Binding var isEnabled: Bool
+   @Binding var isAppleIntelligenceEnabled: Bool
    @State private var animateGlow = false
    @State private var didUnlock = false
+
+   private let appleIntelligenceSupportURL = URL(string: "https://support.apple.com/en-us/121115")!
 
    @State private var orbOneSize: CGFloat = 150
    @State private var orbTwoSize: CGFloat = 92
@@ -537,6 +561,8 @@ private struct StatsInsightCard: View {
    @State private var orbOneOffset: CGSize = CGSize(width: 48, height: -58)
    @State private var orbTwoOffset: CGSize = CGSize(width: -220, height: 164)
    @State private var backgroundShift: CGFloat = -0.18
+   @State private var appleIntelligenceSummary: String?
+   @State private var isGeneratingAppleIntelligenceSummary = false
 
    var body: some View {
       ZStack(alignment: .topTrailing) {
@@ -570,7 +596,7 @@ private struct StatsInsightCard: View {
 
             if isEnabled {
                VStack(alignment: .leading, spacing: 14) {
-                  Text(snapshot.strongestInsight)
+                  Text(displayedInsight)
                      .font(.appBody(18, relativeTo: .body))
                      .foregroundStyle(AppColor.textPrimary)
                      .lineSpacing(2)
@@ -580,11 +606,15 @@ private struct StatsInsightCard: View {
                   StatsDetailRow(title: "With NanoDos", value: snapshot.completionRateWithNanoDosLabel, systemName: "checklist", tint: AppColor.secondary, valueSize: 18)
                   StatsDetailRow(title: "Without NanoDos", value: snapshot.completionRateWithoutNanoDosLabel, systemName: "list.bullet", tint: AppColor.secondary, valueSize: 18)
                   StatsDetailRow(title: "Recurring Done 30 Days", value: AppLocalization.numberString(snapshot.recurringCompletedLastThirtyDays), systemName: "repeat", tint: AppColor.secondary, valueSize: 18)
+                  appleIntelligenceBlock
+               }
+               .task(id: appleIntelligenceTaskID) {
+                  await refreshAppleIntelligenceSummary()
                }
             } else {
                Button {
                   HapticFeedbackService.play(.reveal)
-                  withAnimation(.spring(response: 0.48, dampingFraction: 0.78)) {
+                  withAnimation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.78)) {
                      isEnabled = true
                      didUnlock = true
                   }
@@ -627,7 +657,119 @@ private struct StatsInsightCard: View {
 
          await runOrbAnimationLoop()
       }
-      .animation(.spring(response: 0.45, dampingFraction: 0.82), value: isEnabled)
+      .animation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.82), value: isEnabled)
+   }
+
+   private var appleIntelligenceBlock: some View {
+      VStack(alignment: .leading, spacing: 12) {
+         HStack(alignment: .center, spacing: 12) {
+            Image(systemName: isAppleIntelligenceEnabled ? "apple.intelligence" : "apple.intelligence.badge.xmark")
+               .font(.appDisplay(17, relativeTo: .headline))
+               .foregroundStyle(AppColor.onAction)
+               .frame(width: 36, height: 36)
+               .background(AppColor.textPrimary, in: Circle())
+
+            VStack(alignment: .leading, spacing: 4) {
+               Text("Apple Intelligence")
+                  .font(.appDisplay(22, relativeTo: .title3))
+                  .foregroundStyle(AppColor.textPrimary)
+
+               Text("Let toDō help summarize, organize, and surface what matters using Apple Intelligence when available.")
+                  .font(.appBody(13, relativeTo: .caption))
+                  .foregroundStyle(AppColor.textSecondary)
+                  .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 10)
+
+            Toggle("Use Apple Intelligence", isOn: $isAppleIntelligenceEnabled)
+               .labelsHidden()
+               .tint(AppColor.secondary)
+               .disabled(!isAppleIntelligenceAvailable)
+               .accessibilityLabel("Use Apple Intelligence")
+         }
+
+         Text("Designed with privacy at the center. Supported features use Apple Intelligence when available without making AI required for toDō.")
+            .font(.appBody(12, relativeTo: .caption))
+            .foregroundStyle(AppColor.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+         if !isAppleIntelligenceAvailable {
+            Button {
+               openURL(appleIntelligenceSupportURL)
+            } label: {
+               HStack(spacing: 8) {
+                  Text("Apple Intelligence is not available on this device, OS version, language, or region yet.")
+                     .font(.appBodyStrong(12, relativeTo: .caption))
+                     .fixedSize(horizontal: false, vertical: true)
+
+                  Image(systemName: "arrow.right")
+                     .font(.appDisplay(12, relativeTo: .caption))
+               }
+               .foregroundStyle(AppColor.secondary)
+               .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Learn about Apple Intelligence availability")
+         }
+
+         if isAppleIntelligenceEnabled, isAppleIntelligenceAvailable {
+            Label(
+               isGeneratingAppleIntelligenceSummary ? String(localized: "Apple Intelligence is reviewing your patterns...") : String(localized: "Apple Intelligence is on."),
+               systemImage: isGeneratingAppleIntelligenceSummary ? "sparkles" : "checkmark.seal.fill"
+            )
+            .font(.appBodyStrong(12, relativeTo: .caption))
+            .foregroundStyle(AppColor.secondary)
+         }
+      }
+      .padding(14)
+      .background(AppColor.surfaceMuted.opacity(0.72), in: .rect(cornerRadius: 20))
+      .overlay {
+         RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(AppColor.secondary.opacity(0.18), lineWidth: 1)
+      }
+   }
+
+   private var isAppleIntelligenceAvailable: Bool {
+      AppleIntelligenceService.isAvailable
+   }
+
+   private var displayedInsight: String {
+      if isAppleIntelligenceEnabled, let appleIntelligenceSummary, !appleIntelligenceSummary.isEmpty {
+         return appleIntelligenceSummary
+      }
+
+      return snapshot.strongestInsight
+   }
+
+   private var appleIntelligenceTaskID: String {
+      [
+         isAppleIntelligenceEnabled ? "on" : "off",
+         "\(snapshot.activeToDos)",
+         "\(snapshot.overdueToDos)",
+         "\(snapshot.dueTodayToDos)",
+         "\(snapshot.timeSensitiveToDos)",
+         "\(snapshot.completedLastSevenDays)",
+         "\(snapshot.staleFourteenDays)",
+         "\(snapshot.focusPressureScore)"
+      ].joined(separator: "-")
+   }
+
+   @MainActor
+   private func refreshAppleIntelligenceSummary() async {
+      guard isEnabled, isAppleIntelligenceEnabled, isAppleIntelligenceAvailable else {
+         appleIntelligenceSummary = nil
+         isGeneratingAppleIntelligenceSummary = false
+         return
+      }
+
+      isGeneratingAppleIntelligenceSummary = true
+      let summary = await AppleIntelligenceService.summarize(
+         snapshot.appleIntelligenceInput,
+         isEnabled: isAppleIntelligenceEnabled
+      )
+      appleIntelligenceSummary = summary
+      isGeneratingAppleIntelligenceSummary = false
    }
 
    private var insightBackground: LinearGradient {

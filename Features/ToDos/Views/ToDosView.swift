@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 
 struct ToDosView: View {
+   @Environment(\.appReduceMotion) private var reduceMotion
    private enum SystemListFilter: Equatable {
       case today
       case overdue
@@ -43,6 +44,7 @@ struct ToDosView: View {
    @AppStorage(AppPreferences.Keys.snoozeOptions) private var snoozeOptionsStorage = SnoozePreferences.defaultEncodedString
    @AppStorage(AppPreferences.Keys.appTimeSource) private var appTimeSourceRaw = AppTimeSource.location.rawValue
    @AppStorage(AppPreferences.Keys.locationTimeZoneIdentifier) private var locationTimeZoneIdentifier = AppTimePreferences.appleParkTimeZoneIdentifier
+   @AppStorage(AppPreferences.Keys.hasShownFirstToDoEditTip) private var hasShownFirstToDoEditTip = false
    @AppStorage("todo.defaultTagSeedVersion") private var defaultTagSeedVersion = 0
 
    @State private var selectedTagID: PersistentIdentifier?
@@ -64,6 +66,8 @@ struct ToDosView: View {
    @State private var systemListFilter: SystemListFilter?
    @State private var didApplyScreenshotPresentation = false
    @State private var completionAnimationPhases: [PersistentIdentifier: ToDoCompletionAnimationPhase] = [:]
+   @State private var showsInlineEditTip = false
+   @State private var inlineEditButtonWiggle = false
    @FocusState private var isSearchFieldFocused: Bool
 
    @State private var navigationCoordinator = NavigationCoordinator.shared
@@ -921,6 +925,13 @@ struct ToDosView: View {
          }
 
          guard allowsOpen else { return }
+
+         if onboardingManager.isActive,
+            onboardingManager.highlightedToDoID == toDo.id {
+            onboardingManager.prepareToOpenCreatedToDo(toDo)
+            viewToDo(toDo)
+            return
+         }
 
          if usesRegularWidthLayout {
             selectToDoForDetail(toDo)
@@ -2030,10 +2041,18 @@ struct ToDosView: View {
       }
 
       if isDone {
+         if reduceMotion {
+            expandedToDoID = nil
+            toDo.transition(to: .done)
+            removeCalendarMirrorIfPresent(for: toDo)
+            LiveActivityService.shared.endActivity(for: toDo)
+            persistChanges("Failed to update toDō completion state")
+            return
+         }
          animateCompletionThenCommit(for: toDo)
          return
       } else {
-         withAnimation(AppAnimation.snappyStandard) {
+         withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
             expandedToDoID = nil
             toDo.transition(to: .active)
          }
@@ -2218,6 +2237,11 @@ struct ToDosView: View {
       case .welcome:
          onboardingManager.advance(to: .highlightAddButton)
       case .creationSuccess:
+         onboardingManager.advance(to: .openCreatedToDo)
+      case .openCreatedToDo:
+         openCreatedOnboardingToDo()
+      case .editExistingToDo:
+         UserDefaults.standard.set(true, forKey: AppPreferences.Keys.hasSeenToDoEditOnboarding)
          onboardingManager.advance(to: .highlightSettings)
       case .highlightAddButton:
          onboardingManager.advance(to: .openAddView)
@@ -2228,6 +2252,18 @@ struct ToDosView: View {
       default:
          break
       }
+   }
+
+   private func openCreatedOnboardingToDo() {
+      guard let createdToDoID = onboardingManager.highlightedToDoID,
+            let toDo = toDos.first(where: { $0.id == createdToDoID }) else {
+         onboardingManager.recoverFromMissingCreatedToDo()
+         return
+      }
+
+      onboardingManager.prepareToOpenCreatedToDo(toDo)
+      viewToDo(toDo)
+      onboardingManager.recordPresentedCreatedToDoIfNeeded(toDo)
    }
 
    private func resumeGuidedOnboardingIfNeeded() {
@@ -2442,7 +2478,12 @@ struct ToDosView: View {
    }
 
    private func goHome() {
-      dismiss()
+      var transaction = Transaction()
+      transaction.animation = reduceMotion ? nil : AppAnimation.easeStandard
+      transaction.disablesAnimations = reduceMotion
+      withTransaction(transaction) {
+         dismiss()
+      }
 
       // Future:
       // navigationCoordinator.destination = .home
@@ -2602,6 +2643,25 @@ struct ToDosView: View {
          WatchConnectivityService.shared.refreshSnapshot()
       }
       #endif
+   }
+   
+   private func showInlineEditTipIfNeeded() {
+      guard usesRegularWidthLayout else { return }
+      guard !hasShownFirstToDoEditTip else { return }
+      guard UserDefaults.standard.bool(forKey: AppPreferences.Keys.didCompleteOnboarding) else { return }
+      guard UserDefaults.standard.bool(forKey: AppPreferences.Keys.hasSeenToDoEditOnboarding) else { return }
+
+      hasShownFirstToDoEditTip = true
+
+      Task { @MainActor in
+         try? await Task.sleep(nanoseconds: 600_000_000)
+         withAnimation(AppAnimation.snappySection) {
+            showsInlineEditTip = true
+         }
+
+         guard !reduceMotion else { return }
+         inlineEditButtonWiggle.toggle()
+      }
    }
 }
 

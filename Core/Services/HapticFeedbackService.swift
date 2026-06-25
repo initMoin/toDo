@@ -1,5 +1,8 @@
 import Combine
 import SwiftUI
+#if canImport(AudioToolbox)
+import AudioToolbox
+#endif
 
 @MainActor
 final class HapticFeedbackService: ObservableObject {
@@ -34,13 +37,26 @@ final class HapticFeedbackService: ObservableObject {
          selectionTrigger += 1
       case .reveal:
          revealTrigger += 1
-      case .taskCompleted, .saved, .restored:
+      case .taskCompleted:
+         successTrigger += 1
+         playCompletionSoundIfNeeded()
+      case .saved, .restored:
          successTrigger += 1
       case .taskReopened:
          reopenTrigger += 1
       case .warning, .destructive:
          warningTrigger += 1
       }
+   }
+
+   private func playCompletionSoundIfNeeded() {
+      let rawValue = UserDefaults.standard.string(forKey: AppPreferences.Keys.completionSoundOption)
+      let option = AppPreferences.CompletionSoundOption(rawValue: rawValue ?? "") ?? .off
+      guard let soundID = option.systemSoundID else { return }
+
+      #if canImport(AudioToolbox)
+      AudioServicesPlaySystemSound(SystemSoundID(soundID))
+      #endif
    }
 }
 

@@ -80,7 +80,7 @@ struct ArchivesView: View {
       .appBaseTypography()
       .appNavigationChrome()
       .confirmationDialog("Purge all completed and archived toDōs?", isPresented: $isShowingPurgeConfirmation, titleVisibility: .visible) {
-         Button("Purge Archives", role: .destructive) {
+         Button("Delete All", role: .destructive) {
             purgeArchives()
          }
          Button("Cancel", role: .cancel) {}
@@ -214,7 +214,7 @@ struct ArchivesView: View {
                .font(.appDisplay(18, relativeTo: .headline))
 
             VStack(alignment: .leading, spacing: 2) {
-               Text("Purge Archives")
+               Text("Delete All")
                   .font(.appDisplay(18, relativeTo: .headline))
                Text("Permanently deletes all completed and archived toDōs.")
                   .font(.appBody(12, relativeTo: .caption))
@@ -313,6 +313,9 @@ struct ArchivesView: View {
       VStack(spacing: 0) {
          Divider()
          HStack(spacing: 0) {
+            bulkActionButton(systemName: isEveryVisibleToDoSelected ? "checkmark.circle.fill" : "checkmark.circle", label: isEveryVisibleToDoSelected ? "Clear" : "All", disabled: selectableArchivedToDos.isEmpty) {
+               toggleSelectAll()
+            }
             bulkActionButton(systemName: "arrow.uturn.backward.circle", label: "Restore", disabled: selectedToDoIDs.isEmpty) {
                restoreSelected()
             }
@@ -325,6 +328,15 @@ struct ArchivesView: View {
       }
       .frame(maxWidth: contentMaxWidth)
       .frame(maxWidth: .infinity)
+   }
+
+   private var selectableArchivedToDos: [ToDo] {
+      completedToDos + archivedToDos
+   }
+
+   private var isEveryVisibleToDoSelected: Bool {
+      let visibleIDs = Set(selectableArchivedToDos.map(\.id))
+      return !visibleIDs.isEmpty && selectedToDoIDs.isSuperset(of: visibleIDs)
    }
 
    private func bulkActionButton(systemName: String, label: String, isDestructive: Bool = false, disabled: Bool, action: @escaping () -> Void) -> some View {
@@ -341,6 +353,11 @@ struct ArchivesView: View {
       }
       .buttonStyle(.plain)
       .disabled(disabled)
+      .accessibilityLabel(LocalizedStringKey(label))
+      .accessibilityInputLabels([
+         Text(LocalizedStringKey(label)),
+         Text("\(label) archived toDōs")
+      ])
    }
 
    private func toggleSelection(for toDo: ToDo) {
@@ -349,6 +366,16 @@ struct ArchivesView: View {
          selectedToDoIDs.remove(toDo.id)
       } else {
          selectedToDoIDs.insert(toDo.id)
+      }
+   }
+
+   private func toggleSelectAll() {
+      HapticFeedbackService.play(.selection)
+      let visibleIDs = Set(selectableArchivedToDos.map(\.id))
+      if isEveryVisibleToDoSelected {
+         selectedToDoIDs.subtract(visibleIDs)
+      } else {
+         selectedToDoIDs.formUnion(visibleIDs)
       }
    }
 

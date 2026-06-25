@@ -15,13 +15,18 @@ enum AppPreferences {
       static let doneSwipePrimaryAction = "doneSwipePrimaryAction"
       static let snoozeOptions = SnoozePreferences.storageKey
       static let appTimeSource = "appTimeSource"
+      static let defaultDueTimeMinutes = "defaultDueTimeMinutes"
       static let locationTimeZoneIdentifier = "locationTimeZoneIdentifier"
       static let toDoFocusFilterMode = "todoFocusFilterMode"
       static let appIconBadgePolicy = "appIconBadgePolicy"
       static let notificationSoundOption = "notificationSoundOption"
+      static let customNotificationSoundName = "customNotificationSoundName"
+      static let customNotificationSoundDisplayName = "customNotificationSoundDisplayName"
+      static let completionSoundOption = "completionSoundOption"
       static let appTheme = "appTheme"
       static let appAppearanceMode = "appAppearanceMode"
       static let statsInsightsEnabled = "statsInsightsEnabled"
+      static let appleIntelligenceEnabled = "appleIntelligenceEnabled"
       static let pushInstallationID = "pushInstallationID"
       static let remotePushDeviceToken = "remotePushDeviceToken"
       static let lastSignInProvider = "lastSignInProvider"
@@ -32,9 +37,36 @@ enum AppPreferences {
       static let didCompleteOnboarding = "didCompleteOnboarding"
       static let hasCompletedOnboardingOnce = "hasCompletedOnboardingOnce"
       static let currentOnboardingStep = "currentOnboardingStep"
+      static let hasSeenToDoEditOnboarding = "hasSeenToDoEditOnboarding"
+      static let hasShownFirstToDoEditTip = "hasShownFirstToDoEditTip"
       static let storedTagNormalizationVersion = "storedTagNormalizationVersion"
       static let toDoLifecycleNormalizationVersion = "toDoLifecycleNormalizationVersion"
       static let toDoReminderIntentNormalizationVersion = "toDoReminderIntentNormalizationVersion"
+   }
+
+   static let defaultDueTimeMinutes = 9 * 60
+
+   static func resolvedDefaultDueTimeMinutes(
+      userDefaults: UserDefaults = .standard
+   ) -> Int {
+      guard userDefaults.object(forKey: Keys.defaultDueTimeMinutes) != nil else {
+         return defaultDueTimeMinutes
+      }
+      return min(max(userDefaults.integer(forKey: Keys.defaultDueTimeMinutes), 0), (24 * 60) - 1)
+   }
+
+   static func applyingDefaultDueTime(
+      to date: Date,
+      userDefaults: UserDefaults = .standard,
+      calendar: Calendar = .current
+   ) -> Date {
+      let minutes = resolvedDefaultDueTimeMinutes(userDefaults: userDefaults)
+      return calendar.date(
+         bySettingHour: minutes / 60,
+         minute: minutes % 60,
+         second: 0,
+         of: date
+      ) ?? date
    }
 
    enum ToDoListSortOption: String, CaseIterable, Identifiable {
@@ -193,6 +225,7 @@ enum AppPreferences {
       case softChime
       case brightPing
       case urgentDouble
+      case custom
 
       var id: String { rawValue }
 
@@ -208,6 +241,8 @@ enum AppPreferences {
             return String(localized: "Bright Ping")
          case .urgentDouble:
             return String(localized: "Urgent Double")
+         case .custom:
+            return String(localized: "Custom")
          }
       }
 
@@ -223,12 +258,14 @@ enum AppPreferences {
             return String(localized: "A sharper sound for clear reminders.")
          case .urgentDouble:
             return String(localized: "A stronger double alert.")
+         case .custom:
+            return String(localized: "Use your imported reminder sound.")
          }
       }
 
       var bundledSoundName: String? {
          switch self {
-         case .defaultSound, .silent:
+         case .defaultSound, .silent, .custom:
             return nil
          case .softChime:
             return "todo-soft-chime.wav"
@@ -236,6 +273,47 @@ enum AppPreferences {
             return "todo-bright-ping.wav"
          case .urgentDouble:
             return "todo-urgent-double.wav"
+         }
+      }
+   }
+
+   enum CompletionSoundOption: String, CaseIterable, Identifiable {
+      case off
+      case soft
+      case bright
+
+      var id: String { rawValue }
+
+      var title: String {
+         switch self {
+         case .off:
+            return String(localized: "Off")
+         case .soft:
+            return String(localized: "Soft")
+         case .bright:
+            return String(localized: "Bright")
+         }
+      }
+
+      var detail: String {
+         switch self {
+         case .off:
+            return String(localized: "Keep completions silent.")
+         case .soft:
+            return String(localized: "A quiet sound when a toDō is done.")
+         case .bright:
+            return String(localized: "A clearer sound when a toDō is done.")
+         }
+      }
+
+      var systemSoundID: UInt32? {
+         switch self {
+         case .off:
+            return nil
+         case .soft:
+            return 1104
+         case .bright:
+            return 1105
          }
       }
    }
@@ -284,10 +362,14 @@ enum AppPreferences {
          Keys.doneSwipePrimaryAction: DoneSwipePrimaryAction.delete.rawValue,
          Keys.snoozeOptions: SnoozePreferences.defaultEncodedString,
          Keys.appTimeSource: AppTimeSource.location.rawValue,
+         Keys.defaultDueTimeMinutes: defaultDueTimeMinutes,
          Keys.locationTimeZoneIdentifier: AppTimePreferences.appleParkTimeZoneIdentifier,
          Keys.toDoFocusFilterMode: "all",
          Keys.appIconBadgePolicy: AppIconBadgePolicy.overdue.rawValue,
          Keys.notificationSoundOption: NotificationSoundOption.defaultSound.rawValue,
+         Keys.customNotificationSoundName: "",
+         Keys.customNotificationSoundDisplayName: "",
+         Keys.completionSoundOption: CompletionSoundOption.off.rawValue,
          Keys.appTheme: "classic",
          Keys.appAppearanceMode: AppAppearanceMode.system.rawValue,
          Keys.mirrorSyncDeletesToDeviceOnly: true,

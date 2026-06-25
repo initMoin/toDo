@@ -5,6 +5,66 @@ import Testing
 @Suite("ToDo model foundation")
 @MainActor
 struct ToDoModelTests {
+   @Test
+   func completingEveryNanoDoCanCompleteParent() {
+      let toDo = ToDo(
+         task: "Ship update",
+         completeWhenAllNanoDosDone: true
+      )
+      let first = NanoDo(task: "Screenshots", isDone: true, toDo: toDo)
+      let second = NanoDo(task: "Release notes", isDone: false, toDo: toDo)
+      toDo.nanoDos = [first, second]
+
+      #expect(!toDo.completeIfAllNanoDosAreDone())
+      #expect(toDo.isActive)
+
+      second.isDone = true
+
+      #expect(toDo.completeIfAllNanoDosAreDone())
+      #expect(toDo.lifecycleState == .done)
+   }
+
+   @Test
+   func completingNanoDosDoesNotCompleteParentWhenPreferenceIsOff() {
+      let toDo = ToDo(
+         task: "Ship update",
+         completeWhenAllNanoDosDone: false
+      )
+      toDo.nanoDos = [
+         NanoDo(task: "Screenshots", isDone: true, toDo: toDo),
+         NanoDo(task: "Release notes", isDone: true, toDo: toDo)
+      ]
+
+      #expect(!toDo.completeIfAllNanoDosAreDone())
+      #expect(toDo.isActive)
+   }
+
+   @Test
+   func emptyNanoDoListNeverCompletesParent() {
+      let toDo = ToDo(
+         task: "Ship update",
+         completeWhenAllNanoDosDone: true
+      )
+
+      #expect(!toDo.completeIfAllNanoDosAreDone())
+      #expect(toDo.isActive)
+   }
+
+   @Test
+   func completedParentIsNotCompletedAgain() {
+      let toDo = ToDo(
+         task: "Ship update",
+         lifecycleState: .done,
+         completeWhenAllNanoDosDone: true
+      )
+      toDo.nanoDos = [
+         NanoDo(task: "Screenshots", isDone: true, toDo: toDo)
+      ]
+
+      #expect(!toDo.completeIfAllNanoDosAreDone())
+      #expect(toDo.lifecycleState == .done)
+   }
+
    @Test func untaggedToDoHasNoEffectiveTagsWithoutRecursion() {
       let toDo = ToDo(task: "Plan week")
 
@@ -126,5 +186,80 @@ struct ToDoModelTests {
 
       #expect(toDo.lifecycleState == .active)
       #expect(toDo.trashedAt == nil)
+   }
+}
+
+@Suite("Guided onboarding state")
+@MainActor
+struct GuidedOnboardingManagerTests {
+   @Test
+   func firstRunCannotSkipOnboarding() throws {
+      let defaults = try makeDefaults()
+      let manager = GuidedOnboardingManager(defaults: defaults)
+
+      #expect(manager.isActive)
+      #expect(manager.currentStep == .welcome)
+      #expect(!manager.canSkip)
+   }
+
+   @Test
+   func replayCanBeSkippedAfterPriorCompletion() throws {
+      let defaults = try makeDefaults()
+      defaults.set(true, forKey: AppPreferences.Keys.didCompleteOnboarding)
+      defaults.set(true, forKey: AppPreferences.Keys.hasCompletedOnboardingOnce)
+      let manager = GuidedOnboardingManager(defaults: defaults)
+
+      manager.restart()
+
+      #expect(manager.isActive)
+      #expect(manager.currentStep == .welcome)
+      #expect(manager.canSkip)
+   }
+
+   @Test
+   func resumesFromSavedStep() throws {
+      let defaults = try makeDefaults()
+      defaults.set(
+         GuidedOnboardingStep.notificationPermission.rawValue,
+         forKey: AppPreferences.Keys.currentOnboardingStep
+      )
+      let manager = GuidedOnboardingManager(defaults: defaults)
+
+      #expect(manager.isActive)
+      #expect(manager.currentStep == .notificationPermission)
+   }
+
+   @Test
+   func invalidSavedStepRestartsAtWelcome() throws {
+      let defaults = try makeDefaults()
+      defaults.set("removed-step", forKey: AppPreferences.Keys.currentOnboardingStep)
+      let manager = GuidedOnboardingManager(defaults: defaults)
+
+      #expect(manager.isActive)
+      #expect(manager.currentStep == .welcome)
+      #expect(
+         defaults.string(forKey: AppPreferences.Keys.currentOnboardingStep)
+            == GuidedOnboardingStep.welcome.rawValue
+      )
+   }
+
+   @Test
+   func completionPersistsAndClearsResumeState() throws {
+      let defaults = try makeDefaults()
+      let manager = GuidedOnboardingManager(defaults: defaults)
+
+      manager.complete()
+
+      #expect(!manager.isActive)
+      #expect(defaults.bool(forKey: AppPreferences.Keys.didCompleteOnboarding))
+      #expect(defaults.bool(forKey: AppPreferences.Keys.hasCompletedOnboardingOnce))
+      #expect(defaults.string(forKey: AppPreferences.Keys.currentOnboardingStep) == nil)
+   }
+
+   private func makeDefaults() throws -> UserDefaults {
+      let suiteName = "GuidedOnboardingManagerTests.\(UUID().uuidString)"
+      let defaults = try #require(UserDefaults(suiteName: suiteName))
+      defaults.removePersistentDomain(forName: suiteName)
+      return defaults
    }
 }

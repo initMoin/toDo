@@ -84,14 +84,19 @@ struct NotificationContentBuilder {
       body: String,
       isTimeSensitive: Bool = false,
       isQuiet: Bool = false,
-      soundOption: AppPreferences.NotificationSoundOption = .defaultSound
+      soundOption: AppPreferences.NotificationSoundOption = .defaultSound,
+      customSoundName: String? = nil
    ) -> UNMutableNotificationContent {
 
       let content = UNMutableNotificationContent()
 
       content.title = title
       content.body = body
-      content.sound = notificationSound(isQuiet: isQuiet, soundOption: soundOption)
+      content.sound = notificationSound(
+         isQuiet: isQuiet,
+         soundOption: soundOption,
+         customSoundName: customSoundName
+      )
 
       switch type {
 
@@ -159,9 +164,16 @@ struct NotificationContentBuilder {
 
    private static func notificationSound(
       isQuiet: Bool,
-      soundOption: AppPreferences.NotificationSoundOption
+      soundOption: AppPreferences.NotificationSoundOption,
+      customSoundName: String?
    ) -> UNNotificationSound? {
       guard !isQuiet, soundOption != .silent else { return nil }
+
+      if soundOption == .custom,
+         let customSoundName,
+         !customSoundName.isEmpty {
+         return UNNotificationSound(named: UNNotificationSoundName(rawValue: customSoundName))
+      }
 
       if let bundledSoundName = soundOption.bundledSoundName {
          return UNNotificationSound(named: UNNotificationSoundName(rawValue: bundledSoundName))

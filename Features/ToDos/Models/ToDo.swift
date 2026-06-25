@@ -177,6 +177,7 @@ final class ToDo {
    var locationReminderLabel: String? = nil
    var lifecycleStateRaw: String = ToDoState.active.rawValue
    var isDone: Bool = false
+   var completeWhenAllNanoDosDone: Bool = false
    var trashedAt: Date?
 
    @Relationship(deleteRule: .cascade, originalName: "nanoDos", inverse: \NanoDo.toDo)
@@ -206,6 +207,7 @@ final class ToDo {
       locationReminderLabel: String? = nil,
       lifecycleState: ToDoState? = nil,
       isDone: Bool = false,
+      completeWhenAllNanoDosDone: Bool = false,
       nanoDos: [NanoDo] = [],
       tag: Tag? = nil,
       tags: [Tag] = [],
@@ -234,6 +236,7 @@ final class ToDo {
       self.locationReminderLabel = locationReminderLabel
       self.lifecycleStateRaw = resolvedState.rawValue
       self.isDone = resolvedState == .done
+      self.completeWhenAllNanoDosDone = completeWhenAllNanoDosDone
       self.nanoDosStorage = nanoDos
       self.primaryTag = tag
       if tags.isEmpty, let tag {
@@ -248,6 +251,20 @@ final class ToDo {
    var nanoDos: [NanoDo] {
       get { nanoDosStorage ?? [] }
       set { nanoDosStorage = newValue }
+   }
+
+   @discardableResult
+   func completeIfAllNanoDosAreDone() -> Bool {
+      guard completeWhenAllNanoDosDone,
+            isActive,
+            !nanoDos.isEmpty,
+            nanoDos.allSatisfy(\.isDone)
+      else {
+         return false
+      }
+
+      transition(to: .done)
+      return true
    }
 
    var tag: Tag? {

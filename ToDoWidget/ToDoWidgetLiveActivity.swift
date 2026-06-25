@@ -1,3 +1,4 @@
+#if !os(macOS)
 import AppIntents
 import ActivityKit
 import Foundation
@@ -746,3 +747,4 @@ extension ToDoLiveActivityAttributes.ContentState {
    ToDoLiveActivityAttributes.ContentState.activePreview
    ToDoLiveActivityAttributes.ContentState.overduePreview
 }
+#endif

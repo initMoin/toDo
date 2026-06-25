@@ -1,8 +1,9 @@
 import SwiftUI
 import SwiftData
 import CoreLocation
+import UniformTypeIdentifiers
 
-private enum SettingsDetailRoute: Hashable {
+private enum SettingsDetailRoute: Hashable, Identifiable {
    case account
    case conflicts
    case sync
@@ -14,6 +15,8 @@ private enum SettingsDetailRoute: Hashable {
    case dataControls
    case archives
    case trash
+
+   var id: Self { self }
 }
 
 struct SettingsView: View {
@@ -22,6 +25,7 @@ struct SettingsView: View {
    @Environment(\.openURL) private var openURL
    @Environment(\.colorScheme) private var colorScheme
    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+   @Environment(\.appReduceMotion) private var reduceMotion
    @EnvironmentObject private var authStore: SupabaseAuthStore
    @Query private var tags: [Tag]
    @Query private var toDos: [ToDo]
@@ -34,10 +38,14 @@ struct SettingsView: View {
    @AppStorage(AppPreferences.Keys.mirrorDueDatesToCalendar) private var mirrorDueDatesToCalendar = false
    @AppStorage(AppPreferences.Keys.doneSwipePrimaryAction) private var doneSwipePrimaryActionRaw = AppPreferences.DoneSwipePrimaryAction.archive.rawValue
    @AppStorage(AppPreferences.Keys.appTimeSource) private var appTimeSourceRaw = AppTimeSource.location.rawValue
+   @AppStorage(AppPreferences.Keys.defaultDueTimeMinutes) private var defaultDueTimeMinutes = AppPreferences.defaultDueTimeMinutes
    @AppStorage(AppPreferences.Keys.locationTimeZoneIdentifier) private var locationTimeZoneIdentifier = AppTimePreferences.appleParkTimeZoneIdentifier
    @AppStorage(AppPreferences.Keys.mirrorSyncDeletesToDeviceOnly) private var mirrorSyncDeletesToDeviceOnly = true
    @AppStorage(AppPreferences.Keys.appIconBadgePolicy) private var appIconBadgePolicyRaw = AppPreferences.AppIconBadgePolicy.overdue.rawValue
    @AppStorage(AppPreferences.Keys.notificationSoundOption) private var notificationSoundOptionRaw = AppPreferences.NotificationSoundOption.defaultSound.rawValue
+   @AppStorage(AppPreferences.Keys.customNotificationSoundName) private var customNotificationSoundName = ""
+   @AppStorage(AppPreferences.Keys.customNotificationSoundDisplayName) private var customNotificationSoundDisplayName = ""
+   @AppStorage(AppPreferences.Keys.completionSoundOption) private var completionSoundOptionRaw = AppPreferences.CompletionSoundOption.off.rawValue
    @AppStorage(AppPreferences.Keys.appTheme) private var appThemeRaw = AppThemeOption.classic.rawValue
    @AppStorage(AppPreferences.Keys.appAppearanceMode) private var appAppearanceModeRaw = AppPreferences.AppAppearanceMode.system.rawValue
    @AppStorage("trashAutoEmptyInterval") private var trashAutoEmptyIntervalRaw = TrashAutoEmptyInterval.oneMonth.rawValue
@@ -47,7 +55,10 @@ struct SettingsView: View {
    @State private var isDoneSwipeMenuExpanded = false
    @State private var isTimeSourceMenuExpanded = false
    @State private var selectedDetailRoute: SettingsDetailRoute?
+   @State private var compactNavigationRoute: SettingsDetailRoute?
    @State private var notificationSoundPreviewStatus: String?
+   @State private var isImportingNotificationSound = false
+   @State private var isShowingCustomSoundHelp = false
    @StateObject private var onboardingManager = GuidedOnboardingManager.shared
    @StateObject private var notificationManager = NotificationManager.shared
    @StateObject private var locationTimeZoneService = LocationTimeZoneService()
@@ -152,8 +163,8 @@ struct SettingsView: View {
             .padding(.horizontal, settingsDashboardHorizontalPadding)
             .padding(.top, 14)
             .padding(.bottom, 24)
-            .animation(AppAnimation.snappySection, value: isSettingsDetailPanelVisible)
-            .animation(AppAnimation.snappySection, value: selectedDetailRoute)
+            .animation(reduceMotion ? nil : AppAnimation.snappySection, value: isSettingsDetailPanelVisible)
+            .animation(reduceMotion ? nil : AppAnimation.snappySection, value: selectedDetailRoute)
          } else {
             settingsList
          }
@@ -163,6 +174,23 @@ struct SettingsView: View {
       .tint(AppColor.main)
       .appBaseTypography()
       .settingsNativeNavigationTitle("Settings", colorScheme: colorScheme, background: AppColor.main)
+      .appReducedMotionBackButton(enabled: reduceMotion)
+      .navigationDestination(item: $compactNavigationRoute) { route in
+         settingsDetailView(route)
+            .appReducedMotionBackButton(enabled: reduceMotion)
+      }
+      .fileImporter(
+         isPresented: $isImportingNotificationSound,
+         allowedContentTypes: NotificationSoundLibrary.supportedFileTypes,
+         allowsMultipleSelection: false
+      ) { result in
+         handleNotificationSoundImport(result)
+      }
+      .sheet(isPresented: $isShowingCustomSoundHelp) {
+         CustomNotificationSoundHelpView()
+            .presentationDragIndicator(.visible)
+            .presentationBackground(AppColor.surface)
+      }
       .overlayPreferenceValue(OnboardingSpotlightPreferenceKey.self) { anchors in
          if onboardingManager.blocksSettingsChrome {
             GuidedOnboardingOverlay(manager: onboardingManager, anchors: anchors) { step in
@@ -186,134 +214,141 @@ struct SettingsView: View {
       .task {
          await notificationManager.refreshAuthorizationStatus()
       }
+      .onChange(of: onboardingManager.currentStep) { _, newStep in
+         if newStep == .archiveVsDelete {
+            selectedDetailRoute = nil
+            compactNavigationRoute = nil
+         }
+      }
    }
 
    private var settingsList: some View {
       ScrollView {
          VStack(alignment: .leading, spacing: 24) {
-               settingsSection(String(localized: "Account & Sync")) {
-                  settingsDetailLink(.account) {
-                     settingsNavigationRow(
-                        authStore.isAuthenticated ? String(localized: "Account") : String(localized: "Sign In"),
-                        detail: accountSummaryDetail
-                     )
-                     .onboardingSpotlightAnchor(.settingsAccount)
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  syncStatusBlock
-
-                  if !unresolvedSyncConflicts.isEmpty {
-                     settingsDetailLink(.conflicts) {
-                        syncReviewRow
-                     }
-                     .foregroundStyle(AppColor.textPrimary)
-                  }
-
-                  settingsDetailLink(.sync) {
-                     settingsNavigationRow(
-                        String(localized: "Where to Save"),
-                        detail: syncCoordinator.pendingRestartSyncMode != nil ? String(localized: "Ready after restart") : syncCoordinator.preferredSyncMode.title
-                     )
-                     .onboardingSpotlightAnchor(.settingsSync)
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  syncDeletionPreferenceToggle
+            settingsSection(String(localized: "Account & Sync")) {
+               settingsDetailLink(.account) {
+                  settingsNavigationRow(
+                     authStore.isAuthenticated ? String(localized: "Account") : String(localized: "Sign In"),
+                     detail: accountSummaryDetail
+                  )
+                  .onboardingSpotlightAnchor(.settingsAccount)
                }
+               .foregroundStyle(AppColor.textPrimary)
 
-               settingsSection(String(localized: "Look & Feel")) {
-                  settingsDetailLink(.appearance) {
-                     settingsNavigationRow(
-                        String(localized: "Appearance"),
-                        detail: resolvedTheme.title,
-                        detailForeground: AppColor.iconAccent
-                     )
+               syncStatusBlock
+
+               if !unresolvedSyncConflicts.isEmpty {
+                  settingsDetailLink(.conflicts) {
+                     syncReviewRow
                   }
                   .foregroundStyle(AppColor.textPrimary)
                }
 
-               settingsSection(String(localized: "Behavior")) {
-                  settingsDetailLink(.behavior) {
-                     settingsNavigationRow(
-                        String(localized: "Behavior"),
-                        detail: resolvedDoneSwipePrimaryAction.compactTitle
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
+               settingsDetailLink(.sync) {
+                  settingsNavigationRow(
+                     String(localized: "Where to Save"),
+                     detail: syncCoordinator.pendingRestartSyncMode != nil ? String(localized: "Ready after restart") : syncCoordinator.preferredSyncMode.title
+                  )
+                  .onboardingSpotlightAnchor(.settingsSync)
                }
+               .foregroundStyle(AppColor.textPrimary)
 
-               settingsSection(String(localized: "Notifications")) {
-                  settingsDetailLink(.notifications) {
-                     settingsNavigationRow(
-                        String(localized: "Notifications"),
-                        detail: notificationAuthorizationStatusLabel
-                     )
-                     .onboardingSpotlightAnchor(.settingsNotifications)
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
+               syncDeletionPreferenceToggle
+            }
+
+            settingsSection(String(localized: "Personalize")) {
+               settingsDetailLink(.appearance) {
+                  settingsNavigationRow(
+                     String(localized: "Appearance"),
+                     detail: resolvedTheme.title,
+                     detailForeground: AppColor.iconAccent
+                  )
                }
+               .foregroundStyle(AppColor.textPrimary)
 
-               settingsSection(String(localized: "Tags")) {
-                  settingsDetailLink(.tags) {
-                     settingsNavigationRow(
-                        String(localized: "Tags"),
-                        detail: customTagCountLabel
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
+               settingsDetailLink(.tags) {
+                  settingsNavigationRow(
+                     String(localized: "Tags"),
+                     detail: customTagCountLabel
+                  )
                }
+               .foregroundStyle(AppColor.textPrimary)
+            }
 
-               settingsSection(String(localized: "Setup")) {
-                  settingsActionRow(
-                     systemName: "sparkles",
-                     title: "Guided Tour",
-                     detail: "Replay the setup guide for creating a toDō, choosing sync, and enabling notifications."
-                  ) {
-                     onboardingManager.restart()
-                     closeView()
+            settingsSection(String(localized: "Workflow")) {
+               settingsDetailLink(.behavior) {
+                  settingsNavigationRow(
+                     String(localized: "Behavior"),
+                     detail: resolvedDoneSwipePrimaryAction.compactTitle
+                  )
+                  .onboardingSpotlightAnchor(.settingsBehavior)
+               }
+               .foregroundStyle(AppColor.textPrimary)
+
+               settingsDetailLink(.notifications) {
+                  settingsNavigationRow(
+                     String(localized: "Notifications"),
+                     detail: notificationAuthorizationStatusLabel
+                  )
+                  .onboardingSpotlightAnchor(.settingsNotifications)
+               }
+               .foregroundStyle(AppColor.textPrimary)
+
+               settingsActionRow(
+                  systemName: "sparkles",
+                  title: "Guided Tour",
+                  detail: "Replay the setup guide for creating a toDō, choosing sync, and enabling notifications."
+               ) {
+                  onboardingManager.restart()
+                  closeView()
+               }
+            }
+
+            settingsSection(String(localized: "Insights")) {
+               NavigationLink {
+                  StatsView(ownerUserID: visibleOwnerUserID)
+               } label: {
+                  statsEntryCard
+               }
+               .transaction { transaction in
+                  if reduceMotion {
+                     transaction.animation = nil
+                     transaction.disablesAnimations = true
                   }
                }
+               .buttonStyle(.plain)
+               .foregroundStyle(AppColor.textPrimary)
+            }
 
-               settingsSection(String(localized: "Stats")) {
-                  NavigationLink {
-                     StatsView(ownerUserID: visibleOwnerUserID)
-                  } label: {
-                     statsEntryCard
-                  }
-                  .buttonStyle(.plain)
-                  .foregroundStyle(AppColor.textPrimary)
+            settingsSection(String(localized: "Manage Your Data")) {
+               settingsFullNavigationLink(.dataControls) {
+                  settingsNavigationRow(
+                     String(localized: "Data Controls"),
+                     detail: String(localized: "Clean up")
+                  )
                }
+               .foregroundStyle(AppColor.textPrimary)
 
-               settingsSection(String(localized: "Manage Your Data")) {
-                  settingsFullNavigationLink(.dataControls) {
-                     settingsNavigationRow(
-                        String(localized: "Data Controls"),
-                        detail: String(localized: "Clean up")
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  settingsFullNavigationLink(.archives) {
-                     settingsNavigationRow(
-                        String(localized: "Archives"),
-                        detail: archiveCountLabel
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
-
-                  settingsFullNavigationLink(.trash) {
-                     settingsNavigationRow(
-                        String(localized: "Trash"),
-                        detail: trashCountLabel
-                     )
-                  }
-                  .foregroundStyle(AppColor.textPrimary)
+               settingsFullNavigationLink(.archives) {
+                  settingsNavigationRow(
+                     String(localized: "Archives"),
+                     detail: archiveCountLabel
+                  )
                }
+               .foregroundStyle(AppColor.textPrimary)
 
-               madeByBrandView
-                  .frame(maxWidth: .infinity)
-                  .padding(.top, 4)
+               settingsFullNavigationLink(.trash) {
+                  settingsNavigationRow(
+                     String(localized: "Trash"),
+                     detail: trashCountLabel
+                  )
+               }
+               .foregroundStyle(AppColor.textPrimary)
+            }
+
+            madeByBrandView
+               .frame(maxWidth: .infinity)
+               .padding(.top, 4)
          }
          .frame(maxWidth: settingsContentMaxWidth, alignment: .top)
          .frame(maxWidth: .infinity, alignment: .top)
@@ -349,13 +384,13 @@ struct SettingsView: View {
          .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 30))
          .clipShape(.rect(cornerRadius: 30))
          .shadow(color: AppColor.shadow, radius: 18, x: 0, y: 8)
-         .animation(AppAnimation.snappySection, value: selectedDetailRoute)
+         .animation(reduceMotion ? nil : AppAnimation.snappySection, value: selectedDetailRoute)
       }
    }
 
    private var closeSettingsDetailButton: some View {
       Button {
-         withAnimation(AppAnimation.snappyStandard) {
+         withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
             selectedDetailRoute = nil
          }
       } label: {
@@ -420,7 +455,7 @@ struct SettingsView: View {
    ) -> some View {
       if usesSettingsDetailLayout {
          Button {
-            withAnimation(AppAnimation.snappyStandard) {
+            withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
                selectedDetailRoute = route
             }
          } label: {
@@ -428,6 +463,36 @@ struct SettingsView: View {
          }
          .buttonStyle(.plain)
          .accessibilityAddTraits(selectedDetailRoute == route ? [.isSelected] : [])
+      } else {
+         if reduceMotion {
+            Button {
+               navigateWithoutMotion(to: route)
+            } label: {
+               label()
+            }
+            .buttonStyle(.plain)
+         } else {
+            NavigationLink {
+               settingsDetailView(route)
+            } label: {
+               label()
+            }
+         }
+      }
+   }
+
+   @ViewBuilder
+   private func settingsFullNavigationLink<Label: View>(
+      _ route: SettingsDetailRoute,
+      @ViewBuilder label: () -> Label
+   ) -> some View {
+      if reduceMotion {
+         Button {
+            navigateWithoutMotion(to: route)
+         } label: {
+            label()
+         }
+         .buttonStyle(.plain)
       } else {
          NavigationLink {
             settingsDetailView(route)
@@ -437,14 +502,12 @@ struct SettingsView: View {
       }
    }
 
-   private func settingsFullNavigationLink<Label: View>(
-      _ route: SettingsDetailRoute,
-      @ViewBuilder label: () -> Label
-   ) -> some View {
-      NavigationLink {
-         settingsDetailView(route)
-      } label: {
-         label()
+   private func navigateWithoutMotion(to route: SettingsDetailRoute) {
+      var transaction = Transaction()
+      transaction.animation = nil
+      transaction.disablesAnimations = true
+      withTransaction(transaction) {
+         compactNavigationRoute = route
       }
    }
 
@@ -499,6 +562,32 @@ struct SettingsView: View {
 
          settingsSection("Timing") {
             timeSourceDropdown
+
+            HStack(spacing: 12) {
+               VStack(alignment: .leading, spacing: 4) {
+                  Text("Default Due Time")
+                     .font(.appBodyStrong(17, relativeTo: .body))
+                     .foregroundStyle(AppColor.textPrimary)
+
+                  Text("Used when you choose a due date without choosing a time.")
+                     .font(.appBody(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.textSecondary)
+               }
+
+               Spacer(minLength: 12)
+
+               DatePicker(
+                  "Default Due Time",
+                  selection: defaultDueTimeBinding,
+                  displayedComponents: .hourAndMinute
+               )
+               .labelsHidden()
+               .datePickerStyle(.compact)
+               .environment(\.locale, AppLocalization.displayLocale)
+               .environment(\.calendar, AppLocalization.displayCalendar)
+               .tint(AppColor.actionPrimary)
+            }
+            .padding(.vertical, 6)
          }
 
          settingsSection("Remove from View") {
@@ -511,6 +600,24 @@ struct SettingsView: View {
       }
    }
 
+   private var defaultDueTimeBinding: Binding<Date> {
+      Binding(
+         get: {
+            let calendar = Calendar.current
+            let start = calendar.startOfDay(for: .now)
+            return calendar.date(
+               byAdding: .minute,
+               value: min(max(defaultDueTimeMinutes, 0), (24 * 60) - 1),
+               to: start
+            ) ?? start
+         },
+         set: { date in
+            let components = Calendar.current.dateComponents([.hour, .minute], from: date)
+            defaultDueTimeMinutes = (components.hour ?? 9) * 60 + (components.minute ?? 0)
+         }
+      )
+   }
+
    private func handleOnboardingPrimaryAction(_ step: GuidedOnboardingStep) {
       switch step {
       case .signInAndSync:
@@ -518,6 +625,8 @@ struct SettingsView: View {
       case .notificationPermission:
          Task { @MainActor in
             await notificationManager.requestAuthorizationFlow()
+            selectedDetailRoute = nil
+            compactNavigationRoute = nil
             onboardingManager.advance(to: .archiveVsDelete)
          }
       case .archiveVsDelete:
@@ -905,6 +1014,22 @@ struct SettingsView: View {
       AppPreferences.NotificationSoundOption(rawValue: notificationSoundOptionRaw) ?? .defaultSound
    }
 
+   private var resolvedNotificationSoundTitle: String {
+      guard resolvedNotificationSoundOption == .custom else {
+         return resolvedNotificationSoundOption.title
+      }
+
+      return String(localized: "custom")
+   }
+
+   private var hasCustomNotificationSound: Bool {
+      !customNotificationSoundName.isEmpty
+   }
+
+   private var resolvedCompletionSoundOption: AppPreferences.CompletionSoundOption {
+      AppPreferences.CompletionSoundOption(rawValue: completionSoundOptionRaw) ?? .off
+   }
+
    private var resolvedTheme: AppThemeOption {
       AppThemeOption(rawValue: appThemeRaw) ?? .classic
    }
@@ -1158,6 +1283,49 @@ struct SettingsView: View {
       }
    }
 
+   private func selectNotificationSoundOption(_ option: AppPreferences.NotificationSoundOption) {
+      guard option != .custom || hasCustomNotificationSound else {
+         notificationSoundPreviewStatus = String(localized: "Import a custom sound first.")
+         isImportingNotificationSound = true
+         return
+      }
+
+      withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
+         notificationSoundOptionRaw = option.rawValue
+      }
+      NotificationManager.shared.scheduleRefresh()
+   }
+
+   private func handleNotificationSoundImport(_ result: Result<[URL], Error>) {
+      switch result {
+      case .success(let urls):
+         guard let url = urls.first else { return }
+
+         notificationSoundPreviewStatus = String(localized: "Checking custom sound...")
+         Task {
+            do {
+               _ = try await NotificationSoundLibrary.importSound(from: url)
+               await MainActor.run {
+                  withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
+                     notificationSoundOptionRaw = AppPreferences.NotificationSoundOption.custom.rawValue
+                  }
+                  notificationSoundPreviewStatus = String(localized: "Custom sound selected. Sending a sound test...")
+                  NotificationManager.shared.scheduleRefresh()
+                  scheduleNotificationSoundPreview()
+               }
+            } catch {
+               await MainActor.run {
+                  notificationSoundPreviewStatus = error.localizedDescription
+                  AppLog.error("Failed to import notification sound: \(error)", logger: AppLog.notifications)
+               }
+            }
+         }
+      case .failure(let error):
+         notificationSoundPreviewStatus = String(localized: "Could not import that sound.")
+         AppLog.error("Notification sound import cancelled or failed: \(error)", logger: AppLog.notifications)
+      }
+   }
+
    private func manualSyncRefresh() {
       guard authStore.effectiveSyncMode == .syncEverywhere,
             let userID = authStore.currentUserID else { return }
@@ -1214,6 +1382,12 @@ struct SettingsView: View {
       .buttonStyle(.plain)
       .disabled(isDisabled)
       .opacity(isDisabled ? 0.45 : 1)
+      .accessibilityLabel(LocalizedStringKey(title))
+      .accessibilityHint(LocalizedStringKey(detail))
+      .accessibilityInputLabels([
+         Text(LocalizedStringKey(title)),
+         Text("Open \(title)")
+      ])
    }
 
    private var syncStatusBlock: some View {
@@ -1349,7 +1523,9 @@ struct SettingsView: View {
             .overlay(AppColor.border.opacity(0.5))
 
          notificationSoundDropdown
+         customNotificationSoundBlock
          notificationSoundPreviewButton
+         completionSoundDropdown
 
          reminderIntentSoundGuide
 
@@ -1402,7 +1578,7 @@ struct SettingsView: View {
             }
          }
       }
-      .animation(AppAnimation.snappyStandard, value: appThemeRaw)
+      .animation(reduceMotion ? nil : AppAnimation.snappyStandard, value: appThemeRaw)
    }
 
    fileprivate func themeSwatchButton(_ theme: AppThemeOption) -> some View {
@@ -1410,7 +1586,7 @@ struct SettingsView: View {
       let palette = theme.palette
 
       return Button {
-         withAnimation(AppAnimation.snappyStandard) {
+         withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
             appThemeRaw = theme.rawValue
          }
       } label: {
@@ -1466,10 +1642,7 @@ struct SettingsView: View {
       Menu {
          ForEach(AppPreferences.NotificationSoundOption.allCases) { option in
             Button {
-               withAnimation(AppAnimation.snappyStandard) {
-                  notificationSoundOptionRaw = option.rawValue
-               }
-               NotificationManager.shared.scheduleRefresh()
+               selectNotificationSoundOption(option)
             } label: {
                Label(
                   option.title,
@@ -1498,7 +1671,7 @@ struct SettingsView: View {
                Spacer(minLength: 12)
 
                HStack(spacing: 8) {
-                  Text(resolvedNotificationSoundOption.title)
+                  Text(resolvedNotificationSoundTitle)
                      .font(.appBadge(12, relativeTo: .caption))
                      .foregroundStyle(AppColor.onAction)
                      .padding(.horizontal, 10)
@@ -1518,7 +1691,93 @@ struct SettingsView: View {
       }
       .buttonStyle(.plain)
       .contentShape(.rect(cornerRadius: 20))
-      .animation(AppAnimation.snappyStandard, value: notificationSoundOptionRaw)
+      .animation(reduceMotion ? nil : AppAnimation.snappyStandard, value: notificationSoundOptionRaw)
+   }
+
+   private var customNotificationSoundBlock: some View {
+      VStack(alignment: .leading, spacing: 10) {
+         HStack(alignment: .center, spacing: 14) {
+            Image(systemName: "icloud.and.arrow.down.fill")
+               .font(.appDisplay(16, relativeTo: .subheadline))
+               .foregroundStyle(AppColor.iconAccent)
+               .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 5) {
+               Text("Custom Sound")
+                  .font(.appBodyStrong(15, relativeTo: .subheadline))
+                  .foregroundStyle(AppColor.textPrimary)
+
+               Text(hasCustomNotificationSound ? customNotificationSoundDisplayName : String(localized: "Import from Files or iCloud Drive."))
+                  .font(.appBody(12, relativeTo: .caption))
+                  .foregroundStyle(AppColor.textSecondary)
+                  .lineLimit(2)
+            }
+
+            Spacer(minLength: 12)
+
+            Button {
+               isShowingCustomSoundHelp = true
+            } label: {
+               Image(systemName: "questionmark.circle.fill")
+                  .font(.appDisplay(24, relativeTo: .title3))
+                  .foregroundStyle(AppColor.iconAccent)
+                  .frame(width: 42, height: 42)
+                  .background(AppColor.actionPrimary.opacity(0.14), in: Circle())
+            }
+            .buttonStyle(.plain)
+         }
+
+         HStack(spacing: 10) {
+            Button {
+               isImportingNotificationSound = true
+            } label: {
+               Label(hasCustomNotificationSound ? "Replace" : "Import", systemImage: "icloud.and.arrow.down.fill")
+                  .font(.appButton(12, relativeTo: .caption))
+                  .foregroundStyle(AppColor.onAction)
+                  .padding(.horizontal, 12)
+                  .padding(.vertical, 8)
+                  .background(AppColor.actionPrimary, in: Capsule())
+            }
+            .buttonStyle(.plain)
+
+            if hasCustomNotificationSound {
+               Button {
+                  selectNotificationSoundOption(.custom)
+               } label: {
+                  Label("Use Custom", systemImage: resolvedNotificationSoundOption == .custom ? "checkmark.circle.fill" : "speaker.wave.2.fill")
+                     .font(.appButton(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.actionPrimary)
+                     .padding(.horizontal, 12)
+                     .padding(.vertical, 8)
+                     .background(AppColor.actionPrimary.opacity(0.12), in: Capsule())
+               }
+               .buttonStyle(.plain)
+
+               Button {
+                  NotificationSoundLibrary.clearSelectedCustomSound()
+                  withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
+                     notificationSoundOptionRaw = AppPreferences.NotificationSoundOption.defaultSound.rawValue
+                  }
+                  notificationSoundPreviewStatus = String(localized: "Custom sound removed.")
+                  NotificationManager.shared.scheduleRefresh()
+               } label: {
+                  Label("Remove", systemImage: "trash.fill")
+                     .font(.appButton(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.actionDestructive)
+                     .padding(.horizontal, 12)
+                     .padding(.vertical, 8)
+                     .background(AppColor.actionDestructive.opacity(0.12), in: Capsule())
+               }
+               .buttonStyle(.plain)
+
+               Spacer(minLength: 0)
+            }
+         }
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 15)
+      .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 20))
+      .animation(reduceMotion ? nil : AppAnimation.snappyStandard, value: customNotificationSoundName)
    }
 
    private var notificationSoundPreviewButton: some View {
@@ -1546,11 +1805,76 @@ struct SettingsView: View {
       .buttonStyle(.plain)
    }
 
+   private var completionSoundDropdown: some View {
+      Menu {
+         ForEach(AppPreferences.CompletionSoundOption.allCases) { option in
+            Button {
+               withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
+                  completionSoundOptionRaw = option.rawValue
+               }
+            } label: {
+               Label(
+                  option.title,
+                  systemImage: option == resolvedCompletionSoundOption ? "checkmark.circle.fill" : "circle"
+               )
+            }
+         }
+      } label: {
+         VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 14) {
+               Image(systemName: "checkmark.seal.fill")
+                  .font(.appDisplay(16, relativeTo: .subheadline))
+                  .foregroundStyle(AppColor.actionSuccess)
+                  .frame(width: 22, height: 22)
+
+               VStack(alignment: .leading, spacing: 5) {
+                  Text("Completion Sound")
+                     .font(.appBodyStrong(15, relativeTo: .subheadline))
+                     .foregroundStyle(AppColor.textPrimary)
+
+                  Text(resolvedCompletionSoundOption.detail)
+                     .font(.appBody(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.textSecondary)
+               }
+
+               Spacer(minLength: 12)
+
+               HStack(spacing: 8) {
+                  Text(resolvedCompletionSoundOption.title)
+                     .font(.appBadge(12, relativeTo: .caption))
+                     .foregroundStyle(AppColor.onAction)
+                     .padding(.horizontal, 10)
+                     .padding(.vertical, 6)
+                     .background(AppColor.actionSuccess, in: Capsule())
+                     .contentTransition(.numericText())
+
+                  Image(systemName: "chevron.up.chevron.down")
+                     .font(.appBodyStrong(11, relativeTo: .caption))
+                     .foregroundStyle(AppColor.textSecondary)
+               }
+            }
+         }
+         .padding(.horizontal, 16)
+         .padding(.vertical, 15)
+         .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 20))
+      }
+      .buttonStyle(.plain)
+      .contentShape(.rect(cornerRadius: 20))
+      .accessibilityLabel("Completion Sound")
+      .accessibilityValue(resolvedCompletionSoundOption.title)
+      .accessibilityInputLabels([
+         Text("Completion Sound"),
+         Text("Done Sound"),
+         Text("Task Complete Sound")
+      ])
+      .animation(reduceMotion ? nil : AppAnimation.snappyStandard, value: completionSoundOptionRaw)
+   }
+
    private var badgePolicyDropdown: some View {
       Menu {
          ForEach(AppPreferences.AppIconBadgePolicy.allCases) { policy in
             Button {
-               withAnimation(AppAnimation.snappyStandard) {
+               withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
                   appIconBadgePolicyRaw = policy.rawValue
                }
                NotificationManager.shared.scheduleRefresh()
@@ -1602,13 +1926,13 @@ struct SettingsView: View {
       }
       .buttonStyle(.plain)
       .contentShape(.rect(cornerRadius: 20))
-      .animation(AppAnimation.snappyStandard, value: appIconBadgePolicyRaw)
+      .animation(reduceMotion ? nil : AppAnimation.snappyStandard, value: appIconBadgePolicyRaw)
    }
 
    private var settingsSortDropdown: some View {
       VStack(alignment: .leading, spacing: 10) {
          Button {
-            withAnimation(AppAnimation.snappyStandard) {
+            withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
                isSortMenuExpanded.toggle()
             }
          } label: {
@@ -1651,7 +1975,7 @@ struct SettingsView: View {
          .clipped()
          .allowsHitTesting(isSortMenuExpanded)
       }
-      .animation(AppAnimation.snappyStandard, value: isSortMenuExpanded)
+      .animation(reduceMotion ? nil : AppAnimation.snappyStandard, value: isSortMenuExpanded)
    }
 
    private func compactSortOptionsRow(
@@ -1727,7 +2051,7 @@ struct SettingsView: View {
          toDoListSortOption = option.rawValue
          isToDoListSortReversed = false
       }
-      withAnimation(AppAnimation.snappyFast) {
+      withAnimation(reduceMotion ? nil : AppAnimation.snappyFast) {
          isSortMenuExpanded = false
       }
    }
@@ -1735,7 +2059,7 @@ struct SettingsView: View {
    private var timeSourceDropdown: some View {
       VStack(alignment: .leading, spacing: 10) {
          Button {
-            withAnimation(AppAnimation.snappyStandard) {
+            withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
                isTimeSourceMenuExpanded.toggle()
             }
          } label: {
@@ -1770,7 +2094,7 @@ struct SettingsView: View {
             ForEach(AppTimeSource.allCases) { source in
                Button {
                   appTimeSourceRaw = source.rawValue
-                  withAnimation(AppAnimation.snappyFast) {
+                  withAnimation(reduceMotion ? nil : AppAnimation.snappyFast) {
                      isTimeSourceMenuExpanded = false
                   }
                } label: {
@@ -1818,13 +2142,13 @@ struct SettingsView: View {
             }
          }
       }
-      .animation(AppAnimation.snappyStandard, value: isTimeSourceMenuExpanded)
+      .animation(reduceMotion ? nil : AppAnimation.snappyStandard, value: isTimeSourceMenuExpanded)
    }
 
    private var doneSwipeActionDropdown: some View {
       VStack(alignment: .leading, spacing: 10) {
          Button {
-            withAnimation(AppAnimation.snappyStandard) {
+            withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
                isDoneSwipeMenuExpanded.toggle()
             }
          } label: {
@@ -1855,7 +2179,7 @@ struct SettingsView: View {
             ForEach(AppPreferences.DoneSwipePrimaryAction.allCases) { action in
                Button {
                   doneSwipePrimaryActionRaw = action.rawValue
-                  withAnimation(AppAnimation.snappyFast) {
+                  withAnimation(reduceMotion ? nil : AppAnimation.snappyFast) {
                      isDoneSwipeMenuExpanded = false
                   }
                } label: {
@@ -1889,7 +2213,7 @@ struct SettingsView: View {
          .clipped()
          .allowsHitTesting(isDoneSwipeMenuExpanded)
       }
-      .animation(AppAnimation.snappyStandard, value: isDoneSwipeMenuExpanded)
+      .animation(reduceMotion ? nil : AppAnimation.snappyStandard, value: isDoneSwipeMenuExpanded)
    }
 
    private var reminderIntentSoundGuide: some View {
@@ -1914,6 +2238,7 @@ struct SettingsView: View {
 
 private struct ThemeSettingsScreen: View {
    @Environment(\.dismiss) private var dismiss
+   @Environment(\.appReduceMotion) private var reduceMotion
    @Binding var appThemeRaw: String
    @Binding var appAppearanceModeRaw: String
 
@@ -1969,7 +2294,7 @@ private struct ThemeSettingsScreen: View {
       .padding(16)
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 24))
-      .animation(AppAnimation.snappyStandard, value: appAppearanceModeRaw)
+      .animation(reduceMotion ? nil : AppAnimation.snappyStandard, value: appAppearanceModeRaw)
    }
 
    private var preferredAppearanceColorScheme: ColorScheme? {
@@ -1987,7 +2312,7 @@ private struct ThemeSettingsScreen: View {
       let isSelected = mode == resolvedAppearanceMode
 
       return Button {
-         withAnimation(AppAnimation.snappyStandard) {
+         withAnimation(reduceMotion ? nil : AppAnimation.snappyStandard) {
             appAppearanceModeRaw = mode.rawValue
          }
       } label: {
@@ -2113,5 +2438,121 @@ private struct ThemeSettingsScreen: View {
          }
       }
       .buttonStyle(.plain)
+   }
+}
+
+private struct CustomNotificationSoundHelpHeightKey: PreferenceKey {
+   static var defaultValue: CGFloat = 520
+
+   static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+      value = nextValue()
+   }
+}
+
+private struct CustomNotificationSoundHelpView: View {
+   @Environment(\.dismiss) private var dismiss
+   @Environment(\.openURL) private var openURL
+   @State private var contentHeight: CGFloat = 520
+
+   private let appleFilesHelpURL = URL(string: "https://support.apple.com/en-us/102570")!
+
+   var body: some View {
+      VStack(alignment: .leading, spacing: 16) {
+         HStack(alignment: .top, spacing: 14) {
+            Image(systemName: "waveform.circle.fill")
+               .font(.appDisplay(34, relativeTo: .largeTitle))
+               .foregroundStyle(AppColor.iconAccent)
+
+            VStack(alignment: .leading, spacing: 6) {
+               Text("Custom reminder sounds")
+                  .font(.appDisplay(26, relativeTo: .title2))
+                  .foregroundStyle(AppColor.textPrimary)
+
+               Text("Pick a sound from Files or iCloud Drive. toDō selects it and sends a quick sound test right away.")
+                  .font(.appBody(15, relativeTo: .body))
+                  .foregroundStyle(AppColor.textSecondary)
+                  .fixedSize(horizontal: false, vertical: true)
+            }
+         }
+
+         VStack(alignment: .leading, spacing: 10) {
+            Text("Simple steps")
+               .font(.appDisplay(22, relativeTo: .title3))
+               .foregroundStyle(AppColor.textPrimary)
+
+            instructionRow("1.circle.fill", "Save or move the audio file into Files or iCloud Drive.")
+            instructionRow("2.circle.fill", "Tap Import in toDō, choose the file, then listen for the test.")
+            instructionRow("3.circle.fill", "If the test sounds right, future reminders use that sound.")
+         }
+         .padding(18)
+         .background(AppColor.actionPrimary.opacity(0.18), in: .rect(cornerRadius: 24))
+         .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+               .stroke(AppColor.actionPrimary.opacity(0.36), lineWidth: 1)
+         }
+
+         VStack(alignment: .leading, spacing: 10) {
+            Text("Deeper look")
+               .font(.appDisplay(18, relativeTo: .headline))
+               .foregroundStyle(AppColor.textSecondary)
+
+            Text("Supported imports: MP3, M4A, CAF, WAV, AIFF, and AIF. Use audio that is 30 seconds or shorter and smaller than 5 MB. toDō stores a local notification-ready copy so iOS can play it even when the app is closed.")
+               .font(.appBody(14, relativeTo: .callout))
+               .foregroundStyle(AppColor.textSecondary)
+               .fixedSize(horizontal: false, vertical: true)
+         }
+         .padding(16)
+         .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 24))
+
+         Button {
+            openURL(appleFilesHelpURL)
+         } label: {
+            Label("How to find files in iCloud Drive", systemImage: "arrow.up.right.circle.fill")
+               .font(.appButton(15, relativeTo: .body))
+               .foregroundStyle(AppColor.onAction)
+               .frame(maxWidth: .infinity)
+               .padding(.vertical, 13)
+               .background(AppColor.actionPrimary, in: .rect(cornerRadius: 18))
+         }
+         .buttonStyle(.plain)
+
+         Button {
+            dismiss()
+         } label: {
+            Text("Close")
+               .font(.appButton(15, relativeTo: .body))
+               .foregroundStyle(AppColor.textPrimary)
+               .frame(maxWidth: .infinity)
+               .padding(.vertical, 13)
+               .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 18))
+         }
+         .buttonStyle(.plain)
+      }
+      .padding(22)
+      .background {
+         GeometryReader { proxy in
+            Color.clear
+               .preference(key: CustomNotificationSoundHelpHeightKey.self, value: proxy.size.height)
+         }
+      }
+      .onPreferenceChange(CustomNotificationSoundHelpHeightKey.self) { height in
+         contentHeight = min(max(height, 360), 700)
+      }
+      .presentationDetents([.height(contentHeight)])
+      .appBaseTypography()
+   }
+
+   private func instructionRow(_ icon: String, _ text: LocalizedStringKey) -> some View {
+      HStack(alignment: .top, spacing: 10) {
+         Image(systemName: icon)
+            .font(.appBodyStrong(17, relativeTo: .body))
+            .foregroundStyle(AppColor.iconAccent)
+            .frame(width: 22)
+
+         Text(text)
+            .font(.appBody(14, relativeTo: .callout))
+            .foregroundStyle(AppColor.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+      }
    }
 }

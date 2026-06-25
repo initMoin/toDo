@@ -29,6 +29,10 @@
 	<string>364801019729-mhh0dbh0ivdol5fgulfvcj6rjb7hbqhv.apps.googleusercontent.com</string>
 	<key>GIDServerClientID</key>
 	<string>364801019729-bp9di92ga9uahndkn72p1r028kpug873.apps.googleusercontent.com</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>toDō uses the microphone when you choose to speak a toDō.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>toDō transcribes your spoken toDō so you can review and save it.</string>
 	<key>SUPABASE_PUBLISHABLE_KEY</key>
 	<string>sb_publishable_CqPxCXnr8KBizWsYVQLOxQ_MHtJFgQy</string>
 	<key>SUPABASE_REDIRECT_URL</key>

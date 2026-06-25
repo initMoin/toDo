@@ -294,6 +294,9 @@ struct TrashView: View {
       VStack(spacing: 0) {
          Divider()
          HStack(spacing: 0) {
+            bulkActionButton(systemName: isEveryVisibleToDoSelected ? "checkmark.circle.fill" : "checkmark.circle", label: isEveryVisibleToDoSelected ? "Clear" : "All", disabled: trashedToDos.isEmpty) {
+               toggleSelectAll()
+            }
             bulkActionButton(systemName: "arrow.uturn.backward.circle", label: "Restore", disabled: selectedToDoIDs.isEmpty) {
                restoreSelected()
             }
@@ -306,6 +309,11 @@ struct TrashView: View {
       }
       .frame(maxWidth: contentMaxWidth)
       .frame(maxWidth: .infinity)
+   }
+
+   private var isEveryVisibleToDoSelected: Bool {
+      let visibleIDs = Set(trashedToDos.map(\.id))
+      return !visibleIDs.isEmpty && selectedToDoIDs.isSuperset(of: visibleIDs)
    }
 
    private func bulkActionButton(systemName: String, label: String, isDestructive: Bool = false, disabled: Bool, action: @escaping () -> Void) -> some View {
@@ -322,6 +330,11 @@ struct TrashView: View {
       }
       .buttonStyle(.plain)
       .disabled(disabled)
+      .accessibilityLabel(LocalizedStringKey(label))
+      .accessibilityInputLabels([
+         Text(LocalizedStringKey(label)),
+         Text("\(label) trashed toDōs")
+      ])
    }
 
    private func toggleSelection(for toDo: ToDo) {
@@ -330,6 +343,16 @@ struct TrashView: View {
          selectedToDoIDs.remove(toDo.id)
       } else {
          selectedToDoIDs.insert(toDo.id)
+      }
+   }
+
+   private func toggleSelectAll() {
+      HapticFeedbackService.play(.selection)
+      let visibleIDs = Set(trashedToDos.map(\.id))
+      if isEveryVisibleToDoSelected {
+         selectedToDoIDs.subtract(visibleIDs)
+      } else {
+         selectedToDoIDs.formUnion(visibleIDs)
       }
    }
 

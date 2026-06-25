@@ -98,7 +98,9 @@ final class WidgetSnapshotService {
             }
 
             toDo.transition(to: .done)
+            #if !os(macOS)
             LiveActivityService.shared.endActivity(for: toDo)
+            #endif
             handledRequestIDs.insert(request.id)
             didChange = true
          }
@@ -106,7 +108,9 @@ final class WidgetSnapshotService {
          if didChange {
             try context.save()
             NotificationManager.shared.scheduleRefresh()
+            #if !os(macOS)
             LiveActivityService.shared.refresh(from: context)
+            #endif
             SyncCoordinator.shared.scheduleLocalSync()
          }
 
@@ -139,7 +143,11 @@ final class WidgetSnapshotService {
       let now = Date()
       let calendar = Calendar.current
       let syncMode = SyncCoordinator.shared.effectiveSyncMode
+      #if os(macOS)
+      let ownerUserID = syncMode == .syncEverywhere ? ToDoMacAuthStore.shared.currentUserID : nil
+      #else
       let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.scopedOwnerUserID : nil
+      #endif
       let focusFilterMode = UserDefaults.standard.string(forKey: AppPreferences.Keys.toDoFocusFilterMode) ?? "all"
       let scopedToDos = toDos.filter { $0.ownerUserID == ownerUserID }
       let activeToDos = scopedToDos.filter { $0.lifecycleState == .active && $0.matchesFocusFilter(modeRawValue: focusFilterMode) }

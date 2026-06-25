@@ -317,7 +317,9 @@ final class SyncCoordinator: ObservableObject {
       currentSyncPhase = .listeningForUpdates
       syncActivityState = .synced
       userDefaults.set(date.timeIntervalSince1970, forKey: AppPreferences.Keys.lastSuccessfulSyncAt)
+      #if !os(macOS)
       WatchConnectivityService.shared.refreshSnapshot()
+      #endif
       log("Sync completed")
    }
 

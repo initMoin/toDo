@@ -12,6 +12,8 @@ import SwiftUI
 struct ToDoWidgetBundle: WidgetBundle {
     var body: some Widget {
         ToDoWidget()
+        #if !os(macOS)
         ToDoWidgetLiveActivity()
+        #endif
     }
 }

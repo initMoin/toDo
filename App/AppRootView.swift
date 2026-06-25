@@ -4,7 +4,9 @@ import Combine
 
 struct AppRootView: View {
    fileprivate enum AppDestination: Hashable {
+      case toDos
       case settings
+      case stats
    }
 
    private enum AppSheet: Identifiable {
@@ -21,6 +23,7 @@ struct AppRootView: View {
 	   @EnvironmentObject private var toDoPresentationService: ToDoPresentationService
 	   @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
 	   @Environment(\.modelContext) private var modelContext
+	   @Environment(\.appReduceMotion) private var reduceMotion
 	   @Query private var screenshotToDos: [ToDo]
 	   @State private var navigationCoordinator = NavigationCoordinator.shared
 	   @State private var navigationPath = NavigationPath()
@@ -54,13 +57,36 @@ struct AppRootView: View {
 	            HomeView(
 	               onCreateToDo: {
 	                  toDoPresentationService.create(preselectedTagID: nil)
-	               }
+	               },
+	               onShowToDos: { navigate(to: .toDos) },
+	               onShowSettings: { navigate(to: .settings) },
+	               onShowStats: { navigate(to: .stats) }
 	            )
 	            .navigationDestination(for: AppDestination.self) { destination in
 	               switch destination {
+	               case .toDos:
+	                  ToDosView(
+	                     onCreateToDo: { preselectedTagID in
+	                        toDoPresentationService.create(preselectedTagID: preselectedTagID)
+	                     },
+	                     onViewToDo: { toDo in
+	                        toDoPresentationService.view(toDo)
+	                     },
+	                     onEditToDo: { toDo in
+	                        toDoPresentationService.edit(toDo)
+	                     }
+	                  )
 	               case .settings:
 	                  SettingsView()
+	               case .stats:
+	                  StatsView(ownerUserID: visibleOwnerUserID)
 	               }
+	            }
+	         }
+	         .transaction { transaction in
+	            if reduceMotion {
+	               transaction.animation = nil
+	               transaction.disablesAnimations = true
 	            }
 	         }
 	      }
@@ -184,7 +210,7 @@ struct AppRootView: View {
       case .toDo(let localIdentifier, let cloudID):
          openRoutedToDo(localIdentifier: localIdentifier, cloudID: cloudID)
       case .sync:
-         navigationPath.append(AppDestination.settings)
+         navigate(to: .settings)
          navigationCoordinator.notificationRoute = .none
       case .circle, .none:
          break
@@ -235,6 +261,19 @@ struct AppRootView: View {
 
       return nil
    }
+
+   private var visibleOwnerUserID: UUID? {
+      AppPreferences.preferredSyncMode() == .syncEverywhere ? supabaseAuthStore.scopedOwnerUserID : nil
+   }
+
+   private func navigate(to destination: AppDestination) {
+      var transaction = Transaction()
+      transaction.animation = reduceMotion ? nil : AppAnimation.easeStandard
+      transaction.disablesAnimations = reduceMotion
+      withTransaction(transaction) {
+         navigationPath.append(destination)
+      }
+   }
 }
 
 private struct HomeView: View {
@@ -259,11 +298,25 @@ private struct HomeView: View {
 
    @Query private var toDos: [ToDo]
    @Environment(\.colorScheme) private var colorScheme
-   @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
-   @EnvironmentObject private var toDoPresentationService: ToDoPresentationService
    @AppStorage("todo.homePreviewFilter") private var previewFilterRawValue = PreviewFilter.dueSoon.rawValue
 
    let onCreateToDo: () -> Void
+   let onShowToDos: () -> Void
+   let onShowSettings: () -> Void
+   let onShowStats: () -> Void
+
+   init(
+      onCreateToDo: @escaping () -> Void,
+      onShowToDos: @escaping () -> Void = {},
+      onShowSettings: @escaping () -> Void = {},
+      onShowStats: @escaping () -> Void = {}
+   ) {
+      self.onCreateToDo = onCreateToDo
+      self.onShowToDos = onShowToDos
+      self.onShowSettings = onShowSettings
+      self.onShowStats = onShowStats
+   }
+
    var body: some View {
       ZStack {
          AppColor.surface
@@ -292,19 +345,22 @@ private struct HomeView: View {
                .font(.appDisplay(15, relativeTo: .subheadline))
                .foregroundStyle(AppColor.textSecondary)
 
-            Text("toDō")
-               .font(.appBrand(58, relativeTo: .largeTitle))
-               .foregroundStyle(AppColor.textPrimary)
+            homeBrandWordmark
          }
 
          Spacer(minLength: 16)
 
-         NavigationLink(value: AppRootView.AppDestination.settings) {
+         Button(action: onShowSettings) {
             Image(systemName: "gearshape.fill")
                .font(.appDisplay(18, relativeTo: .headline))
          }
          .buttonStyle(AppCircleActionButtonStyle(intent: .neutral, size: 46, tint: AppColor.main, foreground: AppColor.brandYellowForeground(for: colorScheme)))
          .accessibilityLabel("Settings")
+         .accessibilityInputLabels([
+            Text("Settings"),
+            Text("Open Settings"),
+            Text("toDō Settings")
+         ])
       }
    }
 
@@ -325,6 +381,9 @@ private struct HomeView: View {
 
                   Text("New toDō")
                      .font(.appButton(18, relativeTo: .headline))
+                     .lineLimit(1)
+                     .minimumScaleFactor(0.72)
+                     .allowsTightening(true)
                }
                .foregroundStyle(buttonForeground)
                .padding(.horizontal, 18)
@@ -333,23 +392,14 @@ private struct HomeView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("home.newToDo")
+            .accessibilityLabel("New toDō")
+            .accessibilityInputLabels([
+               Text("New toDō"),
+               Text("Create toDō"),
+               Text("Add toDō")
+            ])
 
-            NavigationLink {
-               ToDosView(
-                  onCreateToDo: { preselectedTagID in
-                     AppLog.info("Home routed ToDosView create request")
-                     toDoPresentationService.create(preselectedTagID: preselectedTagID)
-                  },
-                  onViewToDo: { toDo in
-                     AppLog.info("Home routed ToDosView view request")
-                     toDoPresentationService.view(toDo)
-                  },
-                  onEditToDo: { toDo in
-                     AppLog.info("Home routed ToDosView edit request")
-                     toDoPresentationService.edit(toDo)
-                  }
-               )
-            } label: {
+            Button(action: onShowToDos) {
                HStack(spacing: 7) {
                   Image("checkit")
                      .renderingMode(.template)
@@ -362,9 +412,11 @@ private struct HomeView: View {
                      .font(.appButton(18, relativeTo: .headline))
                      .foregroundStyle(buttonForeground)
                      .lineLimit(1)
-                     .minimumScaleFactor(0.82)
+                     .minimumScaleFactor(0.58)
+                     .allowsTightening(true)
+                     .layoutPriority(2)
 
-                  Spacer(minLength: 2)
+                  Spacer(minLength: 0)
 
                   if activeToDos.count > 0 {
                      Text(AppLocalization.numberString(activeToDos.count))
@@ -386,6 +438,12 @@ private struct HomeView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("home.seeAllToDos")
+            .accessibilityLabel("See all toDōs")
+            .accessibilityInputLabels([
+               Text("See all toDōs"),
+               Text("All toDōs"),
+               Text("Open toDōs")
+            ])
          }
          .buttonStyle(.plain)
       }
@@ -405,9 +463,7 @@ private struct HomeView: View {
 
             Spacer(minLength: 12)
 
-            NavigationLink {
-               StatsView(ownerUserID: visibleOwnerUserID)
-            } label: {
+            Button(action: onShowStats) {
                HStack(spacing: 7) {
                   Text("Stats")
                      .font(.appButton(15, relativeTo: .subheadline))
@@ -421,6 +477,12 @@ private struct HomeView: View {
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("home.stats")
+            .accessibilityLabel("Stats")
+            .accessibilityInputLabels([
+               Text("Stats"),
+               Text("Open Stats"),
+               Text("Show Stats")
+            ])
          }
 
          LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
@@ -436,6 +498,19 @@ private struct HomeView: View {
 
    private var homeActionForeground: Color {
       AppColor.brandYellowForeground(for: colorScheme)
+   }
+
+   private var homeBrandWordmark: some View {
+      HStack(spacing: 0) {
+         Text("toD")
+            .font(.appBrand(58, relativeTo: .largeTitle))
+            .foregroundStyle(AppColor.textPrimary)
+
+         Text("ō")
+            .font(.appBrand(58, relativeTo: .largeTitle))
+            .foregroundStyle(AppColor.main)
+      }
+      .accessibilityLabel("toDō")
    }
 
    private var homeToDoPreview: some View {
@@ -535,9 +610,6 @@ private struct HomeView: View {
       return Array(candidates.prefix(3))
    }
 
-   private var visibleOwnerUserID: UUID? {
-      AppPreferences.preferredSyncMode() == .syncEverywhere ? supabaseAuthStore.scopedOwnerUserID : nil
-   }
 }
 
 private struct HomePlusMark: View {
@@ -555,6 +627,8 @@ private struct HomePlusMark: View {
 }
 
 private struct HomeMetricCard: View {
+   @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
+
    let title: LocalizedStringKey
    let value: Int
    let tint: Color
@@ -582,10 +656,21 @@ private struct HomeMetricCard: View {
       .padding(.horizontal, 14)
       .padding(.vertical, 12)
       .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 18))
+      .overlay {
+         if differentiatesWithoutColor {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+               .strokeBorder(
+                  AppColor.textPrimary.opacity(0.72),
+                  style: StrokeStyle(lineWidth: 2, dash: [5, 4])
+               )
+         }
+      }
    }
 }
 
 private struct HomeCompletedSummary: View {
+   @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
+
    let value: Int
 
    var body: some View {
@@ -609,10 +694,18 @@ private struct HomeCompletedSummary: View {
       .padding(.horizontal, 14)
       .padding(.vertical, 11)
       .background(AppColor.surfaceElevated.opacity(0.72), in: .rect(cornerRadius: 18))
+      .overlay {
+         if differentiatesWithoutColor {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+               .strokeBorder(AppColor.textPrimary.opacity(0.72), lineWidth: 2)
+         }
+      }
    }
 }
 
 private struct HomeToDoPreviewRow: View {
+   @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
+
    let toDo: ToDo
 
    var body: some View {
@@ -637,11 +730,20 @@ private struct HomeToDoPreviewRow: View {
          Spacer(minLength: 12)
 
          if toDo.reminderIntent == .timeSensitive {
-            Image(systemName: "flame.fill")
-               .font(.appDisplay(13, relativeTo: .caption))
-               .foregroundStyle(AppColor.actionDestructive)
-               .frame(width: 28, height: 28)
-               .background(AppColor.actionDestructive.opacity(0.12), in: Circle())
+            if differentiatesWithoutColor {
+               Label("Time-sensitive", systemImage: "flame.fill")
+                  .font(.appBodyStrong(11, relativeTo: .caption2))
+                  .foregroundStyle(AppColor.textPrimary)
+                  .padding(.horizontal, 8)
+                  .padding(.vertical, 5)
+                  .background(AppColor.surfaceMuted, in: Capsule())
+            } else {
+               Image(systemName: "flame.fill")
+                  .font(.appDisplay(13, relativeTo: .caption))
+                  .foregroundStyle(AppColor.actionDestructive)
+                  .frame(width: 28, height: 28)
+                  .background(AppColor.actionDestructive.opacity(0.12), in: Circle())
+            }
          }
       }
       .padding(.horizontal, 15)

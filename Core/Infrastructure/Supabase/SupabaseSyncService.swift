@@ -39,6 +39,7 @@ private struct SupabaseToDoRecord: Codable {
    let recurrenceCount: Int?
    let recurrenceAnchorAt: Date?
    let recurrenceEndAt: Date?
+   let completeWhenAllNanoDosDone: Bool?
    let sortPosition: Double?
    
    enum CodingKeys: String, CodingKey {
@@ -60,6 +61,7 @@ private struct SupabaseToDoRecord: Codable {
       case recurrenceCount = "recurrence_count"
       case recurrenceAnchorAt = "recurrence_anchor_at"
       case recurrenceEndAt = "recurrence_end_at"
+      case completeWhenAllNanoDosDone = "complete_when_all_nanodos_done"
       case sortPosition = "sort_position"
    }
 }
@@ -151,6 +153,7 @@ private struct SupabaseToDoUpsertPayload: Encodable {
    let recurrenceCount: Int?
    let recurrenceAnchorAt: Date?
    let recurrenceEndAt: Date?
+   let completeWhenAllNanoDosDone: Bool
    let sortPosition: Double?
    
    enum CodingKeys: String, CodingKey {
@@ -172,6 +175,7 @@ private struct SupabaseToDoUpsertPayload: Encodable {
       case recurrenceCount = "recurrence_count"
       case recurrenceAnchorAt = "recurrence_anchor_at"
       case recurrenceEndAt = "recurrence_end_at"
+      case completeWhenAllNanoDosDone = "complete_when_all_nanodos_done"
       case sortPosition = "sort_position"
    }
 }
@@ -260,6 +264,7 @@ enum SupabaseSchemaContractProbe {
          recurrenceCount: nil,
          recurrenceAnchorAt: nil,
          recurrenceEndAt: nil,
+         completeWhenAllNanoDosDone: false,
          sortPosition: nil
       )
    }
@@ -894,9 +899,7 @@ final class SupabaseSyncService {
             
             hasHydratedActiveUser = true
             needsLocalSyncAfterHydration = false
-            NotificationManager.shared.scheduleRefresh()
-            WidgetSnapshotService.shared.writeSnapshot(from: context)
-            LiveActivityService.shared.refresh(from: context)
+            refreshPlatformSurfaces(from: context)
             SyncCoordinator.shared.completeSyncOperation()
             return true
          }
@@ -925,9 +928,7 @@ final class SupabaseSyncService {
             SyncCoordinator.shared.updateSyncPhase(.applyingRemoteChanges)
             try await apply(remoteSnapshot: mergedRemoteSnapshot, in: context, ownerUserID: userID)
             hasHydratedActiveUser = true
-            NotificationManager.shared.scheduleRefresh()
-            WidgetSnapshotService.shared.writeSnapshot(from: context)
-            LiveActivityService.shared.refresh(from: context)
+            refreshPlatformSurfaces(from: context)
             SyncCoordinator.shared.completeSyncOperation()
             return true
          }
@@ -959,9 +960,7 @@ final class SupabaseSyncService {
          try await apply(remoteSnapshot: reconciledRemoteSnapshot, in: context, ownerUserID: userID)
          
          hasHydratedActiveUser = true
-         NotificationManager.shared.scheduleRefresh()
-         WidgetSnapshotService.shared.writeSnapshot(from: context)
-         LiveActivityService.shared.refresh(from: context)
+         refreshPlatformSurfaces(from: context)
          SyncCoordinator.shared.completeSyncOperation()
          return true
       } catch {
@@ -1018,9 +1017,7 @@ final class SupabaseSyncService {
          defer { isApplyingRemoteSnapshot = false }
          SyncCoordinator.shared.updateSyncPhase(.applyingRemoteChanges)
          try await apply(remoteSnapshot: refreshedRemoteSnapshot, in: context, ownerUserID: userID)
-         NotificationManager.shared.scheduleRefresh()
-         WidgetSnapshotService.shared.writeSnapshot(from: context)
-         LiveActivityService.shared.refresh(from: context)
+         refreshPlatformSurfaces(from: context)
          SyncCoordinator.shared.completeSyncOperation()
       } catch {
          if error is CancellationError { return }
@@ -1057,9 +1054,7 @@ final class SupabaseSyncService {
                style: .success
             )
          }
-         NotificationManager.shared.scheduleRefresh()
-         WidgetSnapshotService.shared.writeSnapshot(from: context)
-         LiveActivityService.shared.refresh(from: context)
+         refreshPlatformSurfaces(from: context)
          SyncCoordinator.shared.completeSyncOperation()
       } catch {
          if error is CancellationError { return }
@@ -1241,9 +1236,6 @@ final class SupabaseSyncService {
             cloudID: clonedCloudID,
             ownerUserID: userID
          )
-         //         if sourceTag.cloudID == nil {
-         //            sourceTag.cloudID = clonedTag.cloudID
-         //         }
          context.insert(clonedTag)
          ownedTagsByName[sourceTag.displayName] = clonedTag
          clonedTagsBySourceID[sourceTag.id] = clonedTag
@@ -1296,6 +1288,7 @@ final class SupabaseSyncService {
             recurrenceEndDate: sourceToDo.recurrenceEndDate,
             lifecycleState: sourceToDo.lifecycleState,
             isDone: sourceToDo.isDone,
+            completeWhenAllNanoDosDone: sourceToDo.completeWhenAllNanoDosDone,
             nanoDos: [],
             tag: nil,
             tags: [],
@@ -1356,33 +1349,6 @@ final class SupabaseSyncService {
    @discardableResult
    private func ensureOwnershipAndCloudIDs(in snapshot: LocalSnapshot, userID: UUID) -> Bool {
       var didChange = false
-      
-      //      for tag in snapshot.tags where tag.cloudID == nil {
-      //         tag.cloudID = UUID()
-      //         didChange = true
-      //      }
-      //      for tag in snapshot.tags where tag.ownerUserID != userID {
-      //         tag.ownerUserID = userID
-      //         didChange = true
-      //      }
-      //
-      //      for toDo in snapshot.toDos where toDo.cloudID == nil {
-      //         toDo.cloudID = UUID()
-      //         didChange = true
-      //      }
-      //      for toDo in snapshot.toDos where toDo.ownerUserID != userID {
-      //         toDo.ownerUserID = userID
-      //         didChange = true
-      //      }
-      //
-      //      for nanoDo in snapshot.nanoDos where nanoDo.cloudID == nil {
-      //         nanoDo.cloudID = UUID()
-      //         didChange = true
-      //      }
-      //      for nanoDo in snapshot.nanoDos where nanoDo.ownerUserID != userID {
-      //         nanoDo.ownerUserID = userID
-      //         didChange = true
-      //      }
       
       for tag in snapshot.tags {
          if tag.ownerUserID != userID {
@@ -1720,6 +1686,7 @@ final class SupabaseSyncService {
             dueDate: record.dueAt,
             reminderIntent: ToDoReminderIntent(rawValue: record.reminderIntent) ?? .soft,
             lifecycleState: ToDoState(rawValue: record.lifecycleState) ?? .active,
+            completeWhenAllNanoDosDone: record.completeWhenAllNanoDosDone ?? false,
             cloudID: record.id,
             ownerUserID: record.userID
          )
@@ -1787,6 +1754,7 @@ final class SupabaseSyncService {
             toDo.clearRecurrence()
          }
          toDo.transition(to: ToDoState(rawValue: record.lifecycleState) ?? .active)
+         toDo.completeWhenAllNanoDosDone = record.completeWhenAllNanoDosDone ?? false
          toDo.updatedAt = remoteUpdatedAt
          toDo.lastSyncedUpdatedAt = remoteUpdatedAt
          remoteAppliedToDoIDs.insert(record.id)
@@ -1979,7 +1947,7 @@ final class SupabaseSyncService {
       for userID: UUID,
       remoteSnapshot: SupabaseRemoteSnapshot
    ) async throws -> LocalUploadResult {
-      let defaultTagNames = Set(TagManagementView.defaultTagNames)
+      let defaultTagNames = Set(Tag.defaultTagNames)
       let remoteTagsByID = Dictionary(remoteSnapshot.tags.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
       let remoteToDosByID = Dictionary(remoteSnapshot.toDos.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
       let remoteNanoDosByID = Dictionary(remoteSnapshot.nanoDos.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
@@ -2035,6 +2003,7 @@ final class SupabaseSyncService {
             recurrenceCount: toDo.recurrenceMode == .finite ? toDo.recurrenceCount : nil,
             recurrenceAnchorAt: toDo.recurrenceAnchorDate ?? toDo.dueDate,
             recurrenceEndAt: toDo.recurrenceEndDate,
+            completeWhenAllNanoDosDone: toDo.completeWhenAllNanoDosDone,
             sortPosition: nil
          )
       }
@@ -2164,6 +2133,14 @@ final class SupabaseSyncService {
          .from("todo_tags")
          .upsert(pairs, onConflict: "todo_id,tag_id")
          .execute()
+   }
+
+   private func refreshPlatformSurfaces(from context: ModelContext) {
+      NotificationManager.shared.scheduleRefresh()
+      WidgetSnapshotService.shared.writeSnapshot(from: context)
+      #if !os(macOS)
+      LiveActivityService.shared.refresh(from: context)
+      #endif
    }
    
    private func upsertPendingTombstones(for userID: UUID) async throws {
