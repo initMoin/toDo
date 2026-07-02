@@ -107,6 +107,25 @@ A significant amount of development effort has gone into ensuring that the appli
 - iPadOS 27
 - watchOS 27
 
+#### Engineering Tooling
+
+- Git & GitHub
+- OpenAI Codex
+- ChatGPT
+- Google Gemini
+
+---
+
+## Development Workflow
+
+toDō is developed using a modern engineering workflow that combines established software engineering practices with AI-assisted development.
+
+OpenAI Codex, ChatGPT, and Google Gemini are used where appropriate to accelerate implementation, explore technical approaches, troubleshoot issues, refine algorithms, improve documentation, and assist in developing and refining automated tests.
+
+Every AI-assisted contribution is manually reviewed, validated, and refined before becoming part of the project. Architectural decisions, feature design, implementation details, debugging, performance considerations, and final acceptance remain engineering decisions made throughout development. AI-generated code is treated as a starting point rather than a finished solution and must satisfy the same standards for readability, maintainability, correctness, testing, and overall quality as handwritten code.
+
+The objective is not to replace engineering judgment, but to reduce repetitive work so more time can be invested in product quality, platform integration, accessibility, performance, and long-term maintainability.
+
 ---
 
 ## Current Capabilities
@@ -138,6 +157,6 @@ Additional repository documentation can be found here:
 
 Created, designed, developed, and maintained by Moinuddin Ahmad.
 
-toDō began as a personal solution to a practical problem and has grown into an ongoing exploration of productivity, structure, momentum, and intentional software design.
+toDō is an independently developed product built with modern Apple technologies and contemporary engineering practices. The project continues to evolve alongside the Apple platforms while maintaining a strong focus on intentional design, long-term maintainability, and thoughtful platform integration.
 
 [iamshift.dev](https://iamshift.dev)
