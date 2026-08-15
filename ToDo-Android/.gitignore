@@ -1,0 +1,14 @@
+.gradle/
+build/
+*/build/
+local.properties
+.idea/
+*.iml
+.DS_Store
+
+# Local-only Supabase configuration.
+app/supabase.properties
+
+# Firebase application configuration contains project identifiers and should
+# remain local to the Android project unless intentionally managed elsewhere.
+app/google-services.json
