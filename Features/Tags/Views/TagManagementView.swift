@@ -257,8 +257,12 @@ struct TagManagementView: View {
         return supabaseAuthStore.scopedOwnerUserID
     }
 
+    private func syncEverywhereCloudID() -> UUID? {
+        visibleOwnerUserID == nil ? nil : UUID()
+    }
+
     private var scopedTags: [Tag] {
-        tags.filter { $0.ownerUserID == visibleOwnerUserID }
+        Tag.canonicalTags(from: tags.filter { $0.ownerUserID == visibleOwnerUserID })
     }
 
     private var scopedToDos: [ToDo] {
@@ -537,7 +541,7 @@ struct TagManagementView: View {
             syncDuplicateTagFeedback()
             return
         }
-        context.insert(Tag(name: normalized, ownerUserID: visibleOwnerUserID))
+        context.insert(Tag(name: normalized, cloudID: syncEverywhereCloudID(), ownerUserID: visibleOwnerUserID))
         persistChanges("Failed to add tag")
         clearNewTagEntry()
     }
@@ -545,7 +549,8 @@ struct TagManagementView: View {
     private func existingCustomTag(named normalizedName: String) -> Tag? {
         let defaultTagNames = Set(Self.defaultTagNames)
         return scopedTags.first {
-            !defaultTagNames.contains($0.displayName) && $0.displayName == normalizedName
+            let normalizedTagName = Tag.normalizeName($0.name)
+            return !defaultTagNames.contains(normalizedTagName) && normalizedTagName == normalizedName
         }
     }
 
@@ -679,7 +684,7 @@ struct TagManagementView: View {
             context.delete(tag)
         }
         for name in Self.defaultTagNames {
-            context.insert(Tag(name: name, ownerUserID: visibleOwnerUserID))
+            context.insert(Tag(name: name, cloudID: syncEverywhereCloudID(), ownerUserID: visibleOwnerUserID))
         }
         persistChanges("Failed to reset tags")
     }

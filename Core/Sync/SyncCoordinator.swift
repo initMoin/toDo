@@ -98,6 +98,10 @@ final class SyncCoordinator: ObservableObject {
    @Published private(set) var lastFailedSyncPhase: SyncOperationPhase?
    @Published private(set) var lastSuccessfulSyncAt: Date?
    @Published private(set) var lastSyncErrorMessage: String?
+   /// A provider session is not enough to authorize remote sync. The account
+   /// resolver flips this only after the canonical username and setup version
+   /// have been verified for the authenticated UUID.
+   @Published private(set) var isAccountResolved = false
 
    private let migrationService: MigrationService
    private let userDefaults: UserDefaults
@@ -140,6 +144,16 @@ final class SyncCoordinator: ObservableObject {
 
    func start(userID: UUID?) async {
       await applyPreferredSyncMode(userID: userID)
+   }
+
+   func setAccountResolution(_ resolved: Bool) {
+      isAccountResolved = resolved
+      if !resolved {
+         currentSyncPhase = nil
+         if effectiveSyncMode == .syncEverywhere {
+            syncActivityState = .idle
+         }
+      }
    }
 
    func applyPreferredSyncMode(userID: UUID?) async {
@@ -287,7 +301,8 @@ final class SyncCoordinator: ObservableObject {
    }
 
    func beginSyncOperation(phase: SyncOperationPhase = .sendingLocalChanges) {
-      guard effectiveSyncMode == .syncEverywhere || preferredSyncMode == .syncEverywhere else { return }
+      guard isAccountResolved,
+            effectiveSyncMode == .syncEverywhere || preferredSyncMode == .syncEverywhere else { return }
       lastSyncErrorMessage = nil
       lastFailedSyncPhase = nil
       currentSyncPhase = phase
@@ -296,7 +311,8 @@ final class SyncCoordinator: ObservableObject {
    }
 
    func beginSyncActivation(phase: SyncOperationPhase = .activating) {
-      guard effectiveSyncMode == .syncEverywhere || preferredSyncMode == .syncEverywhere else { return }
+      guard isAccountResolved,
+            effectiveSyncMode == .syncEverywhere || preferredSyncMode == .syncEverywhere else { return }
       lastSyncErrorMessage = nil
       lastFailedSyncPhase = nil
       currentSyncPhase = phase
@@ -305,7 +321,8 @@ final class SyncCoordinator: ObservableObject {
    }
 
    func updateSyncPhase(_ phase: SyncOperationPhase) {
-      guard effectiveSyncMode == .syncEverywhere || preferredSyncMode == .syncEverywhere else { return }
+      guard isAccountResolved,
+            effectiveSyncMode == .syncEverywhere || preferredSyncMode == .syncEverywhere else { return }
       currentSyncPhase = phase
       log("Sync phase: \(phase.title)")
    }
@@ -336,7 +353,7 @@ final class SyncCoordinator: ObservableObject {
          return preferredMode
       }
 
-      return userID == nil ? .deviceOnly : preferredMode
+      return !isAccountResolved || userID == nil ? .deviceOnly : preferredMode
    }
 
    @discardableResult

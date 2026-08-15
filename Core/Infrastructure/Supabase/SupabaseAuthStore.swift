@@ -27,46 +27,6 @@ private enum SecureNonceError: LocalizedError {
     }
 }
 
-nonisolated struct SupabaseProfileRecord: Codable, Equatable, Identifiable, Sendable {
-    let id: UUID
-    var username: String?
-    var displayName: String?
-    var givenName: String?
-    var familyName: String?
-    var avatarURL: String?
-    var preferredTimeZone: String?
-    var createdAt: Date?
-    var updatedAt: Date?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case username
-        case displayName = "display_name"
-        case givenName = "given_name"
-        case familyName = "family_name"
-        case avatarURL = "avatar_url"
-        case preferredTimeZone = "preferred_time_zone"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
-}
-
-nonisolated private struct SupabaseProfileUpsertPayload: Encodable, Sendable {
-    let id: UUID
-    let displayName: String?
-    let givenName: String?
-    let familyName: String?
-    let preferredTimeZone: String
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case displayName = "display_name"
-        case givenName = "given_name"
-        case familyName = "family_name"
-        case preferredTimeZone = "preferred_time_zone"
-    }
-}
-
 nonisolated private struct DeviceTokenUpsertPayload: Encodable, Sendable {
     let userID: UUID
     let installationID: String
@@ -98,6 +58,24 @@ nonisolated private struct DeviceTokenDeactivatePayload: Encodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case isActive = "is_active"
         case lastSeenAt = "last_seen_at"
+    }
+}
+
+private struct UsernameRPCParameters: Encodable, Sendable {
+    let requestedUsername: String
+
+    enum CodingKeys: String, CodingKey {
+        case requestedUsername = "requested_username"
+    }
+}
+
+private struct UsernameClaimResponse: Decodable, Sendable {
+    let accountID: UUID
+    let username: String
+
+    enum CodingKeys: String, CodingKey {
+        case accountID = "account_id"
+        case username
     }
 }
 
@@ -157,13 +135,25 @@ final class SupabaseAuthStore: ObservableObject {
     @Published private(set) var session: Session?
     @Published private(set) var currentUser: User?
     @Published private(set) var profile: SupabaseProfileRecord?
+    /// Increments after a profile image write so every account surface can
+    /// reload the local image without waiting for a view to be recreated.
+    @Published private(set) var profileImageRevision = 0
+    @Published private(set) var isSavingProfile = false
+    @Published private(set) var profileStatusMessage: String?
+    @Published private(set) var profileErrorMessage: String?
+    @Published private(set) var accountResolution: ToDoAccountResolutionState = .signedOut
+    @Published private(set) var linkedProviders: Set<String> = []
     @Published var lastErrorMessage: String?
 
     private lazy var supabase = SupabaseService.shared
     private let pushInstallationID = SupabaseAuthStore.resolvePushInstallationID()
     private var authStateTask: Task<Void, Never>?
     private var lastAppliedSyncKey: String?
+    private var pendingAuthenticationIntent: ToDoAccountAuthenticationIntent = .restoreSession
+    private var pendingExpectedUsername: String?
     private let isPreviewMode: Bool
+
+    private static let resolvedUsernameKey = "toDo.resolvedUsername"
 
     private init(isPreviewMode: Bool = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1") {
         self.isPreviewMode = isPreviewMode
@@ -174,6 +164,21 @@ final class SupabaseAuthStore: ObservableObject {
 
     var isAuthenticated: Bool {
         activeSession != nil
+    }
+
+    var hasResolvedAccount: Bool {
+        if case .resolved = accountResolution { return true }
+        return false
+    }
+
+    var resolvedAccountID: UUID? {
+        guard case .resolved(let accountID, _) = accountResolution else { return nil }
+        return accountID
+    }
+
+    var resolvedUsername: String? {
+        guard case .resolved(_, let username) = accountResolution else { return nil }
+        return username
     }
 
     var isAuthenticating: Bool {
@@ -196,13 +201,27 @@ final class SupabaseAuthStore: ObservableObject {
         SyncCoordinator.shared.effectiveSyncMode
     }
 
+    /// The UUID exposed to account-scoped callers is available only after the
+    /// provider session has resolved to a completed username account.
     var currentUserID: UUID? {
+        resolvedAccountID
+    }
+
+    private var authenticatedUserID: UUID? {
         activeSession?.user.id
+    }
+
+    var commerceAccount: ToDoCommerceAccount? {
+        guard hasResolvedAccount, let activeSession else { return nil }
+        return ToDoCommerceAccount(
+            id: activeSession.user.id,
+            accessToken: activeSession.accessToken
+        )
     }
 
     var scopedOwnerUserID: UUID? {
         guard effectiveSyncMode == .syncEverywhere else { return nil }
-        return currentUserID ?? Self.lastKnownSignedInUserID()
+        return resolvedAccountID
     }
 
     var accountStatusLabel: String {
@@ -218,9 +237,9 @@ final class SupabaseAuthStore: ObservableObject {
     }
 
     var accountProviderLabel: String? {
-        guard let currentUserID else { return nil }
+        guard let authenticatedUserID else { return nil }
 
-        if let storedProvider = storedSignInProvider(for: currentUserID) {
+        if let storedProvider = storedSignInProvider(for: authenticatedUserID) {
             return storedProvider
         }
 
@@ -230,6 +249,10 @@ final class SupabaseAuthStore: ObservableObject {
     var signInMethodLabel: String? {
         guard isAuthenticated else { return nil }
         return accountProviderLabel.map { String(format: String(localized: "Sign In with %@"), $0) }
+    }
+
+    func isProviderLinked(_ provider: String) -> Bool {
+        linkedProviders.contains(provider.lowercased())
     }
 
     var accountStateTitle: String {
@@ -250,13 +273,7 @@ final class SupabaseAuthStore: ObservableObject {
         guard isAuthenticated else {
             return effectiveSyncMode == .iCloud ? String(localized: "iCloud toDō") : String(localized: "Local toDō")
         }
-        if let displayName = profile?.displayName, !displayName.isEmpty {
-            return displayName
-        }
-        if let email = signedInEmail {
-            return email
-        }
-        return String(localized: "Cloud Account")
+        return ToDoProfilePolicy.resolvedDisplayName(profile: profile, email: signedInEmail)
     }
 
     var accountDetailText: String {
@@ -265,6 +282,9 @@ final class SupabaseAuthStore: ObservableObject {
         }
         guard isAuthenticated else {
             return String(format: String(localized: "Signed out. toDōs stay on this device until you sign in to %@."), effectiveSyncMode.title)
+        }
+        guard hasResolvedAccount else {
+            return String(localized: "Finish account setup to keep toDō in sync.")
         }
         if let provider = accountProviderLabel {
             return String(format: String(localized: "Signed In: %@. %@ is ready."), provider, effectiveSyncMode.title)
@@ -277,7 +297,7 @@ final class SupabaseAuthStore: ObservableObject {
     }
 
     var dataModeDescription: String {
-        effectiveSyncMode.dataModeDescription(isAuthenticated: isAuthenticated)
+        effectiveSyncMode.dataModeDescription(isAuthenticated: hasResolvedAccount)
     }
 
     func start() async {
@@ -292,6 +312,8 @@ final class SupabaseAuthStore: ObservableObject {
             let message = SupabaseConfig.configurationIssue ?? "toDō Sync is not configured for this build."
             lastErrorMessage = message
             authLog.error("\(message, privacy: .public)")
+            accountResolution = .signedOut
+            SyncCoordinator.shared.setAccountResolution(false)
             await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
             return
         }
@@ -301,11 +323,18 @@ final class SupabaseAuthStore: ObservableObject {
 
         await supabase.auth.startAutoRefresh()
         startAuthStateListener()
-        await applyPreferredSyncModeIfNeeded(userID: currentUserID, force: true)
-
         if let currentUser = activeSession?.user {
-            await bootstrapProfile(for: currentUser)
-            await syncCurrentDeviceTokenIfPossible()
+            pendingAuthenticationIntent = .restoreSession
+            pendingExpectedUsername = Self.storedResolvedUsername()
+            await resolveAuthenticatedAccount(
+                for: currentUser,
+                intent: .restoreSession,
+                expectedUsername: pendingExpectedUsername
+            )
+        } else {
+            accountResolution = .signedOut
+            SyncCoordinator.shared.setAccountResolution(false)
+            await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
         }
     }
 
@@ -346,9 +375,191 @@ final class SupabaseAuthStore: ObservableObject {
         return true
     }
 
-    func signInWithApple(idToken: String, rawNonce: String, fullName: PersonNameComponents?) async {
+    func beginAuthentication(
+        intent: ToDoAccountAuthenticationIntent,
+        expectedUsername: String?
+    ) {
+        pendingAuthenticationIntent = intent
+        pendingExpectedUsername = normalizedExpectedUsername(expectedUsername)
+        accountResolution = .authenticating(
+            intent: intent,
+            expectedUsername: pendingExpectedUsername
+        )
+        SyncCoordinator.shared.setAccountResolution(false)
+    }
+
+    /// Claims the username entered during account setup and then re-runs the
+    /// resolver. The RPC is the only client-facing path that can move a
+    /// profile from provisional setup to the completed account contract.
+    @discardableResult
+    func completeAccountSetup(username value: String) async -> Bool {
+        guard let user = activeSession?.user else {
+            profileErrorMessage = String(localized: "Sign in before finishing account setup.")
+            return false
+        }
+
+        guard !isLoadingProfile else { return false }
+        profileErrorMessage = nil
+        isLoadingProfile = true
+        defer {
+            if authenticatedUserID == user.id {
+                isLoadingProfile = false
+            }
+        }
+
+        guard await claimAccountUsername(value) else { return false }
+        pendingAuthenticationIntent = .restoreSession
+        pendingExpectedUsername = normalizedExpectedUsername(value)
+        return await resolveAuthenticatedAccount(
+            for: user,
+            intent: .restoreSession,
+            expectedUsername: pendingExpectedUsername
+        )
+    }
+
+    /// Allows a user to continue with the authenticated provider account after
+    /// the returning-user username check reports a mismatch. This never changes
+    /// the username; it only accepts the account that the provider proved.
+    @discardableResult
+    func continueWithAuthenticatedAccount() async -> Bool {
+        guard let user = activeSession?.user,
+              let username = profile?.username else {
+            return false
+        }
+
+        pendingAuthenticationIntent = .restoreSession
+        pendingExpectedUsername = username
+        return await resolveAuthenticatedAccount(
+            for: user,
+            intent: .restoreSession,
+            expectedUsername: username
+        )
+    }
+
+    func checkUsernameAvailability(_ value: String) async -> Bool {
+        guard let username = try? ToDoProfilePolicy.validatedUsername(value),
+              SupabaseConfig.isConfigured else {
+            return false
+        }
+
+        do {
+            return try await supabase
+                .rpc("is_username_available", params: UsernameRPCParameters(requestedUsername: username))
+                .execute()
+                .value
+        } catch {
+            authLog.error("Username availability check failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
+    /// Links a freshly-authenticated Apple identity to the already-resolved
+    /// Supabase account. Supabase verifies the provider token; the client only
+    /// accepts the link if the returned canonical UUID is unchanged.
+    @discardableResult
+    func linkAppleIdentity(idToken: String, rawNonce: String) async -> Bool {
+        guard hasResolvedAccount, let accountID = resolvedAccountID else {
+            lastErrorMessage = String(localized: "Resolve your toDō account before connecting another sign-in method.")
+            return false
+        }
+
+        do {
+            let linkedSession = try await supabase.auth.linkIdentityWithIdToken(
+                credentials: OpenIDConnectCredentials(
+                    provider: .apple,
+                    idToken: idToken,
+                    nonce: rawNonce
+                )
+            )
+            guard linkedSession.user.id == accountID else {
+                lastErrorMessage = String(localized: "That sign-in method belongs to another toDō account.")
+                return false
+            }
+            applyActiveSession(linkedSession)
+            await refreshLinkedProviders()
+            profileStatusMessage = String(localized: "Sign-in method connected.")
+            return true
+        } catch {
+            lastErrorMessage = authErrorMessage(for: error, providerName: "Apple")
+            authLog.error("Apple identity linking failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
+    /// Links Google from the already-resolved account using a fresh native token.
+    /// The returned session must retain the current immutable account UUID.
+    @discardableResult
+    func linkGoogleIdentity() async -> Bool {
+        guard hasResolvedAccount, let accountID = resolvedAccountID else {
+            lastErrorMessage = String(localized: "Resolve your toDō account before connecting another sign-in method.")
+            return false
+        }
+
+        authProviderInProgress = .google
+        defer { authProviderInProgress = nil }
+
+        do {
+            let rawNonce = try AuthNonceGenerator.random()
+            let tokens = try await requestNativeGoogleTokens(
+                hashedNonce: AuthNonceGenerator.sha256(rawNonce)
+            )
+            let linkedSession = try await supabase.auth.linkIdentityWithIdToken(
+                credentials: OpenIDConnectCredentials(
+                    provider: .google,
+                    idToken: tokens.idToken,
+                    accessToken: tokens.accessToken,
+                    nonce: rawNonce
+                )
+            )
+            guard linkedSession.user.id == accountID else {
+                lastErrorMessage = String(localized: "That sign-in method belongs to another toDō account.")
+                return false
+            }
+            applyActiveSession(linkedSession)
+            await refreshLinkedProviders()
+            profileStatusMessage = String(localized: "Sign-in method connected.")
+            return true
+        } catch where Self.isGoogleCancellation(error) {
+            lastErrorMessage = nil
+            return false
+        } catch {
+            lastErrorMessage = authErrorMessage(for: error, providerName: "Google")
+            authLog.error("Google identity linking failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
+    func refreshLinkedProviders() async {
+        guard let currentUser = activeSession?.user, hasResolvedAccount else {
+            linkedProviders = []
+            return
+        }
+
+        do {
+            let identities = try await supabase.auth.userIdentities()
+            guard identities.allSatisfy({ $0.userId == currentUser.id }) else {
+                linkedProviders = []
+                lastErrorMessage = String(localized: "The connected sign-in methods could not be verified.")
+                return
+            }
+            linkedProviders = Set(identities.map { $0.provider.lowercased() })
+        } catch {
+            authLog.error("Linked provider refresh failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    func signInWithApple(
+        idToken: String,
+        rawNonce: String,
+        fullName: PersonNameComponents?,
+        intent: ToDoAccountAuthenticationIntent? = nil,
+        expectedUsername: String? = nil
+    ) async {
         guard !isPreviewMode else { return }
         guard prepareForConfiguredSupabaseAction() else { return }
+        if let intent {
+            beginAuthentication(intent: intent, expectedUsername: expectedUsername)
+        }
         authProviderInProgress = .apple
         lastErrorMessage = nil
 
@@ -367,14 +578,19 @@ final class SupabaseAuthStore: ObservableObject {
             applyActiveSession(authSession)
             storeSignInProvider("Apple", userID: authSession.user.id)
             authProviderInProgress = nil
-            await bootstrapProfile(for: authSession.user, fullName: fullName)
-            await syncCurrentDeviceTokenIfPossible()
-            await applyPreferredSyncModeIfNeeded(userID: authSession.user.id)
-            SyncCoordinator.shared.showTransientFeedback(
-                title: "Signed In: Apple",
-                message: successMessage(for: authSession.user, providerName: "Apple"),
-                style: .success
+            let resolved = await resolveAuthenticatedAccount(
+                for: authSession.user,
+                fullName: fullName,
+                intent: pendingAuthenticationIntent,
+                expectedUsername: pendingExpectedUsername
             )
+            if resolved {
+                SyncCoordinator.shared.showTransientFeedback(
+                    title: "Signed In: Apple",
+                    message: successMessage(for: authSession.user, providerName: "Apple"),
+                    style: .success
+                )
+            }
         } catch {
             authProviderInProgress = nil
             let message = authErrorMessage(for: error, providerName: "Apple")
@@ -388,9 +604,15 @@ final class SupabaseAuthStore: ObservableObject {
         }
     }
 
-    func signInWithGoogle() async {
+    func signInWithGoogle(
+        intent: ToDoAccountAuthenticationIntent? = nil,
+        expectedUsername: String? = nil
+    ) async {
         guard !isPreviewMode else { return }
         guard prepareForConfiguredSupabaseAction() else { return }
+        if let intent {
+            beginAuthentication(intent: intent, expectedUsername: expectedUsername)
+        }
         lastErrorMessage = nil
         authProviderInProgress = .google
         #if DEBUG
@@ -408,14 +630,18 @@ final class SupabaseAuthStore: ObservableObject {
             applyActiveSession(authSession)
             storeSignInProvider("Google", userID: authSession.user.id)
             authProviderInProgress = nil
-            await bootstrapProfile(for: authSession.user)
-            await syncCurrentDeviceTokenIfPossible()
-            await applyPreferredSyncModeIfNeeded(userID: authSession.user.id)
-            SyncCoordinator.shared.showTransientFeedback(
-                title: "Signed In: Google",
-                message: successMessage(for: authSession.user, providerName: "Google"),
-                style: .success
+            let resolved = await resolveAuthenticatedAccount(
+                for: authSession.user,
+                intent: pendingAuthenticationIntent,
+                expectedUsername: pendingExpectedUsername
             )
+            if resolved {
+                SyncCoordinator.shared.showTransientFeedback(
+                    title: "Signed In: Google",
+                    message: successMessage(for: authSession.user, providerName: "Google"),
+                    style: .success
+                )
+            }
             #if DEBUG
             authLog.notice("Google sign-in succeeded for user: \(authSession.user.id.uuidString, privacy: .public)")
             #endif
@@ -461,14 +687,18 @@ final class SupabaseAuthStore: ObservableObject {
                 storeSignInProvider(provider, userID: authSession.user.id)
             }
             authProviderInProgress = nil
-            await bootstrapProfile(for: authSession.user)
-            await syncCurrentDeviceTokenIfPossible()
-            await applyPreferredSyncModeIfNeeded(userID: authSession.user.id)
-            SyncCoordinator.shared.showTransientFeedback(
-                title: provider.map { "Signed In: \($0)" } ?? "Signed In",
-                message: successMessage(for: authSession.user, providerName: provider),
-                style: .success
+            let resolved = await resolveAuthenticatedAccount(
+                for: authSession.user,
+                intent: pendingAuthenticationIntent,
+                expectedUsername: pendingExpectedUsername
             )
+            if resolved {
+                SyncCoordinator.shared.showTransientFeedback(
+                    title: provider.map { "Signed In: \($0)" } ?? "Signed In",
+                    message: successMessage(for: authSession.user, providerName: provider),
+                    style: .success
+                )
+            }
             authLog.notice("Supabase auth callback succeeded for user: \(authSession.user.id.uuidString, privacy: .public)")
         } catch {
             authProviderInProgress = nil
@@ -489,13 +719,17 @@ final class SupabaseAuthStore: ObservableObject {
             session = nil
             currentUser = nil
             profile = nil
+            profileImageRevision = 0
+            linkedProviders = []
             lastErrorMessage = nil
+            accountResolution = .signedOut
+            SyncCoordinator.shared.setAccountResolution(false)
             clearStoredSignInProvider()
-            await applyPreferredSyncModeIfNeeded(userID: nil)
+            await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
             return
         }
 
-        let previousUserID = currentUserID
+        let previousUserID = authenticatedUserID
         let shouldPrepareDeviceOnlySnapshot = effectiveSyncMode == .syncEverywhere
         do {
             if shouldPrepareDeviceOnlySnapshot, let previousUserID {
@@ -512,9 +746,12 @@ final class SupabaseAuthStore: ObservableObject {
             session = nil
             currentUser = nil
             profile = nil
+            profileImageRevision = 0
             lastErrorMessage = nil
+            accountResolution = .signedOut
+            SyncCoordinator.shared.setAccountResolution(false)
             clearStoredSignInProvider()
-            await applyPreferredSyncModeIfNeeded(userID: nil)
+            await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
             SyncCoordinator.shared.showTransientFeedback(
                 title: "Signed Out",
                 message: "toDō now keeps what matters on this device.",
@@ -531,9 +768,31 @@ final class SupabaseAuthStore: ObservableObject {
         }
     }
 
+    /// Clears the in-memory account boundary after the server has confirmed
+    /// permanent deletion. The caller is responsible for purging SwiftData
+    /// before invoking this method.
+    func completeAccountDeletion() async {
+        authStateTask?.cancel()
+        GIDSignIn.sharedInstance.signOut()
+        session = nil
+        currentUser = nil
+        profile = nil
+        profileImageRevision = 0
+        linkedProviders = []
+        lastErrorMessage = nil
+        accountResolution = .signedOut
+        SyncCoordinator.shared.setAccountResolution(false)
+        clearStoredSignInProvider()
+        resetProfileOperationState()
+        lastAppliedSyncKey = nil
+        await ToDoCollaborationService.shared.updateAccount(nil)
+        await ToDoPurchaseManager.shared.updateAccount(nil)
+        await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
+    }
+
     func syncCurrentDeviceTokenIfPossible() async {
         guard !isPreviewMode else { return }
-        guard let userID = currentUserID,
+        guard let userID = resolvedAccountID,
               let token = UserDefaults.standard.string(forKey: AppPreferences.Keys.remotePushDeviceToken),
               !token.isEmpty
         else {
@@ -584,7 +843,7 @@ final class SupabaseAuthStore: ObservableObject {
         toDoCloudIdentifier: String? = nil
     ) async {
         guard !isPreviewMode else { return }
-        guard let userID = currentUserID, !token.isEmpty else { return }
+        guard let userID = resolvedAccountID, !token.isEmpty else { return }
 
         let payload = LiveActivityTokenUpsertPayload(
             userID: userID,
@@ -625,7 +884,7 @@ final class SupabaseAuthStore: ObservableObject {
 
     func deactivateLiveActivityToken(activityID: String) async {
         guard !isPreviewMode else { return }
-        guard let userID = currentUserID else { return }
+        guard let userID = resolvedAccountID else { return }
 
         do {
             try await supabase
@@ -657,6 +916,218 @@ final class SupabaseAuthStore: ObservableObject {
         await bootstrapProfile(for: currentUser)
     }
 
+    func reportProfileError(_ message: String) {
+        profileErrorMessage = message
+    }
+
+    @discardableResult
+    func updateDisplayName(_ value: String) async -> Bool {
+        let currentUsername = profile?.username
+        return await updateProfile(displayName: value, username: currentUsername)
+    }
+
+    @discardableResult
+    func updateProfile(displayName value: String, username usernameValue: String?) async -> Bool {
+        profileStatusMessage = nil
+        profileErrorMessage = nil
+
+        let displayName: String
+        let requestedUsername: String?
+        do {
+            displayName = try ToDoProfilePolicy.validatedDisplayName(value)
+            if let usernameValue, !usernameValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                requestedUsername = try ToDoProfilePolicy.validatedUsername(usernameValue)
+            } else {
+                requestedUsername = nil
+            }
+        } catch {
+            profileErrorMessage = error.localizedDescription
+            return false
+        }
+
+        guard !isPreviewMode, let userID = resolvedAccountID else {
+            profileErrorMessage = String(localized: "Sign in to edit your profile.")
+            return false
+        }
+
+        if let requestedUsername,
+           let currentUsername = profile?.username,
+           (try? ToDoProfilePolicy.validatedUsername(currentUsername)) != requestedUsername {
+            profileErrorMessage = String(localized: "Your username is your account locator and cannot be changed here.")
+            return false
+        }
+
+        isSavingProfile = true
+        defer {
+            if authenticatedUserID == userID {
+                isSavingProfile = false
+            }
+        }
+
+        do {
+            let record: SupabaseProfileRecord = try await supabase
+                .from("profiles")
+                .update(ToDoProfileDisplayNamePayload(displayName: displayName))
+                .eq("id", value: userID)
+                .select()
+                .single()
+                .execute()
+                .value
+
+            guard authenticatedUserID == userID, record.id == userID else { return false }
+            profile = record
+            profileStatusMessage = String(localized: "Profile saved.")
+            return true
+        } catch {
+            guard authenticatedUserID == userID else { return false }
+            profileErrorMessage = error.localizedDescription.contains("profiles_username_unique_idx")
+                ? String(localized: "That username is already in use. Choose another one.")
+                : String(localized: "Your profile could not be saved. Try again.")
+            AppLog.error("Profile update failed: \(error)", logger: AppLog.app)
+            return false
+        }
+    }
+
+    func updateProfileImage(_ data: Data, scope: ToDoProfileImageScope) async -> Bool {
+        guard !isPreviewMode, let userID = resolvedAccountID else {
+            profileErrorMessage = String(localized: "Sign in to edit your profile.")
+            return false
+        }
+
+        let preparation: ToDoProfileImagePreparation
+        do {
+            preparation = try await Task.detached(priority: .userInitiated) {
+                try ToDoProfileImagePreparation.prepare(
+                    sourceData: data,
+                    userID: userID,
+                    scope: scope
+                )
+            }.value
+        } catch ToDoProfileImagePreparation.PreparationError.unreadableImage {
+            profileErrorMessage = String(localized: "The profile image could not be read. Try another image.")
+            return false
+        } catch ToDoProfileImagePreparation.PreparationError.tooLarge {
+            profileErrorMessage = String(localized: "Choose an image smaller than 5 MB.")
+            return false
+        } catch ToDoProfileImagePreparation.PreparationError.iCloudUnavailable {
+            profileErrorMessage = String(localized: "iCloud profile images are unavailable on this device. Choose this device or all signed-in devices.")
+            return false
+        } catch {
+            profileErrorMessage = String(localized: "The profile image could not be prepared. Try another image.")
+            return false
+        }
+
+        isSavingProfile = true
+        defer {
+            if authenticatedUserID == userID {
+                isSavingProfile = false
+            }
+        }
+
+        do {
+            switch scope {
+            case .thisDevice, .appleDevices:
+                let record: SupabaseProfileRecord = try await supabase
+                    .from("profiles")
+                    .update(ToDoProfileAvatarPayload(avatarURL: nil))
+                    .eq("id", value: userID)
+                    .select()
+                    .single()
+                    .execute()
+                    .value
+
+                guard authenticatedUserID == userID, record.id == userID else { return false }
+                try ToDoProfileImageStore.save(preparation.data, for: userID, scope: scope)
+                profile = record
+                ToDoProfileImageStore.saveScope(scope, for: userID)
+                profileImageRevision = ToDoProfileImageStore.bumpRevision(for: userID)
+
+                // Clear the previous shared object when switching to a private scope.
+                _ = try? await supabase.storage
+                    .from("profile-images")
+                    .remove(paths: ["\(userID.uuidString.lowercased())/avatar.jpg"])
+
+            case .allDevices:
+                // Supabase storage folder policies compare the first path
+                // component with auth.uid() text, which is lowercase.
+                let storage = supabase.storage.from("profile-images")
+                try await storage.upload(
+                    preparation.remotePath,
+                    data: preparation.data,
+                    options: FileOptions(
+                        cacheControl: "3600",
+                        contentType: "image/jpeg",
+                        upsert: true
+                    )
+                )
+                let avatarURL = try storage.getPublicURL(
+                    path: preparation.remotePath,
+                    cacheNonce: UUID().uuidString
+                )
+                let record: SupabaseProfileRecord = try await supabase
+                    .from("profiles")
+                    .update(ToDoProfileAvatarPayload(avatarURL: avatarURL.absoluteString))
+                    .eq("id", value: userID)
+                    .select()
+                    .single()
+                    .execute()
+                    .value
+
+                guard authenticatedUserID == userID, record.id == userID else { return false }
+                try? ToDoProfileImageStore.save(preparation.data, for: userID, scope: .thisDevice)
+                ToDoProfileImageStore.saveScope(scope, for: userID)
+                profile = record
+                profileImageRevision = ToDoProfileImageStore.bumpRevision(for: userID)
+            }
+
+            profileStatusMessage = String(localized: "Profile image saved.")
+            return true
+        } catch {
+            guard authenticatedUserID == userID else { return false }
+            profileErrorMessage = String(localized: "Your profile image could not be saved. Try again.")
+            AppLog.error("Profile image update failed: \(error)", logger: AppLog.app)
+            return false
+        }
+    }
+
+    @discardableResult
+    func updateProfileImageScope(_ scope: ToDoProfileImageScope) async -> Bool {
+        guard let userID = resolvedAccountID else {
+            profileErrorMessage = String(localized: "Sign in to change image availability.")
+            return false
+        }
+
+        var imageData = await Task.detached(priority: .utility) {
+            ToDoProfileImageStore.load(for: userID)
+        }.value
+
+        if imageData == nil,
+           let remoteURL = ToDoProfilePolicy.avatarURL(from: profile?.avatarURL) {
+            do {
+                let (data, response) = try await URLSession.shared.data(from: remoteURL)
+                guard (response as? HTTPURLResponse)?.statusCode == 200 else { return false }
+                imageData = await Task.detached(priority: .userInitiated) {
+                    ToDoProfileImageStore.normalizedJPEGData(from: data)
+                }.value
+            } catch {
+                profileErrorMessage = String(localized: "The current profile image could not be downloaded. Try again.")
+                return false
+            }
+        }
+
+        guard let imageData else {
+            profileErrorMessage = String(localized: "Choose a profile image before changing its availability.")
+            return false
+        }
+        return await updateProfileImage(imageData, scope: scope)
+    }
+
+    func updateProfileImageOffset(_ offset: CGSize) {
+        guard let userID = resolvedAccountID else { return }
+        ToDoProfileImageStore.saveOffset(offset, for: userID)
+        profileImageRevision = ToDoProfileImageStore.bumpRevision(for: userID)
+    }
+
     private var activeSession: Session? {
         guard let session, !session.isExpired else { return nil }
         return session
@@ -668,12 +1139,24 @@ final class SupabaseAuthStore: ObservableObject {
             session = nil
             currentUser = nil
             profile = nil
+            profileImageRevision = 0
+            accountResolution = .signedOut
+            SyncCoordinator.shared.setAccountResolution(false)
+            resetProfileOperationState()
             clearStoredSignInProvider()
             return
         }
 
+        if currentUser?.id != newSession.user.id {
+            profile = nil
+            profileImageRevision = 0
+            accountResolution = .signedOut
+            SyncCoordinator.shared.setAccountResolution(false)
+            resetProfileOperationState()
+        }
         session = newSession
         currentUser = newSession.user
+        linkedProviders = Set((newSession.user.identities ?? []).map { $0.provider.lowercased() })
     }
 
     private func startAuthStateListener() {
@@ -687,6 +1170,26 @@ final class SupabaseAuthStore: ObservableObject {
     }
 
     private func signInWithNativeGoogle(rawNonce: String, hashedNonce: String) async throws -> Session {
+        let tokens = try await requestNativeGoogleTokens(hashedNonce: hashedNonce)
+
+        #if DEBUG
+        let audience = Self.jwtStringClaim("aud", in: tokens.idToken) ?? "unknown"
+        let bundleID = Bundle.main.bundleIdentifier ?? "unknown"
+        let clientID = Self.infoPlistString("GIDClientID") ?? "missing"
+        let serverClientID = Self.infoPlistString("GIDServerClientID") ?? "missing"
+        authLog.notice("Google sign-in token audience: \(audience, privacy: .public); app bundle: \(bundleID, privacy: .public); iOS client: \(clientID, privacy: .public); server client: \(serverClientID, privacy: .public)")
+        #endif
+        return try await supabase.auth.signInWithIdToken(
+            credentials: OpenIDConnectCredentials(
+                provider: .google,
+                idToken: tokens.idToken,
+                accessToken: tokens.accessToken,
+                nonce: rawNonce
+            )
+        )
+    }
+
+    private func requestNativeGoogleTokens(hashedNonce: String) async throws -> NativeGoogleSignInTokens {
         guard let presentingViewController = Self.currentPresentationViewController() else {
             throw NativeGoogleSignInError.missingPresentationContext
         }
@@ -722,47 +1225,49 @@ final class SupabaseAuthStore: ObservableObject {
             }
         }
 
-        #if DEBUG
-        authLog.notice("Google sign-in token audience: \(Self.jwtStringClaim("aud", in: tokens.idToken) ?? "unknown", privacy: .public); app bundle: \(Bundle.main.bundleIdentifier ?? "unknown", privacy: .public); iOS client: \(Self.infoPlistString("GIDClientID") ?? "missing", privacy: .public); server client: \(Self.infoPlistString("GIDServerClientID") ?? "missing", privacy: .public)")
-        #endif
-        return try await supabase.auth.signInWithIdToken(
-            credentials: OpenIDConnectCredentials(
-                provider: .google,
-                idToken: tokens.idToken,
-                accessToken: tokens.accessToken,
-                nonce: rawNonce
-            )
-        )
+        return tokens
     }
 
     private func handleAuthStateChange(event: AuthChangeEvent, session: Session?) async {
         switch event {
         case .initialSession, .signedIn, .tokenRefreshed, .userUpdated, .passwordRecovery:
             applyActiveSession(session, shouldClearWhenInactive: false)
-            await applyPreferredSyncModeIfNeeded(userID: currentUserID)
             if let user = activeSession?.user {
                 if storedSignInProvider(for: user.id) == nil,
                    let provider = inferredProviderLabel(for: user) {
                     storeSignInProvider(provider, userID: user.id)
                 }
-                await bootstrapProfile(for: user)
-                await syncCurrentDeviceTokenIfPossible()
+                await resolveAuthenticatedAccount(
+                    for: user,
+                    intent: pendingAuthenticationIntent,
+                    expectedUsername: pendingExpectedUsername
+                )
+            } else {
+                accountResolution = .signedOut
+                SyncCoordinator.shared.setAccountResolution(false)
+                await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
             }
         case .signedOut:
             self.session = nil
             currentUser = nil
             profile = nil
+            profileImageRevision = 0
+            linkedProviders = []
+            accountResolution = .signedOut
+            SyncCoordinator.shared.setAccountResolution(false)
+            resetProfileOperationState()
             clearStoredSignInProvider()
-            await applyPreferredSyncModeIfNeeded(userID: nil)
+            await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
         default:
             applyActiveSession(session, shouldClearWhenInactive: false)
         }
     }
 
     private func applyPreferredSyncModeIfNeeded(userID: UUID?, force: Bool = false) async {
+        let resolvedUserID = hasResolvedAccount ? userID : nil
         let preferredMode = SyncCoordinator.shared.preferredSyncMode
         let effectiveMode = SyncCoordinator.shared.effectiveSyncMode
-        let syncKey = "\(SyncCoordinator.shared.preferredSyncMode.rawValue)|\(userID?.uuidString ?? "signed-out")"
+        let syncKey = "\(SyncCoordinator.shared.preferredSyncMode.rawValue)|\(resolvedUserID?.uuidString ?? "unresolved")"
         let shouldRetrySyncEverywhere = preferredMode == .syncEverywhere || effectiveMode == .syncEverywhere
         let shouldApply = force || shouldRetrySyncEverywhere || lastAppliedSyncKey != syncKey
 
@@ -772,7 +1277,7 @@ final class SupabaseAuthStore: ObservableObject {
         )
 
         guard shouldApply else { return }
-        await SyncCoordinator.shared.applyPreferredSyncMode(userID: userID)
+        await SyncCoordinator.shared.applyPreferredSyncMode(userID: resolvedUserID)
         lastAppliedSyncKey = syncKey
     }
 
@@ -797,47 +1302,199 @@ final class SupabaseAuthStore: ObservableObject {
     }
 
     private func bootstrapProfile(for user: User, fullName: PersonNameComponents? = nil) async {
+        profileErrorMessage = nil
         isLoadingProfile = true
-        defer { isLoadingProfile = false }
+        defer {
+            if authenticatedUserID == user.id {
+                isLoadingProfile = false
+            }
+        }
 
-        let existingProfile = await fetchExistingProfile(for: user.id)
-        let payload = SupabaseProfileUpsertPayload(
+        let payload = ToDoProfileBootstrapPayload(
             id: user.id,
-            displayName: resolvedDisplayName(from: user, fullName: fullName) ?? existingProfile?.displayName,
-            givenName: resolvedGivenName(from: user, fullName: fullName) ?? existingProfile?.givenName,
-            familyName: resolvedFamilyName(from: user, fullName: fullName) ?? existingProfile?.familyName,
+            displayName: resolvedDisplayName(from: user, fullName: fullName),
+            givenName: resolvedGivenName(from: user, fullName: fullName),
+            familyName: resolvedFamilyName(from: user, fullName: fullName),
             preferredTimeZone: TimeZone.current.identifier
         )
 
         do {
-            let record: SupabaseProfileRecord = try await supabase
+            try await supabase
                 .from("profiles")
-                .upsert(payload, onConflict: "id")
-                .select()
-                .single()
+                .upsert(payload, onConflict: "id", ignoreDuplicates: true)
                 .execute()
-                .value
 
+            let record = try await fetchProfile(for: user.id)
+
+            guard authenticatedUserID == user.id, record.id == user.id else { return }
             profile = record
+            profileErrorMessage = nil
         } catch {
+            guard authenticatedUserID == user.id else { return }
             lastErrorMessage = error.localizedDescription
+            profileErrorMessage = String(localized: "Your profile could not be loaded. Try again.")
         }
     }
 
-    private func fetchExistingProfile(for userID: UUID) async -> SupabaseProfileRecord? {
+    private func resetProfileOperationState() {
+        isSavingProfile = false
+        profileStatusMessage = nil
+        profileErrorMessage = nil
+    }
+
+    private func fetchProfile(for userID: UUID) async throws -> SupabaseProfileRecord {
+        let records: [SupabaseProfileRecord] = try await supabase
+            .from("profiles")
+            .select()
+            .eq("id", value: userID)
+            .limit(1)
+            .execute()
+            .value
+
+        guard let record = records.first else {
+            throw ToDoProfileStoreError.missingProfile
+        }
+        return record
+    }
+
+    /// Resolves an authenticated provider session against the profile owned by
+    /// the same immutable auth UUID. A session is deliberately not enough to
+    /// start sync or commerce; those services are released only in the
+    /// `.resolved` branch below.
+    @discardableResult
+    private func resolveAuthenticatedAccount(
+        for user: User,
+        fullName: PersonNameComponents? = nil,
+        intent: ToDoAccountAuthenticationIntent,
+        expectedUsername: String?
+    ) async -> Bool {
+        guard authenticatedUserID == user.id else { return false }
+
+        accountResolution = .resolving(
+            intent: intent,
+            expectedUsername: normalizedExpectedUsername(expectedUsername)
+        )
+        SyncCoordinator.shared.setAccountResolution(false)
+        await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
+
+        await bootstrapProfile(for: user, fullName: fullName)
+        guard authenticatedUserID == user.id, let currentProfile = profile else {
+            accountResolution = .needsUsername(intent: intent)
+            return false
+        }
+
+        // A provider can create auth.users before the user finishes the
+        // username-first flow. Claiming is explicit and server-authoritative;
+        // it never derives identity from an email address.
+        if currentProfile.username == nil,
+           intent == .createAccount,
+           let expectedUsername,
+           await claimAccountUsername(expectedUsername) {
+            await bootstrapProfile(for: user)
+        }
+
+        guard let refreshedProfile = profile,
+              refreshedProfile.id == user.id else {
+            accountResolution = .needsUsername(intent: intent)
+            return false
+        }
+
+        let resolution = ToDoAccountResolutionPolicy.state(
+            profile: refreshedProfile,
+            intent: intent,
+            expectedUsername: expectedUsername
+        )
+        accountResolution = resolution
+
+        guard case .resolved(let accountID, let username) = resolution,
+              accountID == user.id else {
+            SyncCoordinator.shared.setAccountResolution(false)
+            await applyPreferredSyncModeIfNeeded(userID: nil, force: true)
+            return false
+        }
+
+        pendingAuthenticationIntent = .restoreSession
+        pendingExpectedUsername = username
+        Self.storeResolvedUsername(username)
+        SyncCoordinator.shared.setAccountResolution(true)
+        await applyPreferredSyncModeIfNeeded(userID: accountID, force: true)
+        await syncCurrentDeviceTokenIfPossible()
+        await ToDoPurchaseManager.shared.updateAccount(commerceAccount)
+        await ToDoCollaborationService.shared.updateAccount(commerceAccount)
+        return true
+    }
+
+    @discardableResult
+    private func claimAccountUsername(_ value: String) async -> Bool {
+        guard let username = try? ToDoProfilePolicy.validatedUsername(value) else {
+            profileErrorMessage = String(localized: "Use a username with letters, numbers, periods, or underscores.")
+            return false
+        }
+        guard authenticatedUserID != nil else {
+            profileErrorMessage = String(localized: "Sign in before choosing a username.")
+            return false
+        }
+
+        let response: [UsernameClaimResponse]
         do {
-            let records: [SupabaseProfileRecord] = try await supabase
-                .from("profiles")
-                .select()
-                .eq("id", value: userID)
-                .limit(1)
+            response = try await supabase
+                .rpc("claim_account_username", params: UsernameRPCParameters(requestedUsername: username))
                 .execute()
                 .value
-
-            return records.first
         } catch {
+            let message = String(describing: error).lowercased()
+            if message.contains("already in use") || message.contains("reserved") {
+                profileErrorMessage = String(localized: "That username is not available. Choose another one.")
+            } else if message.contains("different username") {
+                profileErrorMessage = String(localized: "This account already has a different username.")
+            } else if message.contains("schema cache")
+                || message.contains("could not find the function")
+                || message.contains("claim_account_username")
+                || message.contains("42702") {
+                profileErrorMessage = String(localized: "Account setup is temporarily unavailable. Check your connection and try again in a moment.")
+            } else if message.contains("permission denied")
+                || message.contains("not authorized")
+                || message.contains("42501") {
+                profileErrorMessage = String(localized: "Account setup could not be verified. Sign in again and try once more.")
+            } else {
+                profileErrorMessage = String(localized: "Your username could not be saved. Try again.")
+            }
+            authLog.error("Username claim failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+
+        guard let claimed = response.first,
+              claimed.accountID == authenticatedUserID,
+              claimed.username == username else {
+            profileErrorMessage = String(localized: "The account update was not confirmed by the server. Sign in again and try once more.")
+            authLog.error("Username claim returned an unexpected response count: \(response.count, privacy: .public)")
+            return false
+        }
+
+        do {
+            profile = try await fetchProfile(for: claimed.accountID)
+            return true
+        } catch {
+            profileErrorMessage = String(localized: "Your username was saved, but the account could not be refreshed. Try again.")
+            authLog.error("Username claim profile refresh failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+    }
+
+    private func normalizedExpectedUsername(_ value: String?) -> String? {
+        guard let value,
+              let normalized = try? ToDoProfilePolicy.validatedUsername(value) else {
             return nil
         }
+        return normalized
+    }
+
+    private static func storedResolvedUsername() -> String? {
+        UserDefaults.standard.string(forKey: resolvedUsernameKey)
+    }
+
+    private static func storeResolvedUsername(_ username: String) {
+        UserDefaults.standard.set(username, forKey: resolvedUsernameKey)
     }
 
     private func resolvedDisplayName(from user: User, fullName: PersonNameComponents?) -> String? {

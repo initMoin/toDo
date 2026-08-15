@@ -76,6 +76,22 @@ final class Tag {
         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
+    static func canonicalTags(from tags: [Tag]) -> [Tag] {
+        Dictionary(grouping: tags, by: { normalizeName($0.name) })
+            .compactMap { _, duplicates in
+                duplicates.sorted(by: shouldPreferCanonical(_:over:)).first
+            }
+    }
+
+    static func shouldPreferCanonical(_ lhs: Tag, over rhs: Tag) -> Bool {
+        if lhs.cloudID != nil, rhs.cloudID == nil { return true }
+        if lhs.cloudID == nil, rhs.cloudID != nil { return false }
+        if lhs.updatedAt != rhs.updatedAt {
+            return lhs.syncUpdatedAt > rhs.syncUpdatedAt
+        }
+        return lhs.createdAt < rhs.createdAt
+    }
+
     var syncUpdatedAt: Date {
         updatedAt ?? createdAt
     }

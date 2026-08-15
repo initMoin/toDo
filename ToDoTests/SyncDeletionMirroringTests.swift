@@ -6,6 +6,176 @@ import Testing
 @Suite("Sync deletion mirroring")
 @MainActor
 struct SyncDeletionMirroringTests {
+   @Test func resetPolicyDeletesPersonalButNeverSharedToDos() {
+      let accountID = UUID()
+
+      #expect(ToDoDataResetService.shouldDeletePersonalToDo(
+         ownerUserID: accountID,
+         collabID: nil,
+         accountUserID: accountID
+      ))
+      #expect(ToDoDataResetService.shouldDeletePersonalToDo(
+         ownerUserID: nil,
+         collabID: nil,
+         accountUserID: accountID
+      ))
+      #expect(!ToDoDataResetService.shouldDeletePersonalToDo(
+         ownerUserID: accountID,
+         collabID: UUID(),
+         accountUserID: accountID
+      ))
+      #expect(!ToDoDataResetService.shouldDeletePersonalToDo(
+         ownerUserID: UUID(),
+         collabID: nil,
+         accountUserID: accountID
+      ))
+   }
+
+   @Test func bulkTombstonesAreUniqueAndKeepTheLatestDeletion() throws {
+      let suiteName = "SyncDeletionMirroringTests.bulk"
+      let defaults = try #require(UserDefaults(suiteName: suiteName))
+      defer { defaults.removePersistentDomain(forName: suiteName) }
+      let userID = UUID()
+      let recordID = UUID()
+      let older = SyncTombstone(
+         userID: userID,
+         recordTable: .toDos,
+         recordID: recordID,
+         deletedAt: Date(timeIntervalSinceReferenceDate: 10)
+      )
+      let newer = SyncTombstone(
+         userID: userID,
+         recordTable: .toDos,
+         recordID: recordID,
+         deletedAt: Date(timeIntervalSinceReferenceDate: 20)
+      )
+
+      SyncTombstoneStore.recordDeletes([older, newer], userDefaults: defaults)
+
+      let pending = SyncTombstoneStore.pendingTombstones(userDefaults: defaults)
+      #expect(pending.count == 1)
+      #expect(pending.first?.deletedAt == newer.deletedAt)
+   }
+
+   @Test func resetDeletesPersonalDataAndPreservesSharedAndOtherAccountData() async throws {
+      let context = try makeContext()
+      let suiteName = "SyncDeletionMirroringTests.reset"
+      let defaults = try #require(UserDefaults(suiteName: suiteName))
+      defer { defaults.removePersistentDomain(forName: suiteName) }
+      let accountID = UUID()
+      let personalCloudID = UUID()
+      let personal = ToDo(
+         task: "Personal",
+         cloudID: personalCloudID,
+         ownerUserID: accountID
+      )
+      let deviceOnly = ToDo(task: "Device only")
+      let shared = ToDo(
+         task: "Shared",
+         cloudID: UUID(),
+         ownerUserID: accountID,
+         collabID: UUID()
+      )
+      let otherAccount = ToDo(
+         task: "Other account",
+         cloudID: UUID(),
+         ownerUserID: UUID()
+      )
+      let retainedTag = Tag(name: "release", ownerUserID: accountID)
+      personal.tags = [retainedTag]
+      for model in [personal, deviceOnly, shared, otherAccount] {
+         context.insert(model)
+      }
+      context.insert(retainedTag)
+      try context.save()
+
+      let report = try await ToDoDataResetService.reset(
+         toDos: [personal, deviceOnly, shared, otherAccount],
+         accountUserID: accountID,
+         sharedListChoice: .keep,
+         collaborationService: .preview,
+         in: context,
+         userDefaults: defaults
+      )
+
+      let remainingToDos = try context.fetch(FetchDescriptor<ToDo>())
+      #expect(report.deletedPersonalToDoCount == 2)
+      #expect(Set(remainingToDos.map(\.task)) == Set(["Shared", "Other account"]))
+      #expect(retainedTag.name == "release")
+      #expect(
+         SyncTombstoneStore.pendingTombstones(userDefaults: defaults)
+            .contains { $0.recordID == personalCloudID && $0.recordTable == .toDos }
+      )
+   }
+
+   @Test func accountDeletionPurgesLocalModelsAndTombstones() throws {
+      let context = try makeContext()
+      let suiteName = "SyncDeletionMirroringTests.accountDeletion"
+      let defaults = try #require(UserDefaults(suiteName: suiteName))
+      defer { defaults.removePersistentDomain(forName: suiteName) }
+
+      let accountID = UUID()
+      let toDo = ToDo(
+         task: "Private account data",
+         cloudID: UUID(),
+         ownerUserID: accountID
+      )
+      let nanoDo = NanoDo(
+         task: "Private nanoDo",
+         toDo: toDo,
+         cloudID: UUID(),
+         ownerUserID: accountID
+      )
+      let conflict = SyncConflict(
+         userID: accountID,
+         recordID: UUID(),
+         severity: .warning,
+         title: "Private conflict",
+         message: "Private conflict data",
+         localSummary: "Local",
+         syncedSummary: "Synced",
+         localUpdatedAt: .now,
+         syncedUpdatedAt: .now,
+         syncedTask: "Private conflict",
+         syncedNotes: "",
+         syncedIsDone: false,
+         syncedLifecycleState: .active,
+         syncedReminderIntent: .soft,
+         syncedDueDate: nil,
+         syncedRecurrenceUnit: nil,
+         syncedRecurrenceInterval: nil,
+         syncedRecurrenceMode: nil,
+         syncedRecurrenceCount: nil,
+         syncedRecurrenceAnchorDate: nil,
+         syncedRecurrenceEndDate: nil
+      )
+      context.insert(toDo)
+      context.insert(nanoDo)
+      context.insert(conflict)
+      try context.save()
+
+      SyncTombstoneStore.recordDelete(
+         table: .toDos,
+         recordID: toDo.cloudID,
+         userID: accountID,
+         userDefaults: defaults
+      )
+
+      try ToDoLocalAccountDeletionService.clearAll(
+         userID: accountID,
+         in: context,
+         userDefaults: defaults
+      )
+
+      let remainingToDos = try context.fetch(FetchDescriptor<ToDo>())
+      let remainingNanoDos = try context.fetch(FetchDescriptor<NanoDo>())
+      let remainingConflicts = try context.fetch(FetchDescriptor<SyncConflict>())
+      #expect(remainingToDos.isEmpty)
+      #expect(remainingNanoDos.isEmpty)
+      #expect(remainingConflicts.isEmpty)
+      #expect(SyncTombstoneStore.pendingTombstones(userDefaults: defaults).isEmpty)
+   }
+
    @Test func syncedDeleteRemovesMatchingDeviceOnlyCounterpartByDefault() throws {
       let context = try makeContext()
       let defaults = try #require(UserDefaults(suiteName: "SyncDeletionMirroringTests.removeDefault"))
@@ -67,6 +237,8 @@ struct SyncDeletionMirroringTests {
 
    @Test func syncedDeleteMovesToTrashInsteadOfPermanentRemoval() throws {
       let context = try makeContext()
+      let defaults = try #require(UserDefaults(suiteName: "SyncDeletionMirroringTests.trash"))
+      defer { defaults.removePersistentDomain(forName: "SyncDeletionMirroringTests.trash") }
       let createdAt = Date(timeIntervalSinceReferenceDate: 10)
 
       let syncedToDo = ToDo(
@@ -80,7 +252,12 @@ struct SyncDeletionMirroringTests {
       syncedToDo.trashedAt = Date()
       syncedToDo.transition(to: .trashed)
 
-      SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: syncedToDo, in: context)
+      SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+         for: syncedToDo,
+         in: context,
+         recordsSyncTombstone: false,
+         userDefaults: defaults
+      )
 
       try context.save()
 
@@ -89,6 +266,59 @@ struct SyncDeletionMirroringTests {
       #expect(remainingToDos.count == 1)
       #expect(remainingToDos.first?.lifecycleState == .trashed)
       #expect(remainingToDos.first?.trashedAt != nil)
+      #expect(SyncTombstoneStore.pendingTombstones(userDefaults: defaults).isEmpty)
+   }
+
+   @Test func sharedDeleteAttributesTombstoneToActingUser() throws {
+      let context = try makeContext()
+      let defaults = try #require(UserDefaults(suiteName: "SyncDeletionMirroringTests.sharedActor"))
+      defer { defaults.removePersistentDomain(forName: "SyncDeletionMirroringTests.sharedActor") }
+      let ownerUserID = UUID()
+      let actingUserID = UUID()
+      let collabID = UUID()
+      let cloudID = UUID()
+      let syncedToDo = ToDo(
+         task: "Shared",
+         cloudID: cloudID,
+         ownerUserID: ownerUserID,
+         collabID: collabID
+      )
+      context.insert(syncedToDo)
+
+      SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+         for: syncedToDo,
+         in: context,
+         actingUserID: actingUserID,
+         userDefaults: defaults
+      )
+
+      let tombstone = try #require(
+         SyncTombstoneStore.pendingTombstones(userDefaults: defaults).first
+      )
+      #expect(tombstone.userID == actingUserID)
+      #expect(tombstone.collabID == collabID)
+      #expect(tombstone.recordID == cloudID)
+   }
+
+   @Test func applyingRemoteDeleteDoesNotQueueAnotherTombstone() throws {
+      let context = try makeContext()
+      let defaults = try #require(UserDefaults(suiteName: "SyncDeletionMirroringTests.remote"))
+      defer { defaults.removePersistentDomain(forName: "SyncDeletionMirroringTests.remote") }
+      let syncedToDo = ToDo(
+         task: "Remote delete",
+         cloudID: UUID(),
+         ownerUserID: UUID()
+      )
+      context.insert(syncedToDo)
+
+      SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+         for: syncedToDo,
+         in: context,
+         recordsSyncTombstone: false,
+         userDefaults: defaults
+      )
+
+      #expect(SyncTombstoneStore.pendingTombstones(userDefaults: defaults).isEmpty)
    }
 
    private func makeContext() throws -> ModelContext {

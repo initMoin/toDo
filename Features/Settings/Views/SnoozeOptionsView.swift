@@ -196,7 +196,7 @@ private struct SnoozeValueEditorSheet: View {
    var body: some View {
       VStack(alignment: .leading, spacing: 18) {
          Text(existingValue == nil ? "Add \(unit.singularTitle) Option" : "Edit \(unit.singularTitle) Option")
-            .font(.appTitle(28, relativeTo: .title2))
+            .font(.appViewTitle(28, relativeTo: .title2))
             .foregroundStyle(AppColor.textPrimary)
 
          TextField("Enter a value", text: $valueText)

@@ -167,6 +167,28 @@ final class WatchConnectivityService: NSObject, ObservableObject {
                isTimeSensitive: toDo.reminderIntent == .timeSensitive,
                createdAt: toDo.createdAt,
                updatedAt: toDo.syncUpdatedAt,
+               completedAt: toDo.completionActivityDate,
+               notes: toDo.notes,
+               tags: toDo.effectiveTags.map { tag in
+                  WatchTagItem(
+                     id: tag.cloudID?.uuidString ?? tag.displayName,
+                     cloudID: tag.cloudID,
+                     name: tag.displayName
+                  )
+               },
+               recurrenceSummary: toDo.recurrenceSummary,
+               recurrenceUnitRaw: toDo.recurrenceUnit?.rawValue,
+               recurrenceInterval: toDo.recurrenceInterval,
+               recurrenceModeRaw: toDo.recurrenceMode?.rawValue,
+               recurrenceCount: toDo.recurrenceCount,
+               hasLocationReminder: toDo.hasLocationReminder,
+               locationReminderLabel: toDo.locationReminderLabel,
+               locationReminderTriggerTitle: toDo.hasLocationReminder ? toDo.locationReminderTrigger.title : nil,
+               locationReminderLatitude: toDo.locationReminderLatitude,
+               locationReminderLongitude: toDo.locationReminderLongitude,
+               locationReminderRadius: toDo.locationReminderRadius,
+               locationReminderTriggerRaw: toDo.locationReminderTrigger.rawValue,
+               completeWhenAllNanoDosDone: toDo.completeWhenAllNanoDosDone,
                nanoDos: toDo.nanoDos
                   .sorted { $0.syncUpdatedAt > $1.syncUpdatedAt }
                   .map { nanoDo in
@@ -202,7 +224,7 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          send(receipt: WatchToDoActionReceipt(actionID: action.id, accepted: true))
       case .create:
          createToDo(from: action)
-      case .complete, .reopen, .archive, .trash, .updateTask, .setDueDate, .snooze, .openOnPhone, .completeNanoDo, .reopenNanoDo, .deleteNanoDo:
+      case .complete, .reopen, .archive, .trash, .updateTask, .updateNotes, .setDueDate, .setRecurrence, .setLocationReminder, .updateTags, .snooze, .openOnPhone, .createNanoDo, .completeNanoDo, .reopenNanoDo, .deleteNanoDo:
          apply(action: action)
 
          SyncCoordinator.shared.showTransientFeedback(
@@ -247,11 +269,25 @@ final class WatchConnectivityService: NSObject, ObservableObject {
          if let cloudID,
             let existingToDo = try context.fetch(FetchDescriptor<ToDo>()).first(where: { $0.cloudID == cloudID }) {
             existingToDo.task = task
+            existingToDo.notes = action.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? existingToDo.notes
             existingToDo.dueDate = dueDate
             existingToDo.reminderIntent = reminderIntent
+            applyRecurrence(from: action, to: existingToDo)
+            applyLocationReminder(from: action, to: existingToDo)
             existingToDo.ownerUserID = ownerUserID
             existingToDo.lifecycleState = .active
             existingToDo.trashedAt = nil
+            try applyTags(from: action, to: existingToDo, context: context, ownerUserID: ownerUserID)
+            for nanoDoTask in sanitizedNanoDoTasks(from: action) {
+               let nanoDo = NanoDo(
+                  task: nanoDoTask,
+                  toDo: existingToDo,
+                  cloudID: syncMode == .syncEverywhere ? UUID() : nil,
+                  ownerUserID: ownerUserID
+               )
+               existingToDo.nanoDos.append(nanoDo)
+               context.insert(nanoDo)
+            }
             existingToDo.markUpdated()
             try context.save()
             NotificationManager.shared.scheduleRefresh()
@@ -266,12 +302,34 @@ final class WatchConnectivityService: NSObject, ObservableObject {
 
          let toDo = ToDo(
             task: task,
+            notes: action.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
             dueDate: dueDate,
-            reminderIntent: reminderIntent,
+           reminderIntent: reminderIntent,
+            recurrenceUnit: action.recurrenceUnitRaw.flatMap(ToDoRecurrenceUnit.init(rawValue:)),
+            recurrenceInterval: action.recurrenceInterval,
+            recurrenceMode: action.recurrenceModeRaw.flatMap(ToDoRecurrenceMode.init(rawValue:)),
+            recurrenceCount: action.recurrenceCount,
+            recurrenceAnchorDate: dueDate,
+            locationReminderLatitude: action.locationReminderLatitude,
+            locationReminderLongitude: action.locationReminderLongitude,
+            locationReminderRadius: action.locationReminderRadius,
+            locationReminderTrigger: action.locationReminderTriggerRaw.flatMap(ToDoLocationReminderTrigger.init(rawValue:)),
+            locationReminderLabel: action.locationReminderLabel?.trimmingCharacters(in: .whitespacesAndNewlines),
             cloudID: cloudID,
             ownerUserID: ownerUserID
          )
          context.insert(toDo)
+         try applyTags(from: action, to: toDo, context: context, ownerUserID: ownerUserID)
+         for nanoDoTask in sanitizedNanoDoTasks(from: action) {
+            let nanoDo = NanoDo(
+               task: nanoDoTask,
+               toDo: toDo,
+               cloudID: syncMode == .syncEverywhere ? UUID() : nil,
+               ownerUserID: ownerUserID
+            )
+            toDo.nanoDos.append(nanoDo)
+            context.insert(nanoDo)
+         }
          try context.save()
          NotificationManager.shared.scheduleRefresh()
          WidgetSnapshotService.shared.writeSnapshot(from: context)
@@ -327,6 +385,9 @@ final class WatchConnectivityService: NSObject, ObservableObject {
             }
             toDo.task = task
             toDo.markUpdated()
+         case .updateNotes:
+            toDo.notes = action.notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            toDo.markUpdated()
          case .complete:
             toDo.transition(to: .done)
             LiveActivityService.shared.endActivity(for: toDo)
@@ -339,6 +400,27 @@ final class WatchConnectivityService: NSObject, ObservableObject {
             toDo.trashedAt = Date()
             toDo.transition(to: .trashed)
             LiveActivityService.shared.endActivity(for: toDo)
+         case .createNanoDo:
+            let task = action.nanoDoTask?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !task.isEmpty else {
+               send(receipt: WatchToDoActionReceipt(
+                  actionID: action.id,
+                  accepted: false,
+                  message: String(localized: "Add a nanoDo before saving.")
+               ))
+               return
+            }
+            let syncMode = SyncCoordinator.shared.effectiveSyncMode
+            let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.scopedOwnerUserID : toDo.ownerUserID
+            let nanoDo = NanoDo(
+               task: task,
+               toDo: toDo,
+               cloudID: syncMode == .syncEverywhere ? UUID() : nil,
+               ownerUserID: ownerUserID
+            )
+            toDo.nanoDos.append(nanoDo)
+            context.insert(nanoDo)
+            toDo.markUpdated()
          case .completeNanoDo, .reopenNanoDo, .deleteNanoDo:
             guard let nanoDo = nanoDo(matching: action, in: toDo.nanoDos) else {
                send(receipt: WatchToDoActionReceipt(
@@ -364,7 +446,8 @@ final class WatchConnectivityService: NSObject, ObservableObject {
                SyncTombstoneStore.recordDelete(
                   table: .nanoDos,
                   recordID: nanoDo.cloudID,
-                  userID: nanoDo.ownerUserID
+                  userID: SupabaseAuthStore.shared.currentUserID ?? nanoDo.ownerUserID,
+                  collabID: toDo.collabID
                )
                toDo.nanoDos.removeAll { $0 === nanoDo }
                context.delete(nanoDo)
@@ -381,6 +464,17 @@ final class WatchConnectivityService: NSObject, ObservableObject {
             } else if action.isTimeSensitive == false || toDo.reminderIntent == .soft {
                toDo.reminderIntent = .due
             }
+            toDo.markUpdated()
+         case .setRecurrence:
+            applyRecurrence(from: action, to: toDo)
+            toDo.markUpdated()
+         case .setLocationReminder:
+            applyLocationReminder(from: action, to: toDo)
+            toDo.markUpdated()
+         case .updateTags:
+            let syncMode = SyncCoordinator.shared.effectiveSyncMode
+            let ownerUserID = syncMode == .syncEverywhere ? SupabaseAuthStore.shared.scopedOwnerUserID : toDo.ownerUserID
+            try applyTags(from: action, to: toDo, context: context, ownerUserID: ownerUserID)
             toDo.markUpdated()
          case .snooze:
             let seconds = action.snoozeSeconds ?? 0
@@ -457,6 +551,87 @@ final class WatchConnectivityService: NSObject, ObservableObject {
       return nil
    }
 
+   private func sanitizedNanoDoTasks(from action: WatchToDoAction) -> [String] {
+      (action.nanoDoTasks ?? [])
+         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+         .filter { !$0.isEmpty }
+   }
+
+   private func applyRecurrence(from action: WatchToDoAction, to toDo: ToDo) {
+      guard toDo.dueDate != nil,
+            let unitRaw = action.recurrenceUnitRaw,
+            let unit = ToDoRecurrenceUnit(rawValue: unitRaw),
+            let interval = action.recurrenceInterval,
+            interval > 0,
+            let modeRaw = action.recurrenceModeRaw,
+            let mode = ToDoRecurrenceMode(rawValue: modeRaw) else {
+         toDo.clearRecurrence()
+         return
+      }
+
+      toDo.recurrenceUnit = unit
+      toDo.recurrenceInterval = interval
+      toDo.recurrenceMode = mode
+      toDo.recurrenceCount = mode == .finite ? max(action.recurrenceCount ?? 1, 1) : nil
+      toDo.recurrenceAnchorDate = toDo.dueDate
+      toDo.recurrenceEndDate = nil
+   }
+
+   private func applyLocationReminder(from action: WatchToDoAction, to toDo: ToDo) {
+      guard let latitude = action.locationReminderLatitude,
+            let longitude = action.locationReminderLongitude else {
+         toDo.clearLocationReminder()
+         return
+      }
+
+      toDo.locationReminderLatitude = latitude
+      toDo.locationReminderLongitude = longitude
+      toDo.locationReminderRadius = min(max(action.locationReminderRadius ?? 150, 100), 1_000)
+      toDo.locationReminderTrigger = action.locationReminderTriggerRaw
+         .flatMap(ToDoLocationReminderTrigger.init(rawValue:)) ?? .arriving
+      toDo.locationReminderLabel = action.locationReminderLabel?.trimmingCharacters(in: .whitespacesAndNewlines)
+   }
+
+   private func applyTags(
+      from action: WatchToDoAction,
+      to toDo: ToDo,
+      context: ModelContext,
+      ownerUserID: UUID?
+   ) throws {
+      let names = sanitizedTagNames(from: action)
+      guard action.tagNames != nil else { return }
+
+      let existingTags = try context.fetch(FetchDescriptor<Tag>())
+         .filter { $0.ownerUserID == ownerUserID }
+      let canonicalByName = Dictionary(grouping: existingTags, by: { Tag.normalizeName($0.name) })
+         .compactMapValues { tags in
+            tags.sorted(by: Tag.shouldPreferCanonical(_:over:)).first
+         }
+
+      let resolvedTags = names.prefix(ToDo.maxTagSelection).map { name -> Tag in
+         if let tag = canonicalByName[Tag.normalizeName(name)] {
+            return tag
+         }
+         let tag = Tag(
+            name: name,
+            cloudID: ownerUserID == nil ? nil : UUID(),
+            ownerUserID: ownerUserID
+         )
+         context.insert(tag)
+         return tag
+      }
+
+      toDo.setSelectedTags(Array(resolvedTags))
+   }
+
+   private func sanitizedTagNames(from action: WatchToDoAction) -> [String] {
+      var seen = Set<String>()
+      return (action.tagNames ?? [])
+         .map(Tag.normalizeName)
+         .filter { !$0.isEmpty }
+         .filter { seen.insert($0).inserted }
+   }
+
    private func flushWatchOriginatedSyncIfPossible() {
       guard SyncCoordinator.shared.effectiveSyncMode == .syncEverywhere,
             let userID = SupabaseAuthStore.shared.currentUserID else {
@@ -501,10 +676,18 @@ final class WatchConnectivityService: NSObject, ObservableObject {
 
       return WatchAuthState(
          isAuthenticated: true,
+         isAccountResolved: authStore.hasResolvedAccount,
          userID: userID,
          provider: authStore.accountProviderLabel,
          email: authStore.signedInEmail,
-         source: .iPhone
+         username: authStore.profile?.username,
+         accountSetupVersion: authStore.profile?.accountSetupVersion,
+         source: .iPhone,
+         displayName: ToDoProfilePolicy.resolvedDisplayName(
+            profile: authStore.profile,
+            email: authStore.signedInEmail
+         ),
+         avatarURL: authStore.profile?.avatarURL
       )
    }
 

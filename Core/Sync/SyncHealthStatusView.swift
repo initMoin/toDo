@@ -3,6 +3,7 @@ import SwiftUI
 struct SyncHealthStatusView: View {
     @ObservedObject var syncCoordinator: SyncCoordinator
     let isAccountAuthenticated: Bool
+    var isNetworkAvailable: Bool = true
     var unresolvedConflictCount: Int = 0
     var onRefresh: (() -> Void)?
 
@@ -107,6 +108,7 @@ struct SyncHealthStatusView: View {
 
     private var canRefresh: Bool {
         onRefresh != nil
+            && isNetworkAvailable
             && syncCoordinator.effectiveSyncMode == .syncEverywhere
             && isAccountAuthenticated
             && syncCoordinator.syncActivityState != .activating
@@ -151,10 +153,10 @@ struct SyncHealthStatusView: View {
             return syncCoordinator.lastSuccessfulSyncAt.map(lastSyncMessage)
                 ?? String(localized: "toDō Sync is on and up to date.")
         case .failed:
-            let phasePrefix = syncCoordinator.lastFailedSyncPhase.map { "\($0.title): " } ?? ""
-            return syncCoordinator.lastSyncErrorMessage.map {
-                String(format: String(localized: "The last sync did not finish. %@%@"), phasePrefix, $0)
-            } ?? String(localized: "The last sync did not finish. Tap refresh to try again.")
+            if isNetworkAvailable {
+                return String(localized: "We couldn't finish syncing. Check your connection and try again.")
+            }
+            return String(localized: "Sync is paused while your connection is unavailable. It will resume when you're back online.")
         }
     }
 

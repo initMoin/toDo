@@ -4,6 +4,10 @@ extension WatchAuthState {
    var title: String {
       guard isAuthenticated else { return String(localized: "Not Signed In") }
 
+      guard isAccountResolved else {
+         return String(localized: "Finish Account Setup")
+      }
+
       switch source {
       case .iPhone:
          if let provider {
@@ -18,6 +22,10 @@ extension WatchAuthState {
    }
 
    var detail: String {
+      if isAuthenticated, !isAccountResolved {
+         return String(localized: "Finish setup on iPhone, Mac, Android, or Web before Watch sync.")
+      }
+
       if let email, !email.isEmpty {
          return email
       }

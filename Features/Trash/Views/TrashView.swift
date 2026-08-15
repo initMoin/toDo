@@ -249,7 +249,11 @@ struct TrashView: View {
       HapticFeedbackService.play(.destructive)
       withAnimation(AppAnimation.easeFast) {
          removeCalendarMirrorIfPresent(for: toDo)
-         SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: toDo, in: context)
+         SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+            for: toDo,
+            in: context,
+            actingUserID: authStore.currentUserID
+         )
          context.delete(toDo)
       }
       persistChanges("Failed to delete permanently")
@@ -260,7 +264,11 @@ struct TrashView: View {
       HapticFeedbackService.play(.destructive)
       for toDo in trashedToDos {
          removeCalendarMirrorIfPresent(for: toDo)
-         SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: toDo, in: context)
+         SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+            for: toDo,
+            in: context,
+            actingUserID: authStore.currentUserID
+         )
          context.delete(toDo)
       }
       persistChanges("Failed to empty trash")
@@ -274,7 +282,11 @@ struct TrashView: View {
       for toDo in trashedToDos {
          if let trashedAt = toDo.trashedAt, trashedAt < cutoffDate {
             removeCalendarMirrorIfPresent(for: toDo)
-            SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: toDo, in: context)
+            SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+               for: toDo,
+               in: context,
+               actingUserID: authStore.currentUserID
+            )
             context.delete(toDo)
             didPurge = true
          }
@@ -382,7 +394,11 @@ struct TrashView: View {
          let toDosToDelete = trashedToDos.filter { selectedToDoIDs.contains($0.id) }
          for toDo in toDosToDelete {
             removeCalendarMirrorIfPresent(for: toDo)
-            SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: toDo, in: context)
+            SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+               for: toDo,
+               in: context,
+               actingUserID: authStore.currentUserID
+            )
             context.delete(toDo)
          }
          selectedToDoIDs.removeAll()

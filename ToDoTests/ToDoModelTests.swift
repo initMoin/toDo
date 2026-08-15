@@ -5,6 +5,42 @@ import Testing
 @Suite("ToDo model foundation")
 @MainActor
 struct ToDoModelTests {
+   @Test func localSelectionIdentityResolvesTheSameRecord() {
+      let toDo = ToDo(task: "Keep this open")
+
+      let resolved = ToDo.resolveSelection(toDo.selectionIdentity, from: [toDo])
+
+      #expect(resolved === toDo)
+   }
+
+   @Test func cloudSelectionIdentitySurvivesCanonicalLocalReplacement() {
+      let cloudID = UUID()
+      let original = ToDo(task: "Original", cloudID: cloudID)
+      let replacement = ToDo(task: "Replacement", cloudID: cloudID)
+
+      let resolved = ToDo.resolveSelection(original.selectionIdentity, from: [replacement])
+
+      #expect(resolved === replacement)
+   }
+
+   @Test func selectionResolutionRejectsMissingAndTrashedRecords() {
+      let selected = ToDo(task: "Selected")
+      let other = ToDo(task: "Other")
+
+      #expect(ToDo.resolveSelection(selected.selectionIdentity, from: [other]) == nil)
+
+      selected.transition(to: .trashed)
+      #expect(ToDo.resolveSelection(selected.selectionIdentity, from: [selected]) == nil)
+   }
+
+   @Test func selectionResolutionCanRetainCompletedRecords() {
+      let selected = ToDo(task: "Completed", lifecycleState: .done)
+
+      let resolved = ToDo.resolveSelection(selected.selectionIdentity, from: [selected])
+
+      #expect(resolved === selected)
+   }
+
    @Test
    func completingEveryNanoDoCanCompleteParent() {
       let toDo = ToDo(
@@ -160,6 +196,50 @@ struct ToDoModelTests {
       toDo.markUpdated(nextUpdate)
 
       #expect(toDo.updatedAt == nextUpdate)
+   }
+
+   @Test func completionTransitionRecordsActivityDateAndReopeningClearsIt() {
+      let toDo = ToDo(task: "Complete this")
+
+      #expect(toDo.completionActivityDate == nil)
+
+      toDo.transition(to: .done)
+      #expect(toDo.completedAt != nil)
+      #expect(toDo.completionActivityDate == toDo.completedAt)
+
+      toDo.transition(to: .active)
+      #expect(toDo.completedAt == nil)
+      #expect(toDo.completionActivityDate == nil)
+   }
+
+   @Test func activityGridCountsCompletionsByCalendarDay() {
+      var calendar = Calendar(identifier: .gregorian)
+      calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+      let endDate = calendar.date(from: DateComponents(year: 2026, month: 8, day: 1, hour: 12))!
+      let previousDay = calendar.date(byAdding: .day, value: -1, to: endDate)!
+      let first = ToDo(task: "First", updatedAt: endDate, completedAt: endDate, lifecycleState: .done)
+      let second = ToDo(task: "Second", updatedAt: endDate, completedAt: endDate, lifecycleState: .done)
+      let third = ToDo(task: "Third", updatedAt: previousDay, completedAt: previousDay, lifecycleState: .done)
+
+      let grid = ToDoActivityTracker.grid(
+         from: [first, second, third],
+         endingAt: endDate,
+         weekCount: 2,
+         calendar: calendar
+      )
+
+      #expect(grid.count == 2)
+      #expect(grid.allSatisfy { $0.count == 7 })
+      #expect(grid.flatMap { $0 }.reduce(0) { $0 + $1.completionCount } == 3)
+      #expect(grid.flatMap { $0 }.contains { $0.completionCount == 2 })
+   }
+
+   @Test func legacyDoneRecordFallsBackToLastUpdateForActivity() {
+      let updatedAt = Date(timeIntervalSinceReferenceDate: 42)
+      let toDo = ToDo(task: "Legacy completion", updatedAt: updatedAt, lifecycleState: .done)
+      toDo.completedAt = nil
+
+      #expect(toDo.completionActivityDate == updatedAt)
    }
 
    @Test func todoTransitionToTrashedCapturesTimestamp() {

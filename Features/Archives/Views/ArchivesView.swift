@@ -255,7 +255,11 @@ struct ArchivesView: View {
       let allToPurge = completedToDos + archivedToDos
       for toDo in allToPurge {
          removeCalendarMirrorIfPresent(for: toDo)
-         SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: toDo, in: context)
+         SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+            for: toDo,
+            in: context,
+            actingUserID: supabaseAuthStore.currentUserID
+         )
          context.delete(toDo)
       }
 

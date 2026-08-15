@@ -56,12 +56,14 @@ struct LiquidGlassPanelBackground: View {
 
    var body: some View {
       if #available(iOS 26.0, *) {
-         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(tint.opacity(0.14))
-            .glassEffect(
-               .regular.tint(tint.opacity(0.58)),
-               in: .rect(cornerRadius: cornerRadius)
-            )
+         GlassEffectContainer(spacing: 0) {
+            RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+               .fill(tint.opacity(0.14))
+               .glassEffect(
+                  .regular.tint(tint.opacity(0.58)),
+                  in: .rect(cornerRadius: cornerRadius)
+               )
+         }
       } else {
          RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
             .fill(fallbackMaterial)
@@ -294,6 +296,16 @@ struct ToDoRowView: View {
                      )
                         .accessibilityLabel("Time-sensitive reminder")
                   }
+
+                  if let recurrenceSummary = toDo.recurrenceSummary {
+                     metadataChip(
+                        systemName: "arrow.triangle.2.circlepath",
+                        text: recurrenceSummary,
+                        tint: recurrenceChipTint,
+                        foreground: recurrenceChipForeground
+                     )
+                        .accessibilityLabel(String(format: String(localized: "Repeats %@"), recurrenceSummary))
+                  }
                }
                .lineLimit(1)
                .font(.appBody(12, relativeTo: .caption))
@@ -307,40 +319,32 @@ struct ToDoRowView: View {
       if isDetailSelected {
          return AppColor.onAction
       }
-      guard isOverdueStylingActive else { return AppColor.textPrimary }
-      return AppColor.white
+      return AppColor.textPrimary
    }
 
    private var metadataColor: Color {
       if isDetailSelected {
          return AppColor.onAction.opacity(0.78)
       }
-      guard isOverdueStylingActive else { return AppColor.textSecondary }
-      return AppColor.white.opacity(0.86)
+      return AppColor.textSecondary
    }
 
    private var tagTextColor: Color {
       if isDetailSelected {
          return AppColor.actionPrimary
       }
-      guard isOverdueStylingActive else { return AppColor.textPrimary }
-      return overdueAccentColor
+      return isOverdueStylingActive ? overdueAccentColor : AppColor.textPrimary
    }
 
    private var tagBackgroundColor: Color {
       if isDetailSelected {
          return AppColor.onAction.opacity(0.92)
       }
-      guard isOverdueStylingActive else { return AppColor.surfaceMuted }
-      return AppColor.white
+      return isOverdueStylingActive ? overdueAccentColor.opacity(0.12) : AppColor.surfaceMuted
    }
 
    private var syncConflictColor: Color {
       isOverdueStylingActive ? overdueAccentColor : AppColor.secondary
-   }
-
-   private var timeSensitiveIndicatorColor: Color {
-      isOverdueStylingActive ? AppColor.white : AppColor.actionDestructive
    }
 
    private var rowBackgroundColor: Color {
@@ -374,7 +378,7 @@ struct ToDoRowView: View {
    }
 
    private var overdueSurfaceColor: Color {
-      AppColor.actionDestructive
+      AppColor.actionDestructive.opacity(0.10)
    }
 
    private var overdueAccentColor: Color {
@@ -417,9 +421,6 @@ struct ToDoRowView: View {
       if isDetailSelected {
          return AppColor.textPrimary
       }
-      if isOverdueStylingActive {
-         return AppColor.white
-      }
       if isSelectionMode {
          return AppColor.actionSecondary
       }
@@ -427,7 +428,7 @@ struct ToDoRowView: View {
    }
 
    private var hasMetadata: Bool {
-      toDo.dueDate != nil || !toDo.nanoDos.isEmpty || isTimeSensitiveReminder
+      toDo.dueDate != nil || !toDo.nanoDos.isEmpty || isTimeSensitiveReminder || toDo.recurrenceSummary != nil
    }
 
    private var isTimeSensitiveReminder: Bool {
@@ -436,7 +437,7 @@ struct ToDoRowView: View {
 
    private var timeSensitiveBorderColor: Color {
       guard isTimeSensitiveReminder && !showsCompletedState else { return .clear }
-      return AppColor.actionDestructive
+      return isOverdueStylingActive ? overdueAccentColor.opacity(0.45) : AppColor.actionDestructive.opacity(0.72)
    }
 
    private var timeSensitiveBorderWidth: CGFloat {
@@ -482,7 +483,7 @@ struct ToDoRowView: View {
 
    private var dueDateChipTint: Color {
       if isOverdueStylingActive {
-         return AppColor.white
+         return overdueAccentColor.opacity(0.12)
       }
       return AppColor.actionPrimary.opacity(0.14)
    }
@@ -503,21 +504,32 @@ struct ToDoRowView: View {
 
    private var timeSensitiveChipTint: Color {
       if isOverdueStylingActive {
-         return AppColor.white.opacity(0.22)
+         return AppColor.actionDestructive.opacity(0.12)
       }
       return AppColor.actionDestructive.opacity(0.12)
    }
 
    private var timeSensitiveChipForeground: Color {
       if isOverdueStylingActive {
-         return AppColor.white
+         return AppColor.actionDestructive
       }
       return AppColor.actionDestructive
    }
 
+   private var recurrenceChipTint: Color {
+      if isOverdueStylingActive {
+         return AppColor.actionSecondary.opacity(0.12)
+      }
+      return AppColor.actionSecondary.opacity(0.14)
+   }
+
+   private var recurrenceChipForeground: Color {
+      AppColor.textPrimary
+   }
+
    private var nanoDoBadgeFill: Color {
       if isOverdueStylingActive {
-         return AppColor.white
+         return AppColor.surfaceMuted
       }
       guard nanoDoCount > 0 else { return AppColor.surfaceMuted }
       if completedNanoDoCount == nanoDoCount {
@@ -748,7 +760,7 @@ final class GuidedOnboardingManager: ObservableObject {
    }
 
    var canSkip: Bool {
-      isActive
+      isActive && defaults.bool(forKey: AppPreferences.Keys.hasCompletedOnboardingOnce)
    }
 
    var blocksToDosChrome: Bool {
@@ -865,7 +877,7 @@ enum GuidedOnboardingStep: String, CaseIterable {
       case .welcome, .openAddView, .completion:
          return nil
       case .editExistingToDo:
-         return .editButton
+         return .toDoCloseButton
       case .archiveVsDelete:
          return .settingsBehavior
       case .highlightAddButton:
@@ -912,6 +924,7 @@ enum OnboardingSpotlightID: Hashable {
    case saveButton
    case createdToDo
    case editButton
+   case toDoCloseButton
    case settingsButton
    case settingsAccount
    case settingsNotifications
@@ -1041,17 +1054,18 @@ struct GuidedOnboardingOverlay: View {
 
    private func spotlightCard(spotlightRect: CGRect?, containerSize: CGSize) -> some View {
       let content = contentForCurrentStep
-      let maxWidth = min(containerSize.width - 32, 430)
+      let isVerticallyTight = containerSize.height < 620
+      let maxWidth = min(containerSize.width - 32, isVerticallyTight ? 370 : 430)
       let placement = cardPlacement(for: spotlightRect, containerSize: containerSize, maxWidth: maxWidth)
 
-      return VStack(alignment: .leading, spacing: 14) {
+      return VStack(alignment: .leading, spacing: isVerticallyTight ? 11 : 14) {
          Label(content.title, systemImage: content.systemImage)
-            .font(.appDisplay(22, relativeTo: .title3))
+            .font(.appDisplay(isVerticallyTight ? 20 : 22, relativeTo: .title3))
             .foregroundStyle(AppColor.textPrimary)
             .fixedSize(horizontal: false, vertical: true)
 
          Text(content.message)
-            .font(.appBody(14, relativeTo: .body))
+            .font(.appBody(isVerticallyTight ? 13 : 14, relativeTo: .body))
             .foregroundStyle(AppColor.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
 
@@ -1083,7 +1097,7 @@ struct GuidedOnboardingOverlay: View {
             }
          }
       }
-      .padding(20)
+      .padding(isVerticallyTight ? 16 : 20)
       .frame(width: maxWidth, alignment: .leading)
       .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 28))
       .shadow(color: AppColor.shadow, radius: 28, x: 0, y: 14)
@@ -1093,27 +1107,47 @@ struct GuidedOnboardingOverlay: View {
    }
 
    private func cardPlacement(for spotlightRect: CGRect?, containerSize: CGSize, maxWidth: CGFloat) -> CGPoint {
+      let estimatedCardHeight = estimatedOnboardingCardHeight(in: containerSize)
+      let halfHeight = min(estimatedCardHeight / 2, max(84, (containerSize.height - 32) / 2))
+
       guard let spotlightRect else {
-         return CGPoint(x: containerSize.width / 2, y: containerSize.height * 0.70)
+         return CGPoint(
+            x: containerSize.width / 2,
+            y: min(max(containerSize.height * 0.70, halfHeight + 16), containerSize.height - halfHeight - 16)
+         )
       }
 
-      let estimatedCardHeight: CGFloat = manager.currentStep == .completion ? 210 : 230
       let bottomSpace = containerSize.height - spotlightRect.maxY
       let topSpace = spotlightRect.minY
-      let y: CGFloat
+      let preferredY: CGFloat
 
       if bottomSpace >= estimatedCardHeight + 24 {
-         y = min(containerSize.height - estimatedCardHeight / 2 - 16, spotlightRect.maxY + estimatedCardHeight / 2 + 18)
+         preferredY = spotlightRect.maxY + halfHeight + 18
       } else if topSpace >= estimatedCardHeight + 24 {
-         y = max(estimatedCardHeight / 2 + 16, spotlightRect.minY - estimatedCardHeight / 2 - 18)
+         preferredY = spotlightRect.minY - halfHeight - 18
       } else {
-         y = containerSize.height * 0.72
+         preferredY = spotlightRect.midY < containerSize.height * 0.5
+            ? containerSize.height - halfHeight - 16
+            : halfHeight + 16
       }
 
       let preferredX = spotlightRect.midX
       let halfWidth = maxWidth / 2
       let x = min(max(preferredX, halfWidth + 16), containerSize.width - halfWidth - 16)
+      let y = min(max(preferredY, halfHeight + 16), containerSize.height - halfHeight - 16)
       return CGPoint(x: x, y: y)
+   }
+
+   private func estimatedOnboardingCardHeight(in containerSize: CGSize) -> CGFloat {
+      let tightAdjustment: CGFloat = containerSize.height < 620 ? -26 : 0
+      switch manager.currentStep {
+      case .completion:
+         return 205 + tightAdjustment
+      case .notificationPermission, .archiveVsDelete, .signInAndSync:
+         return 220 + tightAdjustment
+      default:
+         return 230 + tightAdjustment
+      }
    }
 
    private var contentForCurrentStep: GuidedOnboardingContent {
@@ -1131,17 +1165,17 @@ struct GuidedOnboardingOverlay: View {
       case .creationSuccess:
          return GuidedOnboardingContent(title: String(localized: "Good."), message: String(localized: "Your first toDō is now active. From here, you can complete, archive, and refine your workflow over time."), systemImage: "checkmark.seal.fill", primaryTitle: String(localized: "Continue"))
       case .openCreatedToDo:
-         return GuidedOnboardingContent(title: String(localized: "Open your toDō"), message: String(localized: "Tap the highlighted row, or continue here, to see what belongs to this toDō."), systemImage: "arrow.up.right.circle.fill", primaryTitle: String(localized: "Open toDō"))
+         return GuidedOnboardingContent(title: String(localized: "Open your toDō"), message: String(localized: "Tap the highlighted row, or continue here, to see what belongs to this toDō. Before you leave this view, remember: use the back arrow or xmark to return to the tour."), systemImage: "arrow.up.right.circle.fill", primaryTitle: String(localized: "Open toDō"))
       case .editExistingToDo:
-         return GuidedOnboardingContent(title: String(localized: "Make changes when needed"), message: String(localized: "When viewing a toDō, use the arrow button to edit its title, date, reminder, tags, notes, and NanoDos."), systemImage: "arrow.up.right.circle.fill", primaryTitle: String(localized: "Continue"))
+         return GuidedOnboardingContent(title: String(localized: "Make changes when needed"), message: String(localized: "Review your new toDō here. Use the arrow button if you want to edit it. When you are ready, tap the highlighted xmark to return to the tour."), systemImage: "arrow.up.right.circle.fill", primaryTitle: String(localized: "Return to the tour"))
       case .highlightSettings:
-         return GuidedOnboardingContent(title: String(localized: "Configure your workflow"), message: String(localized: "Customize how toDō behaves, syncs, and notifies you."), systemImage: "gearshape.fill", primaryTitle: String(localized: "Open Settings"))
+         return GuidedOnboardingContent(title: String(localized: "Configure your workflow"), message: String(localized: "Customize how toDō behaves, syncs, and notifies you. Before opening Settings, remember: use its back arrow when you are ready to return to the tour."), systemImage: "gearshape.fill", primaryTitle: String(localized: "Open Settings"))
       case .signInAndSync:
-         return GuidedOnboardingContent(title: String(localized: "Choose where to keep your toDōs"), message: String(localized: "Stay local for this device, use iCloud across Apple devices, or sign in to use toDō Sync across iPhone, iPad, Watch, Mac, Android, and web."), systemImage: "arrow.triangle.2.circlepath", primaryTitle: String(localized: "Continue"))
+         return GuidedOnboardingContent(title: String(localized: "Choose where to keep your toDōs"), message: String(localized: "Stay local for this device, use iCloud across Apple devices, or sign in to use toDō Sync across iPhone, iPad, Watch, Mac, Android, and web. Review this screen, then continue below."), systemImage: "arrow.triangle.2.circlepath", primaryTitle: String(localized: "Continue"))
       case .notificationPermission:
          return GuidedOnboardingContent(title: String(localized: "Enable reminders when you want them"), message: String(localized: "toDō asks for notification permission here because reminders only matter after you decide to use them. You can change this later in Settings."), systemImage: "bell.fill", primaryTitle: String(localized: "Enable Notifications"))
       case .archiveVsDelete:
-         return GuidedOnboardingContent(title: String(localized: "Choose your behavior"), message: String(localized: "This is where you decide whether removing a toDō should archive it or send it to trash. Use the button below to keep moving."), systemImage: "archivebox.fill", primaryTitle: String(localized: "Continue"))
+         return GuidedOnboardingContent(title: String(localized: "Choose your behavior"), message: String(localized: "This is where you decide whether removing a toDō should archive it or send it to trash. Review the choice, then continue below."), systemImage: "archivebox.fill", primaryTitle: String(localized: "Continue"))
       case .completion:
          return GuidedOnboardingContent(title: String(localized: "You're ready."), message: String(localized: "toDō is designed to adapt to your workflow over time.\n\nStart small. Refine continuously."), systemImage: "checkmark.circle.fill", primaryTitle: String(localized: "Enter toDō"))
       }

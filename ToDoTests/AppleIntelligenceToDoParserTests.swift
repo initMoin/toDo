@@ -55,7 +55,7 @@ struct AppleIntelligenceToDoParserTests {
       #expect(draft.recurrenceCount == nil)
       #expect(draft.recurrenceEndDate == nil)
       #expect(draft.tagNames == ["development"])
-      #expect(draft.nanoDoTitles == ["Add screenshots", "Add release notes"])
+      #expect(draft.nanoDoTitles == ["screenshots", "release notes"])
       #expect(draft.notes == "TestFlight must be verified")
    }
 
@@ -129,7 +129,7 @@ struct AppleIntelligenceToDoParserTests {
 
       #expect(draft.notes == "legal must approve it")
       #expect(draft.tagNames == ["development", "release"])
-      #expect(draft.nanoDoTitles == ["Draft announcement", "Verify screenshots"])
+      #expect(draft.nanoDoTitles == ["draft announcement", "verify screenshots"])
    }
 
    @MainActor
@@ -278,5 +278,39 @@ struct AppleIntelligenceToDoParserTests {
       )
 
       #expect(draft == nil)
+   }
+
+   @MainActor
+   @Test
+   func asksForNamesWhenRequestedNanoDosAreUnnamed() throws {
+      let request = "Finish the report tomorrow with three subtasks."
+      let modelResponse = """
+      {
+        "title": "Finish the report",
+        "notes": "",
+        "dueDate": "2026-06-19T09:00:00-05:00",
+        "reminderIntent": "due",
+        "recurrenceUnit": null,
+        "recurrenceInterval": null,
+        "recurrenceMode": null,
+        "recurrenceCount": null,
+        "recurrenceEndDate": null,
+        "tagNames": [],
+        "nanoDoTitles": [],
+        "locationLabel": null,
+        "locationTrigger": null,
+        "clarificationQuestion": "What are the three subtasks?"
+      }
+      """
+
+      let draft = try #require(
+         AppleIntelligenceService.decodeToDoDraft(
+            from: modelResponse,
+            spokenRequest: request
+         )
+      )
+
+      #expect(draft.nanoDoTitles.isEmpty)
+      #expect(draft.clarificationQuestion != nil)
    }
 }

@@ -101,15 +101,18 @@ enum WidgetTypography {
    }
 
    static func body(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-      .custom("Jura-SemiBold", size: size, relativeTo: textStyle)
+      .custom("Jura", size: size, relativeTo: textStyle)
+         .weight(.regular)
    }
 
    static func bodyStrong(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .body) -> Font {
-      .custom("Jura-SemiBold", size: size, relativeTo: textStyle)
+      .custom("Jura", size: size, relativeTo: textStyle)
+         .weight(.semibold)
    }
 
    static func accent(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .subheadline) -> Font {
-      .custom("Jura-SemiBold", size: size, relativeTo: textStyle)
+      .custom("Jura", size: size, relativeTo: textStyle)
+         .weight(.semibold)
    }
 }
 

@@ -6,7 +6,7 @@
 //
 
 import Testing
-@testable import ToDo_Watch_App
+@testable import ToDo_Watch
 
 struct ToDo_Watch_AppTests {
 

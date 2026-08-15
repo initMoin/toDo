@@ -123,6 +123,10 @@ final class WidgetSnapshotService {
    }
 
    func writeSnapshot(from context: ModelContext) {
+      #if os(macOS)
+      _ = context
+      return
+      #else
       do {
          processPendingCompletionRequests(in: context)
          let snapshot = try makeSnapshot(from: context)
@@ -131,11 +135,17 @@ final class WidgetSnapshotService {
       } catch {
          AppLog.error("Failed to write toDō widget snapshot: \(error)", logger: AppLog.widget)
       }
+      #endif
    }
 
    func writeSnapshot(from container: ModelContainer) {
+      #if os(macOS)
+      _ = container
+      return
+      #else
       let context = ModelContext(container)
       writeSnapshot(from: context)
+      #endif
    }
 
    private func makeSnapshot(from context: ModelContext) throws -> ToDoWidgetSnapshot {

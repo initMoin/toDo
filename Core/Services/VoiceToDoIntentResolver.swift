@@ -14,6 +14,7 @@ struct VoiceToDoIntentModelDraft: Sendable {
    let nanoDoTitles: [String]
    let locationLabel: String?
    let locationTrigger: String?
+   let clarificationQuestion: String?
 }
 
 enum VoiceToDoIntentResolver {
@@ -57,8 +58,34 @@ enum VoiceToDoIntentResolver {
          tagNames: normalizedUniqueStrings(modelDraft.tagNames, limit: ToDo.maxTagSelection),
          nanoDoTitles: resolvedNanoDos,
          locationLabel: nonempty(modelDraft.locationLabel),
-         locationTrigger: modelDraft.locationTrigger.flatMap(ToDoLocationReminderTrigger.init(rawValue:))
+         locationTrigger: modelDraft.locationTrigger.flatMap(ToDoLocationReminderTrigger.init(rawValue:)),
+         clarificationQuestion: clarificationQuestion(
+            spokenRequest: trimmedRequest,
+            resolvedNanoDos: resolvedNanoDos,
+            modelQuestion: modelDraft.clarificationQuestion
+         )
       )
+   }
+
+   private static func clarificationQuestion(
+      spokenRequest: String,
+      resolvedNanoDos: [String],
+      modelQuestion: String?
+   ) -> String? {
+      if requestsUnnamedNanoDos(in: spokenRequest), resolvedNanoDos.isEmpty {
+         return String(localized: "What should the NanoDos be called?")
+      }
+      return nonempty(modelQuestion)
+   }
+
+   private static func requestsUnnamedNanoDos(in value: String) -> Bool {
+      let normalized = value.folding(
+         options: [.caseInsensitive, .diacriticInsensitive],
+         locale: .current
+      )
+      let pattern = #"\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:sub\s*tasks?|subtasks?|steps?|nanodos?|child\s+tasks?)\b"#
+      guard containsPhrase(pattern, in: normalized) else { return false }
+      return explicitNanoDoTitles(in: value).isEmpty
    }
 
    static func containsExplicitTime(in value: String) -> Bool {

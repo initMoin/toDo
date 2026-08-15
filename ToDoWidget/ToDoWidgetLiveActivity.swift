@@ -170,7 +170,7 @@ private struct ToDoLiveActivityLockScreenView: View {
                   .frame(maxWidth: .infinity, alignment: .leading)
 
                Text(context.state.statusTitle)
-                  .font(.custom("Jura-SemiBold", size: 12, relativeTo: .caption))
+                  .font(.custom("Jura", size: 12, relativeTo: .caption).weight(.semibold))
                   .foregroundStyle(context.state.accentColor)
                   .textCase(.uppercase)
                   .lineLimit(1)
@@ -191,7 +191,7 @@ private struct ToDoLiveActivityLockScreenView: View {
          HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 5) {
                Text(String(localized: "Due"))
-                  .font(.custom("Jura-SemiBold", size: 11, relativeTo: .caption2))
+                  .font(.custom("Jura", size: 11, relativeTo: .caption2).weight(.semibold))
                   .foregroundStyle(context.state.accentColor)
                   .textCase(.uppercase)
 
@@ -217,7 +217,7 @@ private struct ToDoLiveActivityLockScreenView: View {
 
             VStack(alignment: .leading, spacing: 5) {
                Text(String(localized: "Updated"))
-                  .font(.custom("Jura-SemiBold", size: 11, relativeTo: .caption2))
+                  .font(.custom("Jura", size: 11, relativeTo: .caption2).weight(.semibold))
                   .foregroundStyle(Color(hex: 0xF4F1E8, opacity: 0.58))
                   .textCase(.uppercase)
                   .lineLimit(1)
@@ -268,16 +268,18 @@ private struct ToDoLiveActivityLockScreenView: View {
       let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
       if #available(iOSApplicationExtension 26.0, *) {
-         shape
-            .fill(Color.white.opacity(0.08))
-            .overlay {
-               shape
-                  .stroke(Color.white.opacity(0.32), lineWidth: 1)
-            }
-            .glassEffect(
-               .regular.tint(Color.white.opacity(0.12)),
-               in: .rect(cornerRadius: cornerRadius)
-            )
+         GlassEffectContainer(spacing: 0) {
+            shape
+               .fill(Color.white.opacity(0.08))
+               .overlay {
+                  shape
+                     .stroke(Color.white.opacity(0.32), lineWidth: 1)
+               }
+               .glassEffect(
+                  .regular.tint(Color.white.opacity(0.12)),
+                  in: .rect(cornerRadius: cornerRadius)
+               )
+         }
       } else {
          shape
             .fill(lockScreenBackground)
@@ -330,7 +332,7 @@ private struct ToDoWatchLiveActivityView: View {
          HStack(alignment: .center, spacing: 7) {
             VStack(alignment: .leading, spacing: 1) {
                Text(context.state.watchStatusText)
-                  .font(.custom("Jura-SemiBold", size: 8, relativeTo: .caption2))
+                  .font(.custom("Jura", size: 8, relativeTo: .caption2).weight(.semibold))
                   .foregroundStyle(context.state.accentColor)
                   .textCase(.uppercase)
                   .lineLimit(1)

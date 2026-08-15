@@ -230,6 +230,7 @@ final class MigrationService {
                 notes: sourceToDo.notes,
                 createdAt: sourceToDo.createdAt,
                 updatedAt: sourceToDo.updatedAt,
+                completedAt: sourceToDo.completedAt,
                 dueDate: sourceToDo.dueDate,
                 reminderIntent: sourceToDo.reminderIntent,
                 recurrenceUnit: sourceToDo.recurrenceUnit,
@@ -244,13 +245,15 @@ final class MigrationService {
                 tag: nil,
                 tags: [],
                 cloudID: sourceToDo.cloudID,
-                ownerUserID: destinationOwnerUserID
+                ownerUserID: destinationOwnerUserID,
+                collabID: sourceToDo.collabID
             )
             destinationContext.insert(clonedToDo)
             clonedToDo.setSelectedTags(
                 sourceToDo.effectiveTags.compactMap { clonedTagsByID[$0.id] }
             )
             clonedToDo.updatedAt = sourceToDo.updatedAt
+            clonedToDo.completedAt = sourceToDo.completedAt
             clonedToDosByID[sourceToDo.id] = clonedToDo
         }
 
@@ -313,6 +316,7 @@ final class MigrationService {
                 notes: sourceToDo.notes,
                 createdAt: sourceToDo.createdAt,
                 updatedAt: sourceToDo.updatedAt,
+                completedAt: sourceToDo.completedAt,
                 dueDate: sourceToDo.dueDate,
                 reminderIntent: sourceToDo.reminderIntent,
                 recurrenceUnit: sourceToDo.recurrenceUnit,
@@ -330,6 +334,7 @@ final class MigrationService {
                 ownerUserID: nil
             )
             context.insert(clonedToDo)
+            clonedToDo.completedAt = sourceToDo.completedAt
             clonedToDo.setSelectedTags(
                 sourceToDo.effectiveTags.compactMap { clonedTagsByID[$0.id] }
             )

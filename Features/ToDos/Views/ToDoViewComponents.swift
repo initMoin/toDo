@@ -16,29 +16,25 @@ struct ToDoLifecycleActionBar: View {
    let onToggleDone: () -> Void
 
    var body: some View {
-      if #available(iOS 26, *) {
-         GlassEffectContainer(spacing: 16) {
-            controls
+      controls
+         .padding(.horizontal, 10)
+         .padding(.vertical, 8)
+         .background(AppColor.surfaceElevated.opacity(0.78), in: Capsule())
+         .overlay {
+            Capsule()
+               .stroke(AppColor.textSecondary.opacity(0.10), lineWidth: 1)
          }
+         .shadow(color: AppColor.shadow.opacity(0.55), radius: 12, x: 0, y: 6)
          .frame(maxWidth: .infinity, alignment: .center)
-         .padding(.horizontal, 20)
-      } else {
-         controls
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(AppColor.surfaceElevated, in: Capsule())
-            .frame(maxWidth: .infinity, alignment: .center)
-            .padding(.horizontal, 18)
-      }
+         .padding(.horizontal, 18)
    }
 
    private var controls: some View {
-      HStack(spacing: 14) {
+      HStack(spacing: 10) {
          if includesSnooze {
             lifecycleActionButton(
                systemName: "clock.arrow.circlepath",
                accessibilityLabel: "Snooze toDō",
-               foreground: AppColor.onAction,
                background: AppColor.actionPrimary,
                action: onSnooze
             )
@@ -48,7 +44,6 @@ struct ToDoLifecycleActionBar: View {
             lifecycleActionButton(
                systemName: removalAction.systemImage,
                accessibilityLabel: LocalizedStringKey(removalAction.accessibilityLabel),
-               foreground: AppColor.onAction,
                background: removalAction == .delete ? AppColor.actionDestructive : AppColor.actionSecondary,
                action: onRemoval
             )
@@ -57,7 +52,6 @@ struct ToDoLifecycleActionBar: View {
          lifecycleActionButton(
             systemName: isDone ? "arrow.uturn.backward" : "checkmark",
             accessibilityLabel: isDone ? "Mark toDō active" : "Mark toDō done",
-            foreground: AppColor.onAction,
             background: isDone ? AppColor.actionPrimary : AppColor.actionSuccess,
             action: onToggleDone
          )
@@ -67,34 +61,32 @@ struct ToDoLifecycleActionBar: View {
    private func lifecycleActionButton(
       systemName: String,
       accessibilityLabel: LocalizedStringKey,
-      foreground: Color,
       background: Color,
       action: @escaping () -> Void
    ) -> some View {
       Button(action: action) {
          ZStack(alignment: .bottomTrailing) {
             Image(systemName: systemName)
-               .font(.appDisplay(18, relativeTo: .headline))
-               .foregroundStyle(foreground)
-               .frame(width: 34, height: 34)
-               .background {
-                  if #unavailable(iOS 26) {
-                     Circle().fill(background)
-                  }
+               .font(.system(size: 15, weight: .semibold, design: .rounded))
+               .foregroundStyle(background)
+               .frame(width: 38, height: 38)
+               .background(background.opacity(0.13), in: Circle())
+               .overlay {
+                  Circle()
+                     .stroke(background.opacity(0.22), lineWidth: 1)
                }
-               .appInteractiveCircleGlass(tint: background)
                .contentShape(Circle())
                .overlay {
                   if differentiatesWithoutColor {
                      Circle()
-                        .strokeBorder(foreground, style: StrokeStyle(lineWidth: 2.5, dash: [4, 3]))
+                        .strokeBorder(AppColor.textPrimary, style: StrokeStyle(lineWidth: 2.5, dash: [4, 3]))
                   }
                }
 
             if differentiatesWithoutColor {
                Image(systemName: "checkmark")
                   .font(.system(size: 8, weight: .black))
-                  .foregroundStyle(foreground)
+                  .foregroundStyle(AppColor.onAction)
                   .padding(3)
                   .background(background, in: Circle())
                   .accessibilityHidden(true)
@@ -338,6 +330,8 @@ struct NanoDoRowView: View {
    @Environment(\.modelContext) private var context
    @Bindable var nanoDo: NanoDo
    var allowsTextEditing = true
+   var allowsDueDateEditing = true
+   var allowsCompletionToggle = true
    var completesParentImmediately = true
    var onMutation: () -> Void = {}
    let onDelete: () -> Void
@@ -346,24 +340,7 @@ struct NanoDoRowView: View {
       VStack(alignment: .leading, spacing: 10) {
          HStack(alignment: .top, spacing: 10) {
             Button {
-               HapticFeedbackService.play(nanoDo.isDone ? .taskReopened : .taskCompleted)
-               withAnimation(AppAnimation.easeFast) {
-                  nanoDo.isDone.toggle()
-                  nanoDo.markUpdated()
-                  if completesParentImmediately {
-                     let completedParent = nanoDo.toDo?.completeIfAllNanoDosAreDone() ?? false
-                     if completedParent, let parent = nanoDo.toDo {
-                        LiveActivityService.shared.endActivity(for: parent)
-                     }
-                  }
-                  // Update the parent before saving so child and parent state
-                  // are persisted and synced as one mutation.
-                  onMutation()
-                  try? context.save()
-                  NotificationManager.shared.scheduleRefresh()
-                  WidgetSnapshotService.shared.writeSnapshot(from: context)
-                  SyncCoordinator.shared.scheduleLocalSync()
-               }
+               toggleCompletion()
             } label: {
                Image(systemName: nanoDo.isDone ? "checkmark.circle.fill" : "circle")
                   .font(.appDisplay(23, relativeTo: .headline))
@@ -372,6 +349,8 @@ struct NanoDoRowView: View {
                   .contentTransition(.symbolEffect(.replace))
             }
             .buttonStyle(.plain)
+            .disabled(!allowsCompletionToggle)
+            .opacity(allowsCompletionToggle ? 1 : 0.56)
             .accessibilityLabel(nanoDo.isDone ? "Mark nanoDo active" : "Mark nanoDo done")
             .accessibilityInputLabels([
                Text(nanoDo.isDone ? "Mark nanoDo active" : "Mark nanoDo done"),
@@ -418,7 +397,11 @@ struct NanoDoRowView: View {
          }
 
          HStack(spacing: 10) {
-            if let dueDate = nanoDo.dueDate {
+            if let dueDate = nanoDo.dueDate, !allowsDueDateEditing {
+               Label(AppLocalization.dateTimeString(dueDate), systemImage: "calendar")
+                  .font(.appBodyStrong(12, relativeTo: .caption))
+                  .foregroundStyle(AppColor.textSecondary)
+            } else if let dueDate = nanoDo.dueDate {
                Image(systemName: "calendar")
                   .font(.appBodyStrong(12, relativeTo: .caption))
                   .foregroundStyle(AppColor.actionPrimary)
@@ -451,7 +434,7 @@ struct NanoDoRowView: View {
                .buttonStyle(.plain)
                .foregroundStyle(AppColor.textSecondary)
                .accessibilityLabel("Clear due date")
-            } else {
+            } else if allowsDueDateEditing {
                Button {
                   nanoDo.dueDate = Calendar.current.date(byAdding: .hour, value: 1, to: .now) ?? .now
                   nanoDo.markUpdated()
@@ -477,6 +460,26 @@ struct NanoDoRowView: View {
             .stroke(AppColor.secondary.opacity(nanoDo.isDone ? 0.12 : 0.22), lineWidth: 1)
       )
       .opacity(nanoDo.isDone ? 0.72 : 1)
+   }
+
+   private func toggleCompletion() {
+      guard allowsCompletionToggle else { return }
+      HapticFeedbackService.play(nanoDo.isDone ? .taskReopened : .taskCompleted)
+      withAnimation(AppAnimation.easeFast) {
+         nanoDo.isDone.toggle()
+         nanoDo.markUpdated()
+         if completesParentImmediately {
+            let completedParent = nanoDo.toDo?.completeIfAllNanoDosAreDone() ?? false
+            if completedParent, let parent = nanoDo.toDo {
+               LiveActivityService.shared.endActivity(for: parent)
+            }
+         }
+         onMutation()
+         try? context.save()
+         NotificationManager.shared.scheduleRefresh()
+         WidgetSnapshotService.shared.writeSnapshot(from: context)
+         SyncCoordinator.shared.scheduleLocalSync()
+      }
    }
 }
 

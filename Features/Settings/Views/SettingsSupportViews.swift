@@ -19,9 +19,21 @@ extension EnvironmentValues {
 
 struct SettingsSubmenuContainer<Content: View>: View {
    @Environment(\.settingsDetailPresentation) private var presentation
+   @Environment(\.dismiss) private var dismiss
    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+   @Environment(\.colorScheme) private var colorScheme
+   @ObservedObject private var onboardingManager = GuidedOnboardingManager.shared
+   @ObservedObject private var notificationManager = NotificationManager.shared
    let title: String
    @ViewBuilder let content: () -> Content
+
+   init(
+      title: String,
+      @ViewBuilder content: @escaping () -> Content
+   ) {
+      self.title = title
+      self.content = content
+   }
 
    private var pushedContentMaxWidth: CGFloat {
       horizontalSizeClass == .regular ? 760 : .infinity
@@ -36,23 +48,22 @@ struct SettingsSubmenuContainer<Content: View>: View {
    }
 
    private var pushedBody: some View {
-      VStack(spacing: 0) {
-         AppSettingsDetailHeader(title: title)
-
-         ScrollView {
-            contentStack
-               .frame(maxWidth: pushedContentMaxWidth, alignment: .topLeading)
-               .frame(maxWidth: .infinity, alignment: .top)
-               .padding(.horizontal, 16)
-               .padding(.top, 4)
-               .padding(.bottom, 28)
-         }
-         .scrollIndicators(.hidden)
+      ScrollView {
+         contentStack
+            .frame(maxWidth: pushedContentMaxWidth, alignment: .topLeading)
+            .frame(maxWidth: .infinity, alignment: .top)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 28)
       }
+      .scrollIndicators(.hidden)
       .background(AppColor.surface)
       .tint(AppColor.main)
       .appBaseTypography()
-      .appNavigationChrome()
+      .settingsNativeNavigationTitle(title, colorScheme: colorScheme, background: AppColor.main)
+      .overlay {
+         onboardingReturnOverlay
+      }
    }
 
    private var sidePanelBody: some View {
@@ -84,6 +95,45 @@ struct SettingsSubmenuContainer<Content: View>: View {
       .appNavigationChrome()
    }
 
+   @ViewBuilder
+   private var onboardingReturnOverlay: some View {
+      if onboardingManager.isActive,
+         onboardingManager.blocksSettingsChrome,
+         presentation == .pushed {
+         GuidedOnboardingOverlay(manager: onboardingManager, anchors: [:]) { step in
+            handleOnboardingPrimaryAction(step)
+         }
+         .zIndex(1200)
+      }
+   }
+
+   private func handleOnboardingPrimaryAction(_ step: GuidedOnboardingStep) {
+      switch step {
+      case .signInAndSync:
+         dismiss()
+         advanceOnboardingAfterDismiss(to: .notificationPermission)
+      case .notificationPermission:
+         Task { @MainActor in
+            await notificationManager.requestAuthorizationFlow()
+            dismiss()
+            try? await Task.sleep(for: .milliseconds(180))
+            onboardingManager.advance(to: .archiveVsDelete)
+         }
+      case .archiveVsDelete:
+         dismiss()
+         advanceOnboardingAfterDismiss(to: .completion)
+      default:
+         break
+      }
+   }
+
+   private func advanceOnboardingAfterDismiss(to step: GuidedOnboardingStep) {
+      Task { @MainActor in
+         try? await Task.sleep(for: .milliseconds(180))
+         onboardingManager.advance(to: step)
+      }
+   }
+
    private var contentStack: some View {
       VStack(alignment: .leading, spacing: 24) {
          content()
@@ -92,12 +142,8 @@ struct SettingsSubmenuContainer<Content: View>: View {
 
    private var sidePanelHeader: some View {
       HStack(spacing: 10) {
-         Capsule()
-            .fill(AppColor.main)
-            .frame(width: 5, height: 28)
-
          Text(LocalizedStringKey(title))
-            .font(.appDisplay(28, relativeTo: .title2))
+            .font(.appViewTitle(28, relativeTo: .title2))
             .foregroundStyle(AppColor.textPrimary)
             .lineLimit(1)
             .minimumScaleFactor(0.86)
@@ -125,7 +171,7 @@ struct SyncConflictReviewView: View {
          VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 8) {
                Text("Choose a Version")
-                  .font(.appTitle(34, relativeTo: .largeTitle))
+                  .font(.appViewTitle(34, relativeTo: .largeTitle))
                   .foregroundStyle(AppColor.textPrimary)
             }
 
@@ -369,4 +415,5 @@ struct SyncConflictReviewView: View {
    }
    .modelContainer(container)
    .environmentObject(SupabaseAuthStore.preview)
+   .environmentObject(ToDoPurchaseManager.preview)
 }

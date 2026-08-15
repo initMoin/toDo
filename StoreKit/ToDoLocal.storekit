@@ -1,0 +1,77 @@
+{
+  "products" : [
+    {
+      "displayPrice" : "2.99",
+      "familyShareable" : true,
+      "internalID" : "1000000001",
+      "locale" : "en_US",
+      "productID" : "dev.iamshift.todo.plus.monthly",
+      "referenceName" : "toDō+ Monthly",
+      "subscriptionGroupID" : "todo-plus",
+      "subscriptionPeriod" : "P1M",
+      "type" : "Auto-Renewable Subscription"
+    },
+    {
+      "displayPrice" : "24.99",
+      "familyShareable" : true,
+      "internalID" : "1000000002",
+      "locale" : "en_US",
+      "productID" : "dev.iamshift.todo.plus.yearly",
+      "referenceName" : "toDō+ Yearly",
+      "subscriptionGroupID" : "todo-plus",
+      "subscriptionPeriod" : "P1Y",
+      "type" : "Auto-Renewable Subscription"
+    },
+    {
+      "displayPrice" : "59.99",
+      "familyShareable" : false,
+      "internalID" : "1000000003",
+      "locale" : "en_US",
+      "productID" : "dev.iamshift.todo.plus.lifetime",
+      "referenceName" : "toDō+ Lifetime",
+      "type" : "Non-Consumable"
+    },
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : false,
+      "internalID" : "1000000004",
+      "locale" : "en_US",
+      "productID" : "dev.iamshift.todo.appreciation.coffee",
+      "referenceName" : "Coffee",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "6.99",
+      "familyShareable" : false,
+      "internalID" : "1000000005",
+      "locale" : "en_US",
+      "productID" : "dev.iamshift.todo.appreciation.lunch",
+      "referenceName" : "Lunch",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "14.99",
+      "familyShareable" : false,
+      "internalID" : "1000000006",
+      "locale" : "en_US",
+      "productID" : "dev.iamshift.todo.appreciation.patron",
+      "referenceName" : "Patron of Doing",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "24.99",
+      "familyShareable" : false,
+      "internalID" : "1000000007",
+      "locale" : "en_US",
+      "productID" : "dev.iamshift.todo.appreciation.founding",
+      "referenceName" : "Founding Supporter",
+      "type" : "Non-Consumable"
+    }
+  ],
+  "settings" : {
+    "_StoreKit_Configuration" : {
+      "storefront" : "USA"
+    }
+  },
+  "version" : 1
+}
