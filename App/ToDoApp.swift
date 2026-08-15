@@ -7,13 +7,17 @@
 
 import SwiftUI
 import SwiftData
+import AppIntents
 
 @main
 struct ToDoApp: App {
    @UIApplicationDelegateAdaptor(PushNotificationAppDelegate.self) private var pushNotificationDelegate
    @Environment(\.scenePhase) private var scenePhase
    @StateObject private var supabaseAuthStore: SupabaseAuthStore
+   @StateObject private var purchaseManager = ToDoPurchaseManager.shared
+   @StateObject private var collaborationService = ToDoCollaborationService.shared
    @StateObject private var toDoPresentationService = ToDoPresentationService.shared
+   @StateObject private var connectivityMonitor = ToDoConnectivityMonitor.shared
    @State private var didRunInitialStartupMaintenance = false
    @State private var isRunningForegroundMaintenance = false
    @AppStorage("todo.lastForegroundRemoteRefreshAt") private var lastForegroundRemoteRefreshAt = 0.0
@@ -25,6 +29,7 @@ struct ToDoApp: App {
    private let shouldStartSupabaseAuth: Bool
    private let foregroundRemoteRefreshInterval: TimeInterval = 6 * 60 * 60
 
+   @MainActor
    init() {
       let isPreview = ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
       let isScreenshot = ProcessInfo.processInfo.arguments.contains("-UITestScreenshotMode")
@@ -41,10 +46,19 @@ struct ToDoApp: App {
       if storedSyncMode != preferredSyncMode {
          UserDefaults.standard.set(preferredSyncMode.rawValue, forKey: AppPreferences.Keys.syncMode)
       }
-      sharedModelContainer = Self.makeModelContainer(
+      let modelContainer = Self.makeModelContainer(
          inMemory: isPreview || isScreenshot,
          preferredSyncMode: preferredSyncMode
       )
+      sharedModelContainer = modelContainer
+
+      if !isPreview && !isScreenshot {
+         let intentRepository = ToDoIntentRepository(modelContainer: modelContainer)
+         AppDependencyManager.shared.add(
+            dependency: intentRepository
+         )
+         ToDoShortcutsProvider.updateAppShortcutParameters()
+      }
 
       if isScreenshot {
          Self.seedScreenshotDataIfNeeded(in: sharedModelContainer)
@@ -58,6 +72,9 @@ struct ToDoApp: App {
             modelContainer: sharedModelContainer,
             remoteNotificationRegistrar: {
                PushNotificationAppDelegate.registerForRemoteNotifications()
+            },
+            currentUserIDProvider: {
+               SupabaseAuthStore.shared.resolvedAccountID
             }
          )
          LocationReminderService.shared.configure(modelContainer: sharedModelContainer)
@@ -78,12 +95,17 @@ struct ToDoApp: App {
                PreviewBootstrapView()
             } else {
                AppRootView()
+                  .overlay(alignment: .top) {
+                     ToDoStoreRecoveryNotice()
+                  }
                   .task {
                      guard !didRunInitialStartupMaintenance else { return }
                      didRunInitialStartupMaintenance = true
                      try? await Task.sleep(nanoseconds: 900_000_000)
                      if shouldStartSupabaseAuth {
                         await supabaseAuthStore.start()
+                        await purchaseManager.start(account: supabaseAuthStore.commerceAccount)
+                        await collaborationService.updateAccount(supabaseAuthStore.commerceAccount)
                      }
                      await runForegroundMaintenance(refreshRemote: shouldRefreshRemoteOnForeground)
                   }
@@ -95,6 +117,32 @@ struct ToDoApp: App {
                         await runForegroundMaintenance(refreshRemote: shouldRefreshRemoteOnForeground)
                      }
                   }
+                  .onChange(of: supabaseAuthStore.commerceAccount) { _, account in
+                     Task {
+                        await purchaseManager.updateAccount(account)
+                        await collaborationService.updateAccount(account)
+                     }
+                  }
+                  .onChange(of: supabaseAuthStore.profileImageRevision) { _, _ in
+                     #if canImport(WatchConnectivity) && os(iOS)
+                     WatchConnectivityService.shared.refreshSnapshot()
+                     #endif
+                  }
+                  .onReceive(NotificationCenter.default.publisher(for: .toDoCollaborationMembershipDidChange)) { notification in
+                     guard let userID = supabaseAuthStore.currentUserID else { return }
+                     if let eventUserID = notification.object as? UUID, eventUserID != userID {
+                        return
+                     }
+                     Task {
+                        await SyncCoordinator.shared.refreshFromRemote(userID: userID)
+                     }
+                  }
+                  .onReceive(NotificationCenter.default.publisher(for: .toDoCollaborationInvitationReceived)) { _ in
+                     guard supabaseAuthStore.currentUserID != nil else { return }
+                     Task {
+                        await collaborationService.refresh()
+                     }
+                  }
             }
          }
          .appBaseTypography()
@@ -102,11 +150,17 @@ struct ToDoApp: App {
          .appHapticFeedbackHost()
          .preferredColorScheme(preferredAppColorScheme)
          .environmentObject(supabaseAuthStore)
+         .environmentObject(purchaseManager)
+         .environmentObject(collaborationService)
          .environmentObject(toDoPresentationService)
+         .environmentObject(connectivityMonitor)
          .onOpenURL { url in
             guard !isRunningInPreview else { return }
             Task {
                if NavigationCoordinator.shared.route(url: url) {
+                  return
+               }
+               if collaborationService.receiveInvitationURL(url) {
                   return
                }
                await supabaseAuthStore.handleIncomingURL(url)
@@ -122,6 +176,13 @@ struct ToDoApp: App {
       isRunningForegroundMaintenance = true
       defer { isRunningForegroundMaintenance = false }
 
+      // A profile can change on another device while this app is suspended.
+      // Refresh it on foreground so account surfaces and the Home avatar do
+      // not remain on the previous cached image.
+      if shouldStartSupabaseAuth, supabaseAuthStore.isAuthenticated {
+         await supabaseAuthStore.refreshProfile()
+      }
+
       await NotificationManager.shared.refreshAuthorizationStatus()
       NotificationManager.shared.scheduleRefresh()
       LocationReminderService.shared.syncMonitoringFromStore()
@@ -129,7 +190,7 @@ struct ToDoApp: App {
       LiveActivityService.shared.refresh(from: sharedModelContainer)
 
       if refreshRemote {
-         await SyncCoordinator.shared.refreshFromRemote(userID: supabaseAuthStore.currentUserID)
+         await SyncCoordinator.shared.refreshFromRemote(userID: supabaseAuthStore.resolvedAccountID)
          lastForegroundRemoteRefreshAt = Date().timeIntervalSince1970
       }
 
@@ -188,7 +249,9 @@ struct ToDoApp: App {
       )
 
       do {
-         return try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: configuration)
+         let container = try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: configuration)
+         ToDoStoreRecovery.clearPersistentStoreFailure()
+         return container
       } catch {
          if preferredSyncMode == .iCloud {
             let fallbackMode: SyncMode = .deviceOnly
@@ -202,7 +265,9 @@ struct ToDoApp: App {
             )
 
             do {
-               return try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: fallbackConfiguration)
+               let container = try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: fallbackConfiguration)
+               ToDoStoreRecovery.clearPersistentStoreFailure()
+               return container
             } catch {
                AppLog.error("Failed to initialize iCloud fallback SwiftData container: \(error)", logger: AppLog.app)
                return makeRecoveryModelContainer(after: error)
@@ -211,7 +276,9 @@ struct ToDoApp: App {
 
          ensureStoreDirectoryExists(for: storeURL)
          do {
-            return try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: configuration)
+            let container = try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: configuration)
+            ToDoStoreRecovery.clearPersistentStoreFailure()
+            return container
          } catch {
             let fallbackMode = AppPreferences.sanitizedSyncMode(preferredSyncMode)
             guard fallbackMode != preferredSyncMode else {
@@ -229,7 +296,9 @@ struct ToDoApp: App {
             )
 
             do {
-               return try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: fallbackConfiguration)
+               let container = try ModelContainer(for: ToDo.self, Tag.self, NanoDo.self, SyncConflict.self, configurations: fallbackConfiguration)
+               ToDoStoreRecovery.clearPersistentStoreFailure()
+               return container
             } catch {
                AppLog.error("Failed to initialize sanitized fallback SwiftData container: \(error)", logger: AppLog.app)
                return makeRecoveryModelContainer(after: error)
@@ -240,6 +309,7 @@ struct ToDoApp: App {
 
    private static func makeRecoveryModelContainer(after error: Error) -> ModelContainer {
       AppLog.error("Using in-memory recovery SwiftData container after persistent store failure: \(error)", logger: AppLog.app)
+      ToDoStoreRecovery.recordPersistentStoreFailure()
       do {
          let configuration = ModelConfiguration(
             isStoredInMemoryOnly: true,
@@ -312,7 +382,7 @@ struct ToDoApp: App {
          let toDos = try context.fetch(FetchDescriptor<ToDo>())
          let nanoDos = try context.fetch(FetchDescriptor<NanoDo>())
 
-         var canonicalTagsByName: [String: Tag] = [:]
+         var canonicalTagsByNameAndOwner: [String: Tag] = [:]
          let toDosByTagID = Dictionary(grouping: toDos.flatMap { toDo in
             toDo.effectiveTags.map { tag in (tag.id, toDo) }
          }, by: \.0)
@@ -345,7 +415,10 @@ struct ToDoApp: App {
                continue
             }
 
-            if let canonicalTag = canonicalTagsByName[normalizedName], canonicalTag.id != tag.id {
+            let ownerKey = tag.ownerUserID?.uuidString ?? "nil"
+            let canonicalKey = "\(ownerKey)|\(normalizedName)"
+
+            if let canonicalTag = canonicalTagsByNameAndOwner[canonicalKey], canonicalTag.id != tag.id {
                for toDo in toDosByTagID[tag.id, default: []] {
                   let effectiveTags = toDo.effectiveTags
                   let mergedTags = effectiveTags.map { currentTag in
@@ -370,7 +443,7 @@ struct ToDoApp: App {
                didChange = true
             }
 
-            canonicalTagsByName[normalizedName] = tag
+            canonicalTagsByNameAndOwner[canonicalKey] = tag
          }
 
          if didChange {

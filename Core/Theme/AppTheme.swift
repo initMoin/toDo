@@ -215,8 +215,69 @@ enum AppColor {
     }
 }
 
+enum ToDoStoreRecovery {
+    static let isActiveKey = "todo.storeRecovery.isActive"
+
+    static var isActive: Bool {
+        UserDefaults.standard.bool(forKey: isActiveKey)
+    }
+
+    static func recordPersistentStoreFailure() {
+        UserDefaults.standard.set(true, forKey: isActiveKey)
+    }
+
+    static func clearPersistentStoreFailure() {
+        UserDefaults.standard.removeObject(forKey: isActiveKey)
+    }
+}
+
+struct ToDoStoreRecoveryNotice: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage(ToDoStoreRecovery.isActiveKey) private var isActive = false
+
+    var body: some View {
+        if isActive {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.appBodyStrong(18, relativeTo: .headline))
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Saved data unavailable")
+                        .font(.appBodyStrong(15, relativeTo: .headline))
+                    Text("toDō is using a temporary offline store. Close and reopen the app after checking storage or iCloud, then try again.")
+                        .font(.appBody(13, relativeTo: .footnote))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 4)
+
+                Button("Continue offline") {
+                    ToDoStoreRecovery.clearPersistentStoreFailure()
+                    isActive = false
+                }
+                .font(.appBodyStrong(13, relativeTo: .footnote))
+                .buttonStyle(.borderedProminent)
+                .tint(AppColor.headerControlBackground(for: colorScheme))
+                .foregroundStyle(AppColor.headerControlForeground(for: colorScheme))
+                .accessibilityHint("Dismisses this notice while keeping the temporary offline store active.")
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .foregroundStyle(AppColor.headerForeground(for: colorScheme))
+            .background(AppColor.destructive)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: AppColor.shadow.opacity(0.22), radius: 12, y: 5)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .zIndex(10)
+        }
+    }
+}
+
 enum AppTypography {
     private static let brandFontName = "CalSans-Regular"
+    private static let viewTitleFontName = "Cal Sans UI"
     private static let displayFontName = "BebasNeue-Regular"
     private static let uiFamilyName = "Jura"
     private static let aleoFamilyName = "Aleo"
@@ -235,6 +296,11 @@ enum AppTypography {
 
     static func title(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
         .custom(uiFamilyName, size: size, relativeTo: textStyle)
+            .weight(.bold)
+    }
+
+    static func viewTitle(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
+        .custom(viewTitleFontName, size: size, relativeTo: textStyle)
             .weight(.bold)
     }
 
@@ -290,6 +356,10 @@ extension Font {
 
     static func appTitle(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
         AppTypography.title(size, relativeTo: textStyle)
+    }
+
+    static func appViewTitle(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .largeTitle) -> Font {
+        AppTypography.viewTitle(size, relativeTo: textStyle)
     }
 
     static func appHeadline(_ size: CGFloat, relativeTo textStyle: Font.TextStyle = .headline) -> Font {
@@ -348,10 +418,11 @@ extension View {
             .toolbarBackground(background, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
-               ToolbarItem(placement: .principal) {
+                ToolbarItem(placement: .principal) {
                     Text(LocalizedStringKey(title))
-                        .font(.appTitle(33, relativeTo: .title))
+                        .font(.appViewTitle(33, relativeTo: .title))
                         .foregroundStyle(AppColor.headerForeground(for: colorScheme))
+                        .textCase(.lowercase)
                         .lineLimit(1)
                         .minimumScaleFactor(0.82)
                         .accessibilityAddTraits(.isHeader)
@@ -378,7 +449,10 @@ extension View {
     @ViewBuilder
     func appInteractiveCircleGlass(tint: Color) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.tint(tint).interactive(), in: .circle)
+            // ButtonStyle owns press feedback. Using Liquid Glass's interactive
+            // feedback here as well causes both systems to update the same glass
+            // surface in a single frame.
+            self.glassEffect(.regular.tint(tint), in: .circle)
         } else {
             self
         }
@@ -387,7 +461,7 @@ extension View {
     @ViewBuilder
     func appInteractiveCapsuleGlass(tint: Color) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.tint(tint).interactive(), in: .capsule)
+            self.glassEffect(.regular.tint(tint), in: .capsule)
         } else {
             self
         }
@@ -396,7 +470,7 @@ extension View {
     @ViewBuilder
     func appInteractiveRoundedGlass(tint: Color, cornerRadius: CGFloat) -> some View {
         if #available(iOS 26.0, *) {
-            self.glassEffect(.regular.tint(tint).interactive(), in: .rect(cornerRadius: cornerRadius))
+            self.glassEffect(.regular.tint(tint), in: .rect(cornerRadius: cornerRadius))
         } else {
             self
         }
@@ -495,8 +569,9 @@ struct AppLargeScreenTitle: View {
 
     var body: some View {
         Text(LocalizedStringKey(title))
-            .font(.appTitle(34, relativeTo: .largeTitle))
+            .font(.appViewTitle(34, relativeTo: .largeTitle))
             .foregroundStyle(AppColor.textPrimary)
+            .textCase(.lowercase)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.top, 0)
             .padding(.bottom, 4)
@@ -507,30 +582,30 @@ struct AppLargeScreenTitle: View {
 struct AppSettingsDetailHeader<Trailing: View>: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.settingsDetailPresentation) private var settingsDetailPresentation
-    let title: String
-    let background: Color
-    private let trailing: Trailing
+   let title: String
+   let background: Color
+   let centered: Bool
+   private let trailing: Trailing
 
     init(
-        title: String,
-        background: Color = AppColor.main,
-        @ViewBuilder trailing: () -> Trailing
-    ) {
-        self.title = title
-        self.background = background
-        self.trailing = trailing()
+      title: String,
+      background: Color = AppColor.main,
+      centered: Bool = false,
+      @ViewBuilder trailing: () -> Trailing
+   ) {
+      self.title = title
+      self.background = background
+      self.centered = centered
+      self.trailing = trailing()
     }
 
     var body: some View {
         if settingsDetailPresentation == .sidePanel {
             HStack(spacing: 10) {
-                Capsule()
-                    .fill(AppColor.main)
-                    .frame(width: 5, height: 28)
-
                 Text(LocalizedStringKey(title))
-                    .font(.appTitle(24, relativeTo: .title2))
+                    .font(.appViewTitle(24, relativeTo: .title2))
                     .foregroundStyle(AppColor.textPrimary)
+                    .textCase(.lowercase)
                     .lineLimit(1)
                     .minimumScaleFactor(0.86)
 
@@ -543,21 +618,42 @@ struct AppSettingsDetailHeader<Trailing: View>: View {
             .padding(.bottom, 12)
             .background(AppColor.surface)
             .accessibilityAddTraits(.isHeader)
-        } else {
+         } else {
             VStack(spacing: 0) {
-                HStack(alignment: .center, spacing: 14) {
-                    Text(LocalizedStringKey(title))
-                        .font(.appTitle(28, relativeTo: .title))
-                        .foregroundStyle(headerForeground)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.82)
-                        .accessibilityAddTraits(.isHeader)
+               Group {
+                  if centered {
+                     ZStack {
+                        Text(LocalizedStringKey(title))
+                           .font(.appViewTitle(28, relativeTo: .title))
+                           .foregroundStyle(headerForeground)
+                           .textCase(.lowercase)
+                           .lineLimit(1)
+                           .minimumScaleFactor(0.82)
+                           .accessibilityAddTraits(.isHeader)
+                           .frame(maxWidth: .infinity, alignment: .center)
 
-                    Spacer(minLength: 0)
+                        HStack {
+                           Spacer(minLength: 0)
+                           trailing
+                        }
+                     }
+                  } else {
+                     HStack(alignment: .center, spacing: 14) {
+                        Text(LocalizedStringKey(title))
+                           .font(.appViewTitle(28, relativeTo: .title))
+                           .foregroundStyle(headerForeground)
+                           .textCase(.lowercase)
+                           .lineLimit(1)
+                           .minimumScaleFactor(0.82)
+                           .accessibilityAddTraits(.isHeader)
 
-                    trailing
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer(minLength: 0)
+
+                        trailing
+                     }
+                  }
+               }
+               .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
                 .padding(.bottom, 14)
@@ -574,13 +670,15 @@ struct AppSettingsDetailHeader<Trailing: View>: View {
 
 extension AppSettingsDetailHeader where Trailing == EmptyView {
     init(
-        title: String,
-        background: Color = AppColor.main
-    ) {
-        self.init(
-            title: title,
-            background: background
-        ) {
+      title: String,
+      background: Color = AppColor.main,
+      centered: Bool = false
+   ) {
+      self.init(
+         title: title,
+         background: background,
+         centered: centered
+      ) {
             EmptyView()
         }
     }
@@ -592,13 +690,14 @@ struct AppCircleActionButtonStyle: ButtonStyle {
     var tint: Color? = nil
     var foreground: Color? = nil
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
     @Environment(\.appReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         let foreground: Color = {
             guard isEnabled else { return AppColor.textSecondary }
-            return self.foreground ?? AppColor.black
+            return self.foreground ?? AppColor.brandYellowForeground(for: colorScheme)
         }()
 
         let background: Color = {
@@ -637,40 +736,71 @@ struct AppOutlinedIconButtonStyle: ButtonStyle {
     var symbolSize: CGFloat = 16
     var lineWidth: CGFloat = 2.2
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
     @Environment(\.appReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
-        let resolvedTint = isEnabled ? tint : tint.opacity(0.68)
+        let background = isEnabled ? tint : AppColor.iconCircle.opacity(0.28)
+        let foreground = isEnabled
+            ? AppColor.brandYellowForeground(for: colorScheme)
+            : AppColor.textSecondary
         return configuration.label
             .font(.system(size: symbolSize, weight: .black, design: .rounded))
-            .foregroundStyle(resolvedTint)
+            .foregroundStyle(foreground)
             .frame(width: size, height: size)
-            .background(Circle().fill(Color.clear))
-            .overlay(
-                Circle()
-                    .stroke(resolvedTint, style: StrokeStyle(lineWidth: differentiatesWithoutColor ? lineWidth + 1 : lineWidth, dash: differentiatesWithoutColor ? [5, 3] : []))
-            )
+            .background {
+                if #unavailable(iOS 26.0) {
+                    Circle().fill(background)
+                }
+            }
+            .appInteractiveCircleGlass(tint: background)
+            .overlay {
+                if differentiatesWithoutColor {
+                    Circle()
+                        .stroke(foreground, style: StrokeStyle(lineWidth: lineWidth, dash: [5, 3]))
+                }
+            }
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .opacity(isEnabled ? 1 : 0.74)
             .animation(reduceMotion ? nil : AppAnimation.easeFast, value: configuration.isPressed)
-            .animation(reduceMotion ? nil : AppAnimation.easeFast, value: isEnabled)
     }
 }
 
 struct AppSemanticTextButtonStyle: ButtonStyle {
     let intent: AppActionIntent
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.isEnabled) private var isEnabled
     @Environment(\.appDifferentiatesWithoutColor) private var differentiatesWithoutColor
     @Environment(\.appReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
-        let foreground = configuration.isPressed ? AppColor.onAction : intent.textForeground
-        let background = configuration.isPressed ? intent.pressedBackground : Color.clear
+        let baseBackground: Color = {
+            switch intent {
+            case .neutral:
+                return AppColor.surfaceMuted
+            case .proceed:
+                return AppColor.actionSuccess
+            case .cancel:
+                return AppColor.actionDestructive
+            }
+        }()
+        let background = isEnabled
+            ? (configuration.isPressed ? intent.pressedBackground : baseBackground)
+            : AppColor.surfaceMuted.opacity(0.45)
+        let foreground: Color = {
+            guard isEnabled else { return AppColor.textSecondary }
+            switch intent {
+            case .neutral:
+                return AppColor.textPrimary
+            case .proceed, .cancel:
+                return AppColor.brandYellowForeground(for: colorScheme)
+            }
+        }()
         return configuration.label
             .font(.appButton(15, relativeTo: .subheadline))
             .foregroundStyle(foreground)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
             .background {
                 if #unavailable(iOS 26.0) {
                     Capsule()
@@ -680,8 +810,7 @@ struct AppSemanticTextButtonStyle: ButtonStyle {
             .appInteractiveCapsuleGlass(tint: background)
             .overlay {
                 if differentiatesWithoutColor {
-                    Capsule()
-                        .stroke(foreground, lineWidth: 1.8)
+                    Capsule().stroke(foreground, lineWidth: 1.8)
                 }
             }
             .animation(reduceMotion ? nil : AppAnimation.easeFast, value: configuration.isPressed)

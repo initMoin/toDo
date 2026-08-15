@@ -36,6 +36,7 @@ struct ToDoView: View {
       var locationReminderRadius: Double
       var locationReminderTrigger: ToDoLocationReminderTrigger
       var locationReminderLabel: String
+      var collabID: UUID?
       var selectedTagIDs: [PersistentIdentifier]
    }
 
@@ -58,6 +59,7 @@ struct ToDoView: View {
    @Environment(\.dismiss) private var dismiss
    @Environment(\.appReduceMotion) private var reduceMotion
    @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
+   @EnvironmentObject private var collaborationService: ToDoCollaborationService
    @Query private var tags: [Tag]
    @Query private var toDos: [ToDo]
    @Query private var nanoDos: [NanoDo]
@@ -96,6 +98,7 @@ struct ToDoView: View {
    @State private var isLocatingReminder = false
    @State private var dueDateSelection: Set<DateComponents>
    @State private var selectedTagIDs: [PersistentIdentifier]
+   @State private var selectedCollabID: UUID?
    @State private var isCreateExpanded: Bool
    @State private var isNotesExpanded: Bool
    @State private var isTagExpanded: Bool
@@ -124,6 +127,8 @@ struct ToDoView: View {
    @State private var pendingGeneratedTagNames: [String] = []
    @State private var showsFirstEditTip = false
    @State private var editButtonWiggle = false
+   @State private var viewportWidth: CGFloat = 0
+   @State private var onboardingTextAdvanceTask: Task<Void, Never>?
    @StateObject private var locationReminderService = LocationReminderService.shared
    @StateObject private var placeSearch = LocationReminderPlaceSearch()
    @StateObject private var voiceTranscriptionService = VoiceToDoTranscriptionService()
@@ -133,7 +138,9 @@ struct ToDoView: View {
    private let initialCreateSelectedTagIDs: [PersistentIdentifier]
 
    private var usesRegularWidthLayout: Bool {
-      horizontalSizeClass == .regular && !isInlineOverlayEdit
+      horizontalSizeClass == .regular
+         && viewportWidth >= AppAdaptiveLayout.sideBySideMinimumWidth
+         && !isInlineOverlayEdit
    }
 
    private var formHorizontalPadding: CGFloat {
@@ -187,6 +194,7 @@ struct ToDoView: View {
          _isLocationExpanded = State(initialValue: false)
          _dueDateSelection = State(initialValue: [])
          _selectedTagIDs = State(initialValue: initialTagIDs)
+         _selectedCollabID = State(initialValue: nil)
          _isCreateExpanded = State(initialValue: false)
          _isNotesExpanded = State(initialValue: false)
          _isTagExpanded = State(initialValue: createTagExpanded)
@@ -238,6 +246,7 @@ struct ToDoView: View {
          _isLocationExpanded = State(initialValue: hasInitialLocationReminder)
          let initialSelectedTagIDs = toDo.effectiveTags.map(\.id)
          _selectedTagIDs = State(initialValue: initialSelectedTagIDs)
+         _selectedCollabID = State(initialValue: toDo.collabID)
          _isCreateExpanded = State(initialValue: true)
          _isNotesExpanded = State(initialValue: hasInitialNotes)
          _isTagExpanded = State(initialValue: !initialSelectedTagIDs.isEmpty)
@@ -267,6 +276,7 @@ struct ToDoView: View {
                locationReminderRadius: toDo.resolvedLocationReminderRadius,
                locationReminderTrigger: toDo.locationReminderTrigger,
                locationReminderLabel: toDo.locationReminderLabel ?? "",
+               collabID: toDo.collabID,
                selectedTagIDs: initialSelectedTagIDs
             ))
          case .create, .view:
@@ -305,6 +315,7 @@ struct ToDoView: View {
          }
       }
       .background(AppColor.surface.ignoresSafeArea())
+      .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { viewportWidth = $0 }
       .tint(AppColor.actionPrimary)
       .appBaseTypography()
       .overlayPreferenceValue(OnboardingSpotlightPreferenceKey.self) { anchors in
@@ -353,10 +364,9 @@ struct ToDoView: View {
          guard case .create = mode else { return }
          if !hasEnteredTaskText {
             isCreateTaskCommitted = false
+            onboardingTextAdvanceTask?.cancel()
          } else if onboardingManager?.currentStep == .enterToDoText {
-            prepareOnboardingDueDateIfNeeded()
-            isCreateTaskCommitted = true
-            onboardingManager?.advance(to: .saveToDo)
+            scheduleOnboardingTextAdvance()
          }
       }
       .onChange(of: hasDueDate) { _, newValue in
@@ -376,6 +386,7 @@ struct ToDoView: View {
          showFirstEditTipIfNeeded()
       }
       .onDisappear {
+         onboardingTextAdvanceTask?.cancel()
          Task {
             await voiceTranscriptionService.reset()
          }
@@ -489,6 +500,8 @@ struct ToDoView: View {
             }
 
             if isCreateExpanded {
+               collabDestinationSection
+
                dueDateSection
 
                locationReminderSection
@@ -595,6 +608,7 @@ struct ToDoView: View {
                .contentShape(Circle())
                .appInteractiveCircleGlass(tint: AppColor.actionDestructive)
                .accessibilityLabel(isCreateMode ? "Cancel" : "Close")
+               .onboardingSpotlightAnchor(.toDoCloseButton)
             }
 
             VStack(alignment: .leading, spacing: 2) {
@@ -650,7 +664,7 @@ struct ToDoView: View {
                   .accessibilityLabel("Edit toDō")
                   .accessibilityHint("Opens this toDō for editing")
                   .onboardingSpotlightAnchor(.editButton)
-                  
+
                   if showsFirstEditTip {
                      FirstEditTip {
                         hasShownFirstToDoEditTip = true
@@ -705,6 +719,7 @@ struct ToDoView: View {
             .contentShape(Circle())
             .appInteractiveCircleGlass(tint: AppColor.actionDestructive)
             .accessibilityLabel("Cancel")
+            .onboardingSpotlightAnchor(.toDoCloseButton)
 
             Spacer(minLength: 0)
 
@@ -752,7 +767,66 @@ struct ToDoView: View {
    }
 
    @ViewBuilder
+   private var collabDestinationSection: some View {
+      if canChooseCollabDestination, !collaborationService.collabs.isEmpty {
+         HStack(spacing: 12) {
+            Image(systemName: selectedCollabID == nil ? "person.fill" : "person.2.fill")
+               .font(.appBodyStrong(15, relativeTo: .body))
+               .foregroundStyle(AppColor.actionPrimary)
+               .frame(width: 32, height: 32)
+               .background(AppColor.actionPrimary.opacity(0.14), in: Circle())
+
+            Text("Save To")
+               .font(.appBodyStrong(15, relativeTo: .body))
+               .foregroundStyle(AppColor.textPrimary)
+
+            Spacer(minLength: 12)
+
+            Picker("Save To", selection: $selectedCollabID) {
+               Text("Personal").tag(Optional<UUID>.none)
+               ForEach(collaborationService.collabs) { collab in
+                  Text(collab.name).tag(Optional(collab.id))
+               }
+            }
+            .labelsHidden()
+            .pickerStyle(.menu)
+            .font(.appBodyStrong(14, relativeTo: .body))
+            .tint(AppColor.actionPrimary)
+         }
+         .padding(14)
+         .background(AppColor.surfaceMuted, in: .rect(cornerRadius: 16))
+         .accessibilityElement(children: .combine)
+         .accessibilityLabel(
+            String(
+               format: String(localized: "Save To: %@"),
+               selectedCollabName
+            )
+         )
+      }
+   }
+
+   private var canChooseCollabDestination: Bool {
+      guard supabaseAuthStore.effectiveSyncMode == .syncEverywhere else { return false }
+      switch mode {
+      case .create:
+         return true
+      case .edit(let toDo, _):
+         return toDo.ownerUserID == visibleOwnerUserID
+      case .view:
+         return false
+      }
+   }
+
+   private var selectedCollabName: String {
+      guard let selectedCollabID else { return String(localized: "Personal") }
+      return collaborationService.collabs.first(where: { $0.id == selectedCollabID })?.name
+         ?? String(localized: "Collab")
+   }
+
+   @ViewBuilder
    private var editableDetailSections: some View {
+      collabDestinationSection
+
       dueDateSection
 
       locationReminderSection
@@ -782,7 +856,7 @@ struct ToDoView: View {
                   .foregroundStyle(AppColor.textSecondary)
             } else {
                VStack(spacing: 10) {
-                  ForEach(toDo.nanoDos) { nanoDo in
+                  ForEach(toDo.orderedNanoDos) { nanoDo in
                      NanoDoRowView(
                         nanoDo: nanoDo,
                         completesParentImmediately: false,
@@ -1223,7 +1297,7 @@ struct ToDoView: View {
    private var readOnlyExistingToDoContent: some View {
       VStack(alignment: .leading, spacing: 12) {
          Text(task)
-            .font(isDone ? .appBody(38, relativeTo: .largeTitle) : .appUserEntry(38, relativeTo: .largeTitle))
+            .font(isDone ? .appBody(36, relativeTo: .largeTitle) : .appUserEntry(36, relativeTo: .largeTitle))
             .italic(isDone)
             .foregroundStyle(AppColor.textPrimary)
             .strikethrough(isDone, color: AppColor.textPrimary.opacity(0.56))
@@ -1253,12 +1327,7 @@ struct ToDoView: View {
          )
 
          if isRecurring {
-            readOnlySignalCard(
-               systemName: "arrow.clockwise",
-               title: "Repeat",
-               value: recurrenceSummaryText,
-               accent: AppColor.secondary
-            )
+            readOnlyRecurrenceCard
          }
 
          if hasLocationReminder {
@@ -1313,17 +1382,20 @@ struct ToDoView: View {
          }
       }
 
-      if let toDo = editingToDo, !toDo.nanoDos.isEmpty {
+      if !readOnlyNanoDos.isEmpty {
          VStack(alignment: .leading, spacing: 10) {
             sectionTitle("NanoDos")
             VStack(alignment: .leading, spacing: 10) {
-               ForEach(toDo.nanoDos) { nanoDo in
-                  SwipeableNanoDoRow(
+               ForEach(readOnlyNanoDos) { nanoDo in
+                  NanoDoRowView(
                      nanoDo: nanoDo,
+                     allowsTextEditing: false,
+                     allowsDueDateEditing: false,
+                     allowsCompletionToggle: canToggleReadOnlyNanoDo(nanoDo),
                      completesParentImmediately: false,
                      onMutation: handleNanoDoMutation,
                      onDelete: {
-                        deleteNanoDo(nanoDo)
+                        // Read-only details intentionally do not expose deletion.
                      }
                   )
                }
@@ -1332,6 +1404,67 @@ struct ToDoView: View {
       }
 
       lifecycleActionBar
+   }
+
+   private var readOnlyNanoDos: [NanoDo] {
+      guard let editingToDo else { return [] }
+      let relationshipItems = editingToDo.nanoDos
+      let queriedItems = nanoDos.filter { $0.toDo?.persistentModelID == editingToDo.persistentModelID }
+      let merged = (relationshipItems + queriedItems).reduce(into: [PersistentIdentifier: NanoDo]()) { result, nanoDo in
+         result[nanoDo.persistentModelID] = nanoDo
+      }
+      return merged.values.sorted { $0.createdAt < $1.createdAt }
+   }
+
+   private func canToggleReadOnlyNanoDo(_ nanoDo: NanoDo) -> Bool {
+      guard nanoDo.isDone else { return true }
+      return Date().timeIntervalSince(nanoDo.updatedAt ?? nanoDo.createdAt) <= 10
+   }
+
+   private var readOnlyRecurrenceCard: some View {
+      HStack(alignment: .top, spacing: 12) {
+         Image(systemName: "arrow.clockwise")
+            .font(.system(size: 17, weight: .black, design: .rounded))
+            .foregroundStyle(AppColor.onAction)
+            .frame(width: 38, height: 38)
+            .background(AppColor.secondary, in: Circle())
+
+         VStack(alignment: .leading, spacing: 6) {
+            Text("Repeat")
+               .font(.appDisplay(19, relativeTo: .subheadline))
+               .foregroundStyle(AppColor.textSecondary)
+
+            Text(recurrenceSummaryLeadText)
+               .font(.appBodyStrong(18, relativeTo: .headline))
+               .foregroundStyle(AppColor.textPrimary)
+
+            Text(String(format: String(localized: "Starts %@"), AppLocalization.dateTimeString(dueDate)))
+               .font(.appBody(13, relativeTo: .footnote))
+               .foregroundStyle(AppColor.textSecondary)
+
+            if recurrenceMode == .continuous {
+               Text("Repeats until turned off")
+                  .font(.appBody(13, relativeTo: .footnote))
+                  .foregroundStyle(AppColor.textSecondary)
+            } else if let finalFiniteRecurrenceDate {
+               Text(String(format: String(localized: "Last reminder: %@"), AppLocalization.dateTimeString(finalFiniteRecurrenceDate)))
+                  .font(.appBody(12, relativeTo: .caption))
+                  .foregroundStyle(AppColor.textSecondary.opacity(0.86))
+            }
+         }
+
+         Spacer(minLength: 0)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(14)
+      .background(
+         LinearGradient(
+            colors: [AppColor.secondary.opacity(0.15), AppColor.surfaceElevated.opacity(0.90)],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+         ),
+         in: .rect(cornerRadius: 20)
+      )
    }
 
    private func readOnlySignalCard(systemName: String, title: String, value: String, accent: Color) -> some View {
@@ -1389,7 +1522,7 @@ struct ToDoView: View {
       ToDoLifecycleActionBar(
          isDone: isDone,
          removalAction: primaryRemovalAction,
-         includesRemovalAction: editingToDo != nil,
+         includesRemovalAction: editingToDo.map(canUseRemovalAction(for:)) ?? false,
          includesSnooze: isViewMode && editingToDo?.dueDate != nil,
          onRemoval: {
             handlePrimaryRemovalAction()
@@ -1401,6 +1534,26 @@ struct ToDoView: View {
             handleToggleDoneAction()
          }
       )
+   }
+
+   private func canManageRemovalAction(for toDo: ToDo) -> Bool {
+      guard supabaseAuthStore.effectiveSyncMode == .syncEverywhere else {
+         return true
+      }
+
+      guard let currentUserID = supabaseAuthStore.currentUserID else { return false }
+      guard let collabID = toDo.collabID else {
+         return toDo.ownerUserID == currentUserID
+      }
+
+      return toDo.ownerUserID == currentUserID
+         || collaborationService.collabs.contains {
+            $0.id == collabID && $0.ownerUserID == currentUserID
+         }
+   }
+
+   private func canUseRemovalAction(for toDo: ToDo) -> Bool {
+      primaryRemovalAction == .archive || canManageRemovalAction(for: toDo)
    }
 
    @ViewBuilder
@@ -1778,6 +1931,7 @@ struct ToDoView: View {
          locationReminderRadius: locationReminderRadius,
          locationReminderTrigger: locationReminderTrigger,
          locationReminderLabel: locationReminderLabel,
+         collabID: selectedCollabID,
          selectedTagIDs: selectedTagIDs
       )
    }
@@ -1847,6 +2001,11 @@ struct ToDoView: View {
    }
 
    private func handleSheetDismissAttempt() {
+      if onboardingManager?.currentStep == .editExistingToDo {
+         UserDefaults.standard.set(true, forKey: AppPreferences.Keys.hasSeenToDoEditOnboarding)
+         onboardingManager?.advance(to: .highlightSettings)
+      }
+
       if hasPendingChanges {
          isShowingDiscardChangesConfirmation = true
       } else {
@@ -1869,19 +2028,30 @@ struct ToDoView: View {
    }
 
    private func syncEverywhereCloudID() -> UUID? {
-      supabaseAuthStore.effectiveSyncMode == .syncEverywhere ? UUID() : nil
+      visibleOwnerUserID == nil ? nil : UUID()
    }
 
    private var scopedTags: [Tag] {
-      tags.filter { $0.ownerUserID == visibleOwnerUserID }
+      let visibleTagIDs = Set(scopedToDos.flatMap { $0.effectiveTags.map(\.id) })
+      return Tag.canonicalTags(from: tags.filter {
+         $0.ownerUserID == visibleOwnerUserID || visibleTagIDs.contains($0.id)
+      })
    }
 
    private var scopedToDos: [ToDo] {
-      toDos.filter { $0.ownerUserID == visibleOwnerUserID }
+      let accessibleCollabIDs = Set(collaborationService.collabs.map(\.id))
+      return toDos.filter {
+         $0.ownerUserID == visibleOwnerUserID
+            || $0.collabID.map(accessibleCollabIDs.contains) == true
+      }
    }
 
    private var scopedNanoDos: [NanoDo] {
-      nanoDos.filter { $0.ownerUserID == visibleOwnerUserID }
+      let visibleToDoIDs = Set(scopedToDos.map(\.id))
+      return nanoDos.filter {
+         $0.ownerUserID == visibleOwnerUserID
+            || $0.toDo.map { visibleToDoIDs.contains($0.id) } == true
+      }
    }
 
    private var tagList: [Tag] {
@@ -2384,7 +2554,7 @@ struct ToDoView: View {
       let normalized = Tag.normalizeName(newTagName)
       pendingGeneratedTagNames.removeAll { Tag.normalizeName($0) == normalized }
       guard !normalized.isEmpty else { return }
-      if let existingTag = tagList.first(where: { $0.displayName == normalized }) {
+      if let existingTag = tagList.first(where: { Tag.normalizeName($0.name) == normalized }) {
          withAnimation(AppAnimation.tagTransition) {
             if !selectedTagIDs.contains(existingTag.id), selectedTagIDs.count < ToDo.maxTagSelection {
                selectedTagIDs.append(existingTag.id)
@@ -2493,6 +2663,24 @@ struct ToDoView: View {
       isCreateExpanded = false
    }
 
+   private func scheduleOnboardingTextAdvance() {
+      guard onboardingManager?.isActive == true,
+            onboardingManager?.currentStep == .enterToDoText,
+            hasEnteredTaskText else { return }
+
+      onboardingTextAdvanceTask?.cancel()
+      onboardingTextAdvanceTask = Task { @MainActor in
+         try? await Task.sleep(for: .seconds(5))
+         guard !Task.isCancelled,
+               onboardingManager?.currentStep == .enterToDoText,
+               hasEnteredTaskText else { return }
+
+         prepareOnboardingDueDateIfNeeded()
+         isCreateTaskCommitted = true
+         onboardingManager?.advance(to: .saveToDo)
+      }
+   }
+
    private func saveFromOnboardingIfNeeded() {
       guard onboardingManager?.isActive == true, isCreateMode else {
          save()
@@ -2561,7 +2749,8 @@ struct ToDoView: View {
             tag: firstSelectedTag,
             tags: selectedTags,
             cloudID: syncEverywhereCloudID(),
-            ownerUserID: visibleOwnerUserID
+            ownerUserID: visibleOwnerUserID,
+            collabID: selectedCollabID
          )
          context.insert(newToDo)
          newToDo.setSelectedTags(selectedTags)
@@ -2591,6 +2780,9 @@ struct ToDoView: View {
          toDo.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
          toDo.transition(to: pendingLifecycleState ?? (isDone ? .done : .active))
          toDo.completeWhenAllNanoDosDone = completeWhenAllNanoDosDone
+         if canChooseCollabDestination {
+            toDo.collabID = selectedCollabID
+         }
          toDo.dueDate = resolvedDueDate
          toDo.reminderIntent = resolvedReminderIntent
          toDo.recurrenceUnit = resolvedRecurrenceUnit
@@ -2778,10 +2970,12 @@ struct ToDoView: View {
       case .create:
          break
       case .edit:
+         guard let editingToDo, canManageRemovalAction(for: editingToDo) else { return }
          pendingLifecycleState = .trashed
-         editingToDo?.trashedAt = Date()
+         editingToDo.trashedAt = Date()
          save()
       case .view:
+         guard let editingToDo, canManageRemovalAction(for: editingToDo) else { return }
          applyViewLifecycleState(.trashed, haptic: .destructive, shouldDismiss: true)
       }
    }
@@ -2876,7 +3070,8 @@ struct ToDoView: View {
       SyncTombstoneStore.recordDelete(
          table: .nanoDos,
          recordID: nanoDo.cloudID,
-         userID: nanoDo.ownerUserID
+         userID: visibleOwnerUserID,
+         collabID: toDo.collabID
       )
       toDo.nanoDos.removeAll { $0 === nanoDo }
       context.delete(nanoDo)
@@ -3180,7 +3375,7 @@ struct ToDoView: View {
          to: dueDate
       )
    }
-   
+
    private func showFirstEditTipIfNeeded() {
       guard isViewMode else { return }
       guard !hasShownFirstToDoEditTip else { return }
@@ -3199,7 +3394,7 @@ struct ToDoView: View {
          editButtonWiggle.toggle()
       }
    }
-   
+
    private struct FirstEditTip: View {
       let onDismiss: () -> Void
 

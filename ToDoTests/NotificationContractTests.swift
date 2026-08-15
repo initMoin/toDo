@@ -126,6 +126,28 @@ struct NotificationContractTests {
         #expect(payload.toDoLocalIdentifier == "swiftdata-local-id")
     }
 
+    @Test func collaborationNotificationSupportsCurrentAndLegacyPayloadKeys() throws {
+        let collabID = UUID()
+
+        let currentPayload = try #require(NotificationRouter.payload(
+            from: [
+                "type": "collabInvite",
+                "collabID": collabID.uuidString
+            ]
+        ))
+        #expect(currentPayload.type == .collabInvite)
+        #expect(currentPayload.collabID == collabID)
+
+        let legacyPayload = try #require(NotificationRouter.payload(
+            from: [
+                "type": "circleUpdate",
+                "circleID": collabID.uuidString
+            ]
+        ))
+        #expect(legacyPayload.type == .collabUpdate)
+        #expect(legacyPayload.collabID == collabID)
+    }
+
     @Test func notificationRouterIgnoresToDoPayloadsWithoutAnyRoutableIdentifier() {
         NavigationCoordinator.shared.notificationRoute = .none
 

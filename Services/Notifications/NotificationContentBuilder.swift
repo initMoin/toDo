@@ -121,16 +121,16 @@ struct NotificationContentBuilder {
          content.targetContentIdentifier = "todo-recurring"
          content.relevanceScore = isTimeSensitive ? 0.95 : 0.7
 
-      case .circleInvite:
+      case .collabInvite:
          content.categoryIdentifier = NotificationCategoryID.collaboration.rawValue
-         content.threadIdentifier = "circle-invites"
-         content.targetContentIdentifier = "circle-invite"
+         content.threadIdentifier = "collab-invites"
+         content.targetContentIdentifier = "collab-invite"
          content.relevanceScore = 0.8
 
-      case .circleUpdate:
+      case .collabUpdate:
          content.categoryIdentifier = NotificationCategoryID.collaboration.rawValue
-         content.threadIdentifier = "circle-updates"
-         content.targetContentIdentifier = "circle-update"
+         content.threadIdentifier = "collab-updates"
+         content.targetContentIdentifier = "collab-update"
          content.relevanceScore = 0.6
 
       case .syncConflict:

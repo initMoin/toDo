@@ -18,7 +18,7 @@ struct NotificationPayload: Codable, Sendable {
 
     let toDoID: UUID?
     let toDoLocalIdentifier: String?
-    let circleID: UUID?
+    let collabID: UUID?
 
     let isRecurring: Bool
     let isTimeSensitive: Bool
@@ -32,7 +32,7 @@ struct NotificationPayload: Codable, Sendable {
         body: String,
         toDoID: UUID? = nil,
         toDoLocalIdentifier: String? = nil,
-        circleID: UUID? = nil,
+        collabID: UUID? = nil,
         isRecurring: Bool = false,
         isTimeSensitive: Bool = false,
         createdAt: Date = .now
@@ -43,9 +43,22 @@ struct NotificationPayload: Codable, Sendable {
         self.body = body
         self.toDoID = toDoID
         self.toDoLocalIdentifier = toDoLocalIdentifier
-        self.circleID = circleID
+        self.collabID = collabID
         self.isRecurring = isRecurring
         self.isTimeSensitive = isTimeSensitive
         self.createdAt = createdAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case type
+        case title
+        case body
+        case toDoID
+        case toDoLocalIdentifier
+        case collabID = "circleID"
+        case isRecurring
+        case isTimeSensitive
+        case createdAt
     }
 }

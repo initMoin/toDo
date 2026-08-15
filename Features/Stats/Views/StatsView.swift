@@ -6,11 +6,16 @@ struct StatsView: View {
    @Environment(\.colorScheme) private var colorScheme
    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
    @Environment(\.appReduceMotion) private var reduceMotion
+   @Environment(\.appDifferentiatesWithoutColor) private var differentiateWithoutColor
    @AppStorage(AppPreferences.Keys.statsInsightsEnabled) private var statsInsightsEnabled = false
    @AppStorage(AppPreferences.Keys.appleIntelligenceEnabled) private var appleIntelligenceEnabled = false
    @Query private var toDos: [ToDo]
    @Query private var nanoDos: [NanoDo]
    @Query private var tags: [Tag]
+   @State private var celebrationID = 0
+   @State private var isShowingCelebration = false
+   @State private var viewportWidth: CGFloat = 0
+   @State private var selectedStatsPage = 0
 
    private let ownerUserID: UUID?
 
@@ -27,7 +32,7 @@ struct StatsView: View {
    }
 
    private var scopedTags: [Tag] {
-      tags.filter { $0.ownerUserID == ownerUserID }
+      Tag.canonicalTags(from: tags.filter { $0.ownerUserID == ownerUserID })
    }
 
    private var snapshot: ToDoStatsSnapshot {
@@ -44,25 +49,20 @@ struct StatsView: View {
          ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                StatsHeroCard(snapshot: currentSnapshot)
+               StatsActivityTracker(
+                  toDos: scopedToDos,
+                  weekCount: activityWeekCount,
+                  cellScale: usesRegularWidthLayout ? 0.82 : 0.85,
+                  maxCellSide: usesRegularWidthLayout ? 24 : 19,
+                  differentiateWithoutColor: differentiateWithoutColor
+               )
                StatsFocusGrid(snapshot: currentSnapshot)
 
-               if usesRegularWidthLayout {
-                  LazyVGrid(columns: statsBoardColumns, alignment: .center, spacing: 18) {
-                     StatsMomentumCard(snapshot: currentSnapshot)
-                     StatsWorkloadCard(snapshot: currentSnapshot)
-                     StatsTagCard(snapshot: currentSnapshot)
-                     StatsTrendCard(snapshot: currentSnapshot)
-                     StatsPlanningCard(snapshot: currentSnapshot)
-                     StatsPressureCard(snapshot: currentSnapshot)
-                  }
-               } else {
-                  StatsMomentumCard(snapshot: currentSnapshot)
-                  StatsWorkloadCard(snapshot: currentSnapshot)
-                  StatsTagCard(snapshot: currentSnapshot)
-                  StatsTrendCard(snapshot: currentSnapshot)
-                  StatsPlanningCard(snapshot: currentSnapshot)
-                  StatsPressureCard(snapshot: currentSnapshot)
-               }
+               StatsPagedCards(
+                  snapshot: currentSnapshot,
+                  selection: $selectedStatsPage,
+                  maxWidth: usesRegularWidthLayout ? 760 : .infinity
+               )
 
                StatsInsightCard(
                   snapshot: currentSnapshot,
@@ -78,18 +78,41 @@ struct StatsView: View {
          }
       }
       .background(AppColor.surface)
+      .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { viewportWidth = $0 }
       .appBaseTypography()
       .settingsNativeNavigationTitle("Stats", colorScheme: colorScheme, background: AppColor.secondary)
       .appReducedMotionBackButton(enabled: reduceMotion)
       .accessibilityIdentifier("stats.view")
+      .overlay {
+         if isShowingCelebration, !reduceMotion {
+            StatsViewportCelebration(seed: celebrationID)
+               .padding(.top, 64)
+               .allowsHitTesting(false)
+               .transition(.opacity)
+         }
+      }
+      .onChange(of: statsInsightsEnabled) { _, isEnabled in
+         guard isEnabled else { return }
+         showCelebration()
+      }
+      .onChange(of: appleIntelligenceEnabled) { _, isEnabled in
+         guard isEnabled else { return }
+         showCelebration()
+      }
    }
 
    private var usesRegularWidthLayout: Bool {
       horizontalSizeClass == .regular
+         && viewportWidth >= AppAdaptiveLayout.sideBySideMinimumWidth
    }
 
    private var statsContentMaxWidth: CGFloat {
       usesRegularWidthLayout ? 1040 : .infinity
+   }
+
+   private var activityWeekCount: Int {
+      guard usesRegularWidthLayout else { return 18 }
+      return viewportWidth >= 900 ? 32 : 24
    }
 
    private var statsBoardColumns: [GridItem] {
@@ -97,6 +120,132 @@ struct StatsView: View {
          GridItem(.flexible(minimum: 320, maximum: 500), spacing: 18, alignment: .top),
          GridItem(.flexible(minimum: 320, maximum: 500), spacing: 18, alignment: .top)
       ]
+   }
+
+   private func showCelebration() {
+      guard !reduceMotion else { return }
+      celebrationID += 1
+      withAnimation(.easeOut(duration: 0.18)) {
+         isShowingCelebration = true
+      }
+      Task { @MainActor in
+         try? await Task.sleep(for: .seconds(1.9))
+         withAnimation(.easeOut(duration: 0.3)) {
+            isShowingCelebration = false
+         }
+      }
+   }
+}
+
+private struct StatsPagedCards: View {
+   let snapshot: ToDoStatsSnapshot
+   @Binding var selection: Int
+   let maxWidth: CGFloat
+
+   private let pageCount = 6
+
+   var body: some View {
+      VStack(spacing: 12) {
+         TabView(selection: $selection) {
+            StatsMomentumCard(snapshot: snapshot)
+               .padding(.horizontal, 6)
+               .tag(0)
+            StatsWorkloadCard(snapshot: snapshot)
+               .padding(.horizontal, 6)
+               .tag(1)
+            StatsTagCard(snapshot: snapshot)
+               .padding(.horizontal, 6)
+               .tag(2)
+            StatsTrendCard(snapshot: snapshot)
+               .padding(.horizontal, 6)
+               .tag(3)
+            StatsPlanningCard(snapshot: snapshot)
+               .padding(.horizontal, 6)
+               .tag(4)
+            StatsPressureCard(snapshot: snapshot)
+               .padding(.horizontal, 6)
+               .tag(5)
+         }
+         .tabViewStyle(.page(indexDisplayMode: .never))
+         .frame(height: 360)
+
+         HStack(spacing: 7) {
+            ForEach(0..<pageCount, id: \.self) { index in
+               Button {
+                  withAnimation(AppAnimation.snappyFast) {
+                     selection = index
+                  }
+               } label: {
+                  Capsule()
+                     .fill(index == selection ? AppColor.secondary : AppColor.textSecondary.opacity(0.28))
+                     .frame(width: index == selection ? 20 : 7, height: 7)
+               }
+               .buttonStyle(.plain)
+               .accessibilityLabel(Text("Stats page \(index + 1) of \(pageCount)"))
+               .accessibilityAddTraits(index == selection ? .isSelected : [])
+            }
+         }
+         .frame(maxWidth: .infinity)
+      }
+      .frame(maxWidth: maxWidth)
+      .frame(maxWidth: .infinity)
+   }
+}
+
+private struct StatsViewportCelebration: View {
+   let seed: Int
+   @State private var expanded = false
+
+   private let particles: [(x: CGFloat, y: CGFloat, size: CGFloat, color: Color, symbol: String)] = [
+      (0.08, 0.18, 22, AppColor.main, "sparkle"),
+      (0.21, 0.42, 14, AppColor.secondary, "circle.fill"),
+      (0.34, 0.12, 18, AppColor.tertiary, "sparkles"),
+      (0.48, 0.55, 16, AppColor.main, "diamond.fill"),
+      (0.61, 0.2, 20, AppColor.secondary, "sparkle"),
+      (0.73, 0.48, 15, AppColor.tertiary, "circle.fill"),
+      (0.88, 0.15, 21, AppColor.main, "sparkles"),
+      (0.93, 0.62, 13, AppColor.secondary, "diamond.fill"),
+      (0.14, 0.72, 18, AppColor.tertiary, "sparkle"),
+      (0.52, 0.82, 22, AppColor.main, "sparkles"),
+      (0.79, 0.78, 16, AppColor.secondary, "circle.fill")
+   ]
+
+   var body: some View {
+      GeometryReader { proxy in
+         ZStack {
+            RadialGradient(
+               colors: [AppColor.secondary.opacity(expanded ? 0 : 0.18), .clear],
+               center: .center,
+               startRadius: 0,
+               endRadius: max(proxy.size.width, proxy.size.height) * 0.56
+            )
+
+            ForEach(Array(particles.enumerated()), id: \.offset) { index, particle in
+               Image(systemName: particle.symbol)
+                  .font(.system(size: particle.size, weight: .black))
+                  .foregroundStyle(particle.color)
+                  .position(
+                     x: proxy.size.width * (expanded ? particle.x : 0.5),
+                     y: proxy.size.height * (expanded ? particle.y : 0.5)
+                  )
+                  .scaleEffect(expanded ? 1 : 0.2)
+                  .opacity(expanded ? 0 : 1)
+                  .animation(
+                     .spring(response: 1.05, dampingFraction: 0.72)
+                        .delay(Double(index) * 0.025),
+                     value: expanded
+                  )
+            }
+         }
+      }
+      .id(seed)
+      .onAppear {
+         expanded = false
+         DispatchQueue.main.async {
+            expanded = true
+         }
+      }
+      .accessibilityHidden(true)
    }
 }
 
@@ -172,8 +321,8 @@ private struct ToDoStatsSnapshot {
       let sevenDayStaleDate = calendar.date(byAdding: .day, value: -7, to: now) ?? now
       let fourteenDayStaleDate = calendar.date(byAdding: .day, value: -14, to: now) ?? now
       let thirtyDayStaleDate = calendar.date(byAdding: .day, value: -30, to: now) ?? now
-      let completedThisWeekCount = completed.filter { $0.syncUpdatedAt >= weekStart }.count
-      let completedThisMonthCount = completed.filter { $0.syncUpdatedAt >= monthStart }.count
+      let completedThisWeekCount = completed.filter { ($0.completionActivityDate ?? $0.syncUpdatedAt) >= weekStart }.count
+      let completedThisMonthCount = completed.filter { ($0.completionActivityDate ?? $0.syncUpdatedAt) >= monthStart }.count
 
       totalToDos = toDos.count
       activeToDos = active.count
@@ -204,18 +353,18 @@ private struct ToDoStatsSnapshot {
       completedDailyAverage = Double(completedThisWeekCount) / 7
       onTimeCompletedDueToDos = dueCompleted.filter { toDo in
          guard let dueDate = toDo.dueDate else { return false }
-         return toDo.syncUpdatedAt <= dueDate
+         return (toDo.completionActivityDate ?? toDo.syncUpdatedAt) <= dueDate
       }.count
       lateCompletedDueToDos = dueCompleted.filter { toDo in
          guard let dueDate = toDo.dueDate else { return false }
-         return toDo.syncUpdatedAt > dueDate
+         return (toDo.completionActivityDate ?? toDo.syncUpdatedAt) > dueDate
       }.count
       noDueCompletedToDos = noDueCompleted.count
       activeToDosWithNanoDos = activeWithNanoDos.count
       activeToDosWithoutNanoDos = activeWithoutNanoDos.count
       completionRateWithNanoDos = Self.ratio(withNanoDos.filter { $0.lifecycleState == .done }.count, withNanoDos.count)
       completionRateWithoutNanoDos = Self.ratio(withoutNanoDos.filter { $0.lifecycleState == .done }.count, withoutNanoDos.count)
-      recurringCompletedLastThirtyDays = completed.filter { $0.isRecurring && $0.syncUpdatedAt >= monthStart }.count
+      recurringCompletedLastThirtyDays = completed.filter { $0.isRecurring && ($0.completionActivityDate ?? $0.syncUpdatedAt) >= monthStart }.count
       overdueRecurringToDos = active.filter { $0.isRecurring && $0.isLate }.count
       staleSevenDays = active.filter { $0.syncUpdatedAt < sevenDayStaleDate }.count
       staleFourteenDays = active.filter { $0.syncUpdatedAt < fourteenDayStaleDate }.count
@@ -358,7 +507,7 @@ private struct StatsHeroCard: View {
    let snapshot: ToDoStatsSnapshot
 
    var body: some View {
-      VStack(alignment: .leading, spacing: 18) {
+      VStack(alignment: .leading, spacing: 16) {
          HStack(alignment: .center, spacing: 12) {
             Image(systemName: "chart.line.uptrend.xyaxis")
                .font(.appBodyStrong(20, relativeTo: .title3))
@@ -380,7 +529,8 @@ private struct StatsHeroCard: View {
             StatsHeroMetric(title: "Overdue", value: snapshot.overdueToDos, tint: AppColor.destructive)
          }
       }
-      .statsCardStyle(accent: AppColor.secondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.vertical, 2)
    }
 }
 
@@ -422,11 +572,90 @@ private struct StatsFocusGrid: View {
    }
 }
 
+private struct StatsActivityTracker: View {
+   let toDos: [ToDo]
+   let weekCount: Int
+   let cellScale: CGFloat
+   let maxCellSide: CGFloat
+   let differentiateWithoutColor: Bool
+
+   private var weeks: [[ToDoActivityDay]] {
+      ToDoActivityTracker.grid(from: toDos, weekCount: weekCount)
+   }
+
+   var body: some View {
+      VStack(alignment: .leading, spacing: 14) {
+         Text(String(format: String(localized: "Completion rhythm over the last %lld weeks."), weekCount))
+            .font(.appBody(14, relativeTo: .subheadline))
+            .foregroundStyle(AppColor.textSecondary)
+
+         GeometryReader { proxy in
+            let columnWidth = proxy.size.width / CGFloat(max(weeks.count, 1))
+            let cellSide = min(columnWidth * cellScale, maxCellSide)
+
+            HStack(spacing: 0) {
+               ForEach(Array(weeks.enumerated()), id: \.offset) { _, week in
+                  VStack(spacing: 3) {
+                     ForEach(week) { day in
+                        RoundedRectangle(cornerRadius: 3, style: .continuous)
+                           .fill(cellColor(for: day))
+                           .frame(width: cellSide, height: cellSide)
+                           .overlay {
+                              if differentiateWithoutColor {
+                                 RoundedRectangle(cornerRadius: 3, style: .continuous)
+                                    .stroke(AppColor.textPrimary.opacity(day.completionCount == 0 ? 0.12 : 0.5), lineWidth: 1)
+                              }
+                           }
+                           .accessibilityLabel(dayAccessibilityLabel(for: day))
+                     }
+                  }
+                  .frame(width: columnWidth)
+               }
+            }
+         }
+         .frame(maxWidth: .infinity)
+         .frame(height: 7 * maxCellSide + 6 * 3)
+
+         HStack(spacing: 6) {
+            Text("Less")
+            ForEach(0..<5, id: \.self) { level in
+               RoundedRectangle(cornerRadius: 2, style: .continuous)
+                  .fill(cellColor(for: ToDoActivityDay(date: .now, completionCount: level)))
+                  .frame(width: 10, height: 10)
+            }
+            Text("More")
+         }
+         .font(.appBody(11, relativeTo: .caption))
+         .foregroundStyle(AppColor.textSecondary.opacity(0.78))
+         .frame(maxWidth: .infinity, alignment: .trailing)
+      }
+      .frame(maxWidth: 620, alignment: .leading)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(.vertical, 2)
+   }
+
+   private func cellColor(for day: ToDoActivityDay) -> Color {
+      switch day.intensity {
+      case 0: return AppColor.surfaceMuted.opacity(0.76)
+      case 1: return AppColor.secondary.opacity(0.28)
+      case 2: return AppColor.secondary.opacity(0.48)
+      case 3: return AppColor.secondary.opacity(0.72)
+      default: return AppColor.secondary
+      }
+   }
+
+   private func dayAccessibilityLabel(for day: ToDoActivityDay) -> String {
+      let count = day.completionCount
+      let date = day.date.formatted(.dateTime.month(.abbreviated).day())
+      return String(localized: "\(count) completed on \(date)")
+   }
+}
+
 private struct StatsMomentumCard: View {
    let snapshot: ToDoStatsSnapshot
 
    var body: some View {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 14) {
          StatsSectionHeader(title: "Momentum", systemName: "speedometer", tint: AppColor.tertiary)
 
          StatsProgressRow(title: "Completion Rate", value: snapshot.completionRateLabel, progress: snapshot.completionRate, tint: AppColor.tertiary)
@@ -446,7 +675,7 @@ private struct StatsWorkloadCard: View {
    let snapshot: ToDoStatsSnapshot
 
    var body: some View {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 14) {
          StatsSectionHeader(title: "Workload Shape", systemName: "square.stack.3d.up", tint: AppColor.secondary)
 
          StatsDetailRow(title: "Open NanoDos", value: AppLocalization.numberString(snapshot.openNanoDos), systemName: "smallcircle.filled.circle", tint: AppColor.secondary)
@@ -462,7 +691,7 @@ private struct StatsTagCard: View {
    let snapshot: ToDoStatsSnapshot
 
    var body: some View {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 14) {
          StatsSectionHeader(title: "Organization", systemName: "tag.fill", tint: AppColor.main)
 
          StatsDetailRow(title: "Top Tag", value: topTagLabel, systemName: "number", tint: AppColor.main)
@@ -486,7 +715,7 @@ private struct StatsTrendCard: View {
    let snapshot: ToDoStatsSnapshot
 
    var body: some View {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 14) {
          StatsSectionHeader(title: "Completion Trends", systemName: "chart.xyaxis.line", tint: AppColor.tertiary)
 
          HStack(spacing: 12) {
@@ -504,13 +733,13 @@ private struct StatsPlanningCard: View {
    let snapshot: ToDoStatsSnapshot
 
    var body: some View {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 14) {
          StatsSectionHeader(title: "Planning Accuracy", systemName: "calendar.badge.clock", tint: AppColor.secondary)
 
          StatsProgressRow(title: "On-Time Due Completion", value: snapshot.onTimeCompletionRateLabel, progress: Double(snapshot.onTimeCompletedDueToDos) / Double(max(snapshot.onTimeCompletedDueToDos + snapshot.lateCompletedDueToDos, 1)), tint: AppColor.secondary)
-         StatsDetailRow(title: "Completed Before Due", value: AppLocalization.numberString(snapshot.onTimeCompletedDueToDos), systemName: "checkmark.circle.fill", tint: AppColor.secondary)
-         StatsDetailRow(title: "Completed After Due", value: AppLocalization.numberString(snapshot.lateCompletedDueToDos), systemName: "exclamationmark.circle.fill", tint: AppColor.secondary)
-         StatsDetailRow(title: "No-Due Completions", value: AppLocalization.numberString(snapshot.noDueCompletedToDos), systemName: "minus.circle.fill", tint: AppColor.secondary)
+         StatsDetailRow(title: "Completed Before Due", value: AppLocalization.numberString(snapshot.onTimeCompletedDueToDos), systemName: "checkmark", tint: AppColor.secondary)
+         StatsDetailRow(title: "Completed After Due", value: AppLocalization.numberString(snapshot.lateCompletedDueToDos), systemName: "exclamationmark", tint: AppColor.secondary)
+         StatsDetailRow(title: "No-Due Completions", value: AppLocalization.numberString(snapshot.noDueCompletedToDos), systemName: "minus", tint: AppColor.secondary)
          StatsDetailRow(title: "Overdue Pattern", value: snapshot.overduePatternLabel, systemName: "calendar", tint: AppColor.secondary)
       }
       .statsCardStyle(accent: AppColor.secondary)
@@ -521,14 +750,14 @@ private struct StatsPressureCard: View {
    let snapshot: ToDoStatsSnapshot
 
    var body: some View {
-      VStack(alignment: .leading, spacing: 16) {
+      VStack(alignment: .leading, spacing: 14) {
          StatsSectionHeader(title: "Pressure Signals", systemName: "gauge.with.dots.needle.67percent", tint: AppColor.destructive)
 
          StatsProgressRow(title: "Focus Pressure", value: snapshot.focusPressureLabel, progress: Double(snapshot.focusPressureScore) / 100, tint: AppColor.destructive)
          StatsDetailRow(title: "Stale 7 Days", value: AppLocalization.numberString(snapshot.staleSevenDays), systemName: "clock.arrow.circlepath", tint: AppColor.destructive)
          StatsDetailRow(title: "Stale 14 Days", value: AppLocalization.numberString(snapshot.staleFourteenDays), systemName: "clock.badge.exclamationmark", tint: AppColor.destructive)
          StatsDetailRow(title: "Stale 30 Days", value: AppLocalization.numberString(snapshot.staleThirtyDays), systemName: "hourglass", tint: AppColor.destructive)
-         StatsDetailRow(title: "Overdue Recurring", value: AppLocalization.numberString(snapshot.overdueRecurringToDos), systemName: "repeat.circle.fill", tint: AppColor.destructive)
+         StatsDetailRow(title: "Overdue Recurring", value: AppLocalization.numberString(snapshot.overdueRecurringToDos), systemName: "repeat", tint: AppColor.destructive)
          StatsDetailRow(title: "Top Active Tag", value: topActiveTagLabel, systemName: "tag.fill", tint: AppColor.destructive)
       }
       .statsCardStyle(accent: AppColor.destructive)
@@ -596,12 +825,7 @@ private struct StatsInsightCard: View {
 
             if isEnabled {
                VStack(alignment: .leading, spacing: 14) {
-                  Text(displayedInsight)
-                     .font(.appBody(18, relativeTo: .body))
-                     .foregroundStyle(AppColor.textPrimary)
-                     .lineSpacing(2)
-                     .fixedSize(horizontal: false, vertical: true)
-                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                  formattedInsight
 
                   StatsDetailRow(title: "With NanoDos", value: snapshot.completionRateWithNanoDosLabel, systemName: "checklist", tint: AppColor.secondary, valueSize: 18)
                   StatsDetailRow(title: "Without NanoDos", value: snapshot.completionRateWithoutNanoDosLabel, systemName: "list.bullet", tint: AppColor.secondary, valueSize: 18)
@@ -635,7 +859,7 @@ private struct StatsInsightCard: View {
                .shadow(color: AppColor.secondary.opacity(0.28), radius: 16, y: 9)
             }
          }
-         .padding(20)
+         .padding(18)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .background(insightBackground, in: .rect(cornerRadius: 30))
@@ -736,10 +960,55 @@ private struct StatsInsightCard: View {
 
    private var displayedInsight: String {
       if isAppleIntelligenceEnabled, let appleIntelligenceSummary, !appleIntelligenceSummary.isEmpty {
-         return appleIntelligenceSummary
+         return sanitizedInsight(appleIntelligenceSummary)
       }
 
       return snapshot.strongestInsight
+   }
+
+   @ViewBuilder
+   private var formattedInsight: some View {
+      if let sections = insightSections(from: displayedInsight) {
+         VStack(alignment: .leading, spacing: 10) {
+            StatsInsightTextBlock(title: "Summary", text: sections.summary, tint: AppColor.secondary)
+            StatsInsightTextBlock(title: "Next move", text: sections.nextMove, tint: AppColor.tertiary)
+         }
+         .transition(.move(edge: .bottom).combined(with: .opacity))
+      } else {
+         Text(displayedInsight)
+            .font(.appBody(18, relativeTo: .body))
+            .foregroundStyle(AppColor.textPrimary)
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+      }
+   }
+
+   private func insightSections(from insight: String) -> (summary: String, nextMove: String)? {
+      let cleaned = insight
+         .replacingOccurrences(of: "\n", with: " ")
+         .replacingOccurrences(of: "  ", with: " ")
+         .trimmingCharacters(in: .whitespacesAndNewlines)
+      guard let summaryRange = cleaned.range(of: "Summary:", options: [.caseInsensitive]),
+            let nextMoveRange = cleaned.range(of: "Next move:", options: [.caseInsensitive]),
+            summaryRange.upperBound <= nextMoveRange.lowerBound else { return nil }
+
+      let summary = cleaned[summaryRange.upperBound..<nextMoveRange.lowerBound]
+         .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+      let nextMove = cleaned[nextMoveRange.upperBound...]
+         .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines.union(.punctuationCharacters))
+      guard !summary.isEmpty, !nextMove.isEmpty else { return nil }
+
+      return (summary, nextMove)
+   }
+
+   private func sanitizedInsight(_ insight: String) -> String {
+      insight
+         .replacingOccurrences(of: "**", with: "")
+         .replacingOccurrences(of: "__", with: "")
+         .replacingOccurrences(of: "### ", with: "")
+         .replacingOccurrences(of: "## ", with: "")
+         .replacingOccurrences(of: "# ", with: "")
    }
 
    private var appleIntelligenceTaskID: String {
@@ -867,6 +1136,33 @@ private struct StatsInsightCard: View {
    }
 }
 
+private struct StatsInsightTextBlock: View {
+   let title: LocalizedStringKey
+   let text: String
+   let tint: Color
+
+   var body: some View {
+      VStack(alignment: .leading, spacing: 6) {
+         Text(title)
+            .font(.appBodyStrong(14, relativeTo: .subheadline))
+            .foregroundStyle(tint)
+
+         Text(text)
+            .font(.appBody(15, relativeTo: .body))
+            .foregroundStyle(AppColor.textPrimary)
+            .lineSpacing(2)
+            .fixedSize(horizontal: false, vertical: true)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .padding(12)
+      .background(tint.opacity(0.09), in: .rect(cornerRadius: 16))
+      .overlay {
+         RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(tint.opacity(0.18), lineWidth: 1)
+      }
+   }
+}
+
 private struct StatsTile: View {
    let title: LocalizedStringKey
    let value: String
@@ -875,22 +1171,27 @@ private struct StatsTile: View {
 
    var body: some View {
       VStack(alignment: .leading, spacing: 12) {
-         Image(systemName: systemName)
-            .font(.appBodyStrong(18, relativeTo: .headline))
-            .foregroundStyle(tint)
-            .frame(width: 36, height: 36)
-            .background(tint.opacity(0.14), in: Circle())
+         HStack(spacing: 10) {
+            Image(systemName: systemName)
+               .font(.appBodyStrong(16, relativeTo: .headline))
+               .foregroundStyle(tint)
+               .frame(width: 34, height: 34)
+               .background(tint.opacity(0.14), in: Circle())
+
+            Text(title)
+               .font(.appBodyStrong(13, relativeTo: .caption))
+               .foregroundStyle(AppColor.textSecondary)
+               .lineLimit(1)
+               .minimumScaleFactor(0.82)
+               .allowsTightening(true)
+         }
 
          Text(value)
-            .font(.appDisplay(30, relativeTo: .title2))
+            .font(.appDisplay(32, relativeTo: .title2))
             .foregroundStyle(AppColor.textPrimary)
-
-         Text(title)
-            .font(.appBodyStrong(13, relativeTo: .caption))
-            .foregroundStyle(AppColor.textSecondary)
       }
       .padding(16)
-      .frame(maxWidth: .infinity, minHeight: 148, alignment: .topLeading)
+      .frame(maxWidth: .infinity, minHeight: 118, alignment: .topLeading)
       .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 24))
       .overlay {
          RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -1020,7 +1321,7 @@ private struct StatsCardModifier: ViewModifier {
 
    func body(content: Content) -> some View {
       content
-         .padding(18)
+         .padding(16)
          .frame(maxWidth: .infinity, alignment: .leading)
          .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 28))
          .overlay {

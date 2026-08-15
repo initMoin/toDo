@@ -208,7 +208,7 @@ final class LocationReminderService: NSObject, ObservableObject {
          let bodyBase = toDo.task.trimmingCharacters(in: .whitespacesAndNewlines)
          let body = bodyBase.isEmpty
             ? "Open toDō to review this location reminder."
-            : place?.isEmpty == false ? "\(bodyBase) near \(place!)" : bodyBase
+            : place.flatMap { $0.isEmpty ? nil : $0 }.map { "\(bodyBase) near \($0)" } ?? bodyBase
 	         let content = NotificationContentBuilder.content(
 	            for: .reminder,
             title: title,

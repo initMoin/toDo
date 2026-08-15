@@ -22,6 +22,8 @@ struct AppRootView: View {
 
 	   @EnvironmentObject private var toDoPresentationService: ToDoPresentationService
 	   @EnvironmentObject private var supabaseAuthStore: SupabaseAuthStore
+	   @EnvironmentObject private var collaborationService: ToDoCollaborationService
+	   @EnvironmentObject private var connectivityMonitor: ToDoConnectivityMonitor
 	   @Environment(\.modelContext) private var modelContext
 	   @Environment(\.appReduceMotion) private var reduceMotion
 	   @Query private var screenshotToDos: [ToDo]
@@ -35,12 +37,30 @@ struct AppRootView: View {
 	      .sheet(item: $activeSheet, onDismiss: handleSheetDismissal) { sheet in
 	         appSheetContent(for: sheet)
 	      }
+      .sheet(isPresented: Binding(
+         get: { collaborationService.pendingInvitationID != nil },
+         set: { isPresented in
+            if !isPresented {
+               collaborationService.clearPendingInvitation()
+            }
+         }
+      )) {
+         if let invitationID = collaborationService.pendingInvitationID {
+            CollabInvitationReviewView(invitationID: invitationID) {
+               collaborationService.clearPendingInvitation()
+            }
+         }
+      }
       .onReceive(toDoPresentationService.$activeRoute.compactMap { $0 }) { route in
          AppLog.info("AppRoot presenting toDō route: \(route.id)")
          activeSheet = .toDo(route)
       }
       .onChange(of: navigationCoordinator.notificationRoute) { _, route in
          handleNavigationRoute(route)
+      }
+      .onChange(of: supabaseAuthStore.currentUserID) { oldUserID, newUserID in
+         guard oldUserID != newUserID else { return }
+         dismissToDoPresentation()
       }
       .onDisappear {
          pendingToDoRouteResolutionTask?.cancel()
@@ -124,7 +144,7 @@ struct AppRootView: View {
 	            HomeView(onCreateToDo: {})
 	         }
 	      case "stats":
-	         StatsView(ownerUserID: supabaseAuthStore.currentUserID)
+         StatsView(ownerUserID: supabaseAuthStore.resolvedAccountID)
 	      default:
 	         HomeView(onCreateToDo: {})
 	      }
@@ -212,7 +232,7 @@ struct AppRootView: View {
       case .sync:
          navigate(to: .settings)
          navigationCoordinator.notificationRoute = .none
-      case .circle, .none:
+      case .collab, .none:
          break
       }
    }
@@ -228,7 +248,7 @@ struct AppRootView: View {
 
       pendingToDoRouteResolutionTask?.cancel()
       pendingToDoRouteResolutionTask = Task { @MainActor in
-         await SyncCoordinator.shared.refreshFromRemote(userID: supabaseAuthStore.currentUserID)
+         await SyncCoordinator.shared.refreshFromRemote(userID: supabaseAuthStore.resolvedAccountID)
 
          for _ in 0..<8 {
             guard !Task.isCancelled else { return }
@@ -267,10 +287,17 @@ struct AppRootView: View {
    }
 
    private func navigate(to destination: AppDestination) {
-      var transaction = Transaction()
-      transaction.animation = reduceMotion ? nil : AppAnimation.easeStandard
-      transaction.disablesAnimations = reduceMotion
-      withTransaction(transaction) {
+      // NavigationStack owns the platform transition. Supplying a separate
+      // fade transaction here caused the destination and source surfaces to
+      // animate together, especially when a detail sheet was already active.
+      if reduceMotion {
+         var transaction = Transaction()
+         transaction.animation = nil
+         transaction.disablesAnimations = true
+         withTransaction(transaction) {
+            navigationPath.append(destination)
+         }
+      } else {
          navigationPath.append(destination)
       }
    }
@@ -278,9 +305,9 @@ struct AppRootView: View {
 
 private struct HomeView: View {
    private enum PreviewFilter: String, CaseIterable, Identifiable {
+      case recent
       case dueSoon
       case timeSensitive
-      case recent
 
       var id: String { rawValue }
 
@@ -297,8 +324,14 @@ private struct HomeView: View {
    }
 
    @Query private var toDos: [ToDo]
+   @EnvironmentObject private var authStore: SupabaseAuthStore
+   @EnvironmentObject private var collaborationService: ToDoCollaborationService
+   @EnvironmentObject private var connectivityMonitor: ToDoConnectivityMonitor
    @Environment(\.colorScheme) private var colorScheme
-   @AppStorage("todo.homePreviewFilter") private var previewFilterRawValue = PreviewFilter.dueSoon.rawValue
+   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+   @AppStorage("todo.homePreviewFilter") private var previewFilterRawValue = PreviewFilter.recent.rawValue
+   @State private var viewportWidth: CGFloat = 0
+   @State private var isShowingProfile = false
 
    let onCreateToDo: () -> Void
    let onShowToDos: () -> Void
@@ -336,31 +369,58 @@ private struct HomeView: View {
             .frame(maxWidth: .infinity, alignment: .center)
          }
       }
+      .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { viewportWidth = $0 }
+      .fullScreenCover(isPresented: $isShowingProfile, onDismiss: {
+         Task { await authStore.refreshProfile() }
+      }) {
+         MyProfileView()
+      }
    }
 
    private var header: some View {
-      HStack(alignment: .center, spacing: 16) {
-         VStack(alignment: .leading, spacing: 6) {
+      HStack(alignment: .top, spacing: 16) {
+         VStack(alignment: .leading, spacing: 8) {
             Text(AppLocalization.dateString(Date.now))
                .font(.appDisplay(15, relativeTo: .subheadline))
                .foregroundStyle(AppColor.textSecondary)
+               .fixedSize(horizontal: true, vertical: false)
+               // Align the date's visual center with the profile avatar.
+               .padding(.top, 12)
 
             homeBrandWordmark
          }
-
          Spacer(minLength: 16)
 
-         Button(action: onShowSettings) {
-            Image(systemName: "gearshape.fill")
-               .font(.appDisplay(18, relativeTo: .headline))
+         VStack(spacing: 8) {
+            if authStore.isAuthenticated {
+               Button {
+                  isShowingProfile = true
+               } label: {
+                  ProfileAvatarView(
+                     profile: authStore.profile,
+                     email: authStore.signedInEmail,
+                     size: 42,
+                     localUserID: authStore.currentUserID,
+                     localImageRevision: authStore.profileImageRevision
+                  )
+               }
+               .buttonStyle(.plain)
+               .accessibilityLabel("Open My Profile")
+               .accessibilityHint("Shows your profile and account details.")
+            }
+
+            Button(action: onShowSettings) {
+               Image(systemName: "gearshape.fill")
+                  .font(.appDisplay(18, relativeTo: .headline))
+            }
+            .buttonStyle(AppCircleActionButtonStyle(intent: .neutral, size: 46, tint: AppColor.main, foreground: AppColor.brandYellowForeground(for: colorScheme)))
+            .accessibilityLabel("Settings")
+            .accessibilityInputLabels([
+               Text("Settings"),
+               Text("Open Settings"),
+               Text("toDō Settings")
+            ])
          }
-         .buttonStyle(AppCircleActionButtonStyle(intent: .neutral, size: 46, tint: AppColor.main, foreground: AppColor.brandYellowForeground(for: colorScheme)))
-         .accessibilityLabel("Settings")
-         .accessibilityInputLabels([
-            Text("Settings"),
-            Text("Open Settings"),
-            Text("toDō Settings")
-         ])
       }
    }
 
@@ -373,83 +433,107 @@ private struct HomeView: View {
             .fontWeight(.black)
             .foregroundStyle(AppColor.textPrimary)
 
-         HStack(spacing: 12) {
-            Button(action: onCreateToDo) {
-               HStack(spacing: 10) {
-                  HomePlusMark(size: 18, thickness: 4)
-                     .frame(width: 24, height: 24)
-
-                  Text("New toDō")
-                     .font(.appButton(18, relativeTo: .headline))
-                     .lineLimit(1)
-                     .minimumScaleFactor(0.72)
-                     .allowsTightening(true)
-               }
-               .foregroundStyle(buttonForeground)
-               .padding(.horizontal, 18)
-               .frame(minWidth: 120, minHeight: 58)
-               .background(AppColor.main, in: .rect(cornerRadius: 20))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("home.newToDo")
-            .accessibilityLabel("New toDō")
-            .accessibilityInputLabels([
-               Text("New toDō"),
-               Text("Create toDō"),
-               Text("Add toDō")
-            ])
-
-            Button(action: onShowToDos) {
-               HStack(spacing: 7) {
-                  Image("checkit")
-                     .renderingMode(.template)
-                     .resizable()
-                     .scaledToFit()
-                     .foregroundStyle(buttonForeground)
-                     .frame(width: 16, height: 16)
-
-                  Text("See all toDōs")
-                     .font(.appButton(18, relativeTo: .headline))
-                     .foregroundStyle(buttonForeground)
-                     .lineLimit(1)
-                     .minimumScaleFactor(0.58)
-                     .allowsTightening(true)
-                     .layoutPriority(2)
-
-                  Spacer(minLength: 0)
-
-                  if activeToDos.count > 0 {
-                     Text(AppLocalization.numberString(activeToDos.count))
-                        .font(.appBodyStrong(14, relativeTo: .caption))
-                        .fontWeight(.black)
-                        .foregroundStyle(buttonForeground)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 5)
-                        .background(buttonForeground.opacity(0.13), in: Capsule())
-                  }
-
-                  Image(systemName: "arrow.right.circle.fill")
-                     .font(.appDisplay(18, relativeTo: .headline))
-                     .foregroundStyle(buttonForeground)
-               }
+         if let bannerText = connectivityMonitor.bannerText {
+            Text(bannerText)
+               .font(.appBodyStrong(13, relativeTo: .footnote))
+               .foregroundStyle(.white)
+               .frame(maxWidth: .infinity, alignment: .leading)
                .padding(.horizontal, 12)
-               .frame(minHeight: 58)
-               .background(AppColor.secondary, in: .rect(cornerRadius: 20))
+               .padding(.vertical, 10)
+               .background(AppColor.destructive, in: .rect(cornerRadius: 16))
+               .accessibilityAddTraits(.isStaticText)
+         }
+
+         Group {
+            if usesStackedHomeActions {
+               VStack(spacing: 10) {
+                  newToDoButton(foreground: buttonForeground)
+                  seeAllToDosButton(foreground: buttonForeground)
+               }
+            } else {
+               HStack(spacing: 12) {
+                  newToDoButton(foreground: buttonForeground)
+                  seeAllToDosButton(foreground: buttonForeground)
+               }
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("home.seeAllToDos")
-            .accessibilityLabel("See all toDōs")
-            .accessibilityInputLabels([
-               Text("See all toDōs"),
-               Text("All toDōs"),
-               Text("Open toDōs")
-            ])
          }
          .buttonStyle(.plain)
       }
       .padding(22)
       .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 30))
       .shadow(color: AppColor.shadow, radius: 24, x: 0, y: 12)
+   }
+
+   private var usesStackedHomeActions: Bool {
+      (viewportWidth > 0 && viewportWidth < AppAdaptiveLayout.narrowPhoneUpperBound)
+         || dynamicTypeSize.isAccessibilitySize
+   }
+
+   private func newToDoButton(foreground: Color) -> some View {
+      Button(action: onCreateToDo) {
+         HStack(spacing: 0) {
+            HomePlusMark(size: 18, thickness: 4)
+               .frame(width: 24, height: 24)
+            Text("New toDō")
+               .font(.appButton(18, relativeTo: .headline))
+               .lineLimit(1)
+               .minimumScaleFactor(0.78)
+               .allowsTightening(true)
+
+               .frame(maxWidth: .infinity)
+
+            Color.clear
+               .frame(width: 24, height: 24)
+               .accessibilityHidden(true)
+         }
+         .frame(maxWidth: .infinity, alignment: .center)
+         .foregroundStyle(foreground)
+         .padding(.horizontal, 16)
+         .frame(maxWidth: .infinity, minHeight: 58)
+         .background(AppColor.main, in: .rect(cornerRadius: 20))
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("home.newToDo")
+      .accessibilityLabel("New toDō")
+      .accessibilityInputLabels([
+         Text("New toDō"),
+         Text("Create toDō"),
+         Text("Add toDō")
+      ])
+   }
+
+   private func seeAllToDosButton(foreground: Color) -> some View {
+      Button(action: onShowToDos) {
+         HStack(spacing: 0) {
+            Color.clear
+               .frame(width: 24, height: 24)
+               .accessibilityHidden(true)
+            Text("See all toDōs")
+               .font(.appButton(18, relativeTo: .headline))
+               .lineLimit(1)
+               .minimumScaleFactor(0.68)
+               .allowsTightening(true)
+
+               .frame(maxWidth: .infinity)
+
+            Image(systemName: "arrow.right")
+               .font(.system(size: 19, weight: .black, design: .rounded))
+               .frame(width: 24, height: 24)
+         }
+         .frame(maxWidth: .infinity, alignment: .center)
+         .foregroundStyle(foreground)
+         .padding(.horizontal, 12)
+         .frame(maxWidth: .infinity, minHeight: 58)
+         .background(AppColor.secondary, in: .rect(cornerRadius: 20))
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("home.seeAllToDos")
+      .accessibilityLabel("See all toDōs")
+      .accessibilityInputLabels([
+         Text("See all toDōs"),
+         Text("All toDōs"),
+         Text("Open toDōs")
+      ])
    }
 
    private var statsSection: some View {
@@ -488,7 +572,7 @@ private struct HomeView: View {
          LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
             HomeMetricCard(title: "Active", value: activeToDos.count, tint: AppColor.secondary, systemName: "bolt.fill")
             HomeMetricCard(title: "Due soon", value: dueSoonCount, tint: AppColor.main, systemName: "clock.fill")
-            HomeMetricCard(title: "Overdue", value: overdueCount, tint: AppColor.actionDestructive, systemName: "exclamationmark.circle.fill")
+            HomeMetricCard(title: "Overdue", value: overdueCount, tint: AppColor.actionDestructive, systemName: "exclamationmark")
             HomeMetricCard(title: "Time-sensitive", value: timeSensitiveCount, tint: AppColor.actionPrimary, systemName: "flame.fill")
          }
 
@@ -501,7 +585,7 @@ private struct HomeView: View {
    }
 
    private var homeBrandWordmark: some View {
-      HStack(spacing: 0) {
+      HStack(alignment: .center, spacing: 3) {
          Text("toD")
             .font(.appBrand(58, relativeTo: .largeTitle))
             .foregroundStyle(AppColor.textPrimary)
@@ -509,8 +593,14 @@ private struct HomeView: View {
          Text("ō")
             .font(.appBrand(58, relativeTo: .largeTitle))
             .foregroundStyle(AppColor.main)
+
+         ToDoBrandPlusMark(
+            font: .appBrand(58, relativeTo: .largeTitle),
+            width: 44,
+            height: 60
+         )
       }
-      .accessibilityLabel("toDō")
+      .accessibilityLabel("toDō+")
    }
 
    private var homeToDoPreview: some View {
@@ -548,31 +638,78 @@ private struct HomeView: View {
                .frame(maxWidth: .infinity, alignment: .leading)
                .padding(16)
                .background(AppColor.surfaceElevated, in: .rect(cornerRadius: 20))
+               .transition(.opacity.combined(with: .offset(y: 8)))
+         } else if previewToDos.count > 3 {
+            homePreviewScroller
          } else {
-            VStack(spacing: 10) {
-               ForEach(previewToDos) { toDo in
-                  HomeToDoPreviewRow(toDo: toDo)
-               }
-            }
+            homePreviewRows
+         }
+      }
+      .animation(AppAnimation.easeStandard, value: previewFilterRawValue)
+      .animation(AppAnimation.easeStandard, value: previewToDos.map(\.id))
+   }
+
+   @ViewBuilder
+   private var homePreviewScroller: some View {
+      if runsOnMac {
+         ScrollView(.vertical) {
+            homePreviewRows
+         }
+         .scrollIndicators(.visible)
+         .scrollBounceBehavior(.basedOnSize)
+         .frame(height: 214)
+         .accessibilityLabel("Up next toDōs")
+      } else {
+         ScrollView(.vertical) {
+            homePreviewRows
+               .scrollTargetLayout()
+         }
+         .scrollIndicators(.hidden)
+         .scrollTargetBehavior(.viewAligned(limitBehavior: .alwaysByOne))
+         .frame(height: 214)
+         .accessibilityLabel("Up next toDōs")
+      }
+   }
+
+   private var homePreviewRows: some View {
+      LazyVStack(spacing: 10) {
+         ForEach(previewToDos) { toDo in
+            HomeToDoPreviewRow(toDo: toDo)
+               .transition(.opacity.combined(with: .offset(y: 10)))
          }
       }
    }
 
+   private var runsOnMac: Bool {
+      #if targetEnvironment(macCatalyst)
+      return true
+      #else
+      return ProcessInfo.processInfo.isiOSAppOnMac
+      #endif
+   }
+
    private var activeToDos: [ToDo] {
-      toDos.filter { $0.lifecycleState == .active }
+      visibleToDos.filter { $0.lifecycleState == .active }
    }
 
    private var doneCount: Int {
-      toDos.filter { $0.lifecycleState == .done }.count
+      visibleToDos.filter { $0.lifecycleState == .done }.count
+   }
+
+   private var visibleToDos: [ToDo] {
+      let ownerUserID = authStore.effectiveSyncMode == .syncEverywhere
+         ? authStore.scopedOwnerUserID
+         : nil
+      let accessibleCollabIDs = Set(collaborationService.collabs.map(\.id))
+      let scoped = toDos.filter {
+         $0.ownerUserID == ownerUserID
+            || $0.collabID.map(accessibleCollabIDs.contains) == true
+      }
+      return ToDo.canonicalToDos(from: scoped)
    }
 
    private var dueSoonCount: Int {
-      let now = Date()
-      let soon = Calendar.current.date(byAdding: .hour, value: 24, to: now) ?? now
-      return activeToDos.filter {
-         guard let dueDate = $0.dueDate else { return false }
-         return dueDate >= now && dueDate <= soon
-      }.count
+      ToDo.dueSoon(from: activeToDos).count
    }
 
    private var overdueCount: Int {
@@ -592,22 +729,14 @@ private struct HomeView: View {
    }
 
    private var previewToDos: [ToDo] {
-      let candidates: [ToDo]
       switch previewFilter {
       case .dueSoon:
-         candidates = activeToDos
-            .filter { $0.dueDate != nil }
-            .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
+         return ToDo.dueSoon(from: activeToDos)
       case .timeSensitive:
-         candidates = activeToDos
-            .filter { $0.reminderIntent == .timeSensitive }
-            .sorted { ($0.dueDate ?? .distantFuture) < ($1.dueDate ?? .distantFuture) }
+         return ToDo.timeSensitive(from: activeToDos)
       case .recent:
-         candidates = activeToDos
-            .sorted { $0.syncUpdatedAt > $1.syncUpdatedAt }
+         return ToDo.recent(from: activeToDos)
       }
-
-      return Array(candidates.prefix(3))
    }
 
 }
@@ -675,7 +804,7 @@ private struct HomeCompletedSummary: View {
 
    var body: some View {
       HStack(alignment: .center, spacing: 12) {
-         Image(systemName: "checkmark.circle.fill")
+         Image(systemName: "checkmark")
             .font(.appDisplay(15, relativeTo: .subheadline))
             .foregroundStyle(AppColor.actionSuccess)
             .frame(width: 30, height: 30)
@@ -712,7 +841,7 @@ private struct HomeToDoPreviewRow: View {
       HStack(alignment: .center, spacing: 12) {
          VStack(alignment: .leading, spacing: 4) {
             Text(toDo.task)
-               .font(.appBodyStrong(15, relativeTo: .subheadline))
+               .font(.appUserEntry(15, relativeTo: .subheadline))
                .foregroundStyle(AppColor.textPrimary)
                .lineLimit(2)
 

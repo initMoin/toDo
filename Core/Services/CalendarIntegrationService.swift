@@ -58,6 +58,22 @@ final class CalendarIntegrationService {
       toDo.calendarEventIdentifier = nil
    }
 
+   func removeCalendarEvents(for toDos: [ToDo]) throws {
+      var firstError: Error?
+
+      for toDo in toDos where toDo.calendarEventIdentifier != nil {
+         do {
+            try removeCalendarEvent(for: toDo)
+         } catch {
+            firstError = firstError ?? error
+         }
+      }
+
+      if let firstError {
+         throw firstError
+      }
+   }
+
    private func calendarNotes(for toDo: ToDo) -> String? {
       let notes = toDo.notes.trimmingCharacters(in: .whitespacesAndNewlines)
       var sections: [String] = []

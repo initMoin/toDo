@@ -118,6 +118,30 @@ struct AppleIntelligenceToDoDraft: Sendable {
    let nanoDoTitles: [String]
    let locationLabel: String?
    let locationTrigger: ToDoLocationReminderTrigger?
+   let clarificationQuestion: String?
+
+   func applyingDefaultDueTime(for spokenRequest: String) -> Self {
+      guard let dueDate,
+            !AppleIntelligenceService.containsExplicitTime(in: spokenRequest)
+      else { return self }
+
+      return Self(
+         title: title,
+         notes: notes,
+         dueDate: AppPreferences.applyingDefaultDueTime(to: dueDate),
+         reminderIntent: reminderIntent,
+         recurrenceUnit: recurrenceUnit,
+         recurrenceInterval: recurrenceInterval,
+         recurrenceMode: recurrenceMode,
+         recurrenceCount: recurrenceCount,
+         recurrenceEndDate: recurrenceEndDate,
+         tagNames: tagNames,
+         nanoDoTitles: nanoDoTitles,
+         locationLabel: locationLabel,
+         locationTrigger: locationTrigger,
+         clarificationQuestion: clarificationQuestion
+      )
+   }
 }
 
 private struct AppleIntelligenceToDoDraftPayload: Decodable {
@@ -134,6 +158,7 @@ private struct AppleIntelligenceToDoDraftPayload: Decodable {
    let nanoDoTitles: [String]?
    let locationLabel: String?
    let locationTrigger: String?
+   let clarificationQuestion: String?
 }
 
 enum AppleIntelligenceService {
@@ -282,7 +307,7 @@ enum AppleIntelligenceService {
       Return only one valid JSON object with exactly these keys:
       title, notes, dueDate, reminderIntent, recurrenceUnit, recurrenceInterval,
       recurrenceMode, recurrenceCount, recurrenceEndDate, tagNames, nanoDoTitles,
-      locationLabel, locationTrigger.
+      locationLabel, locationTrigger, clarificationQuestion.
 
       Rules:
       - Resolve relative dates using the supplied current date, calendar, locale, and time zone.
@@ -309,7 +334,13 @@ enum AppleIntelligenceService {
         nanoDoTitles. Content introduced by any of those terms belongs only in
         nanoDoTitles, one action per array item, and never in notes.
       - A requested count such as "3 subtasks" is not enough to invent tasks.
-        Only include subtask titles the user actually states.
+        Only include subtask titles the user actually states. When the user asks
+        for unnamed subtasks, set clarificationQuestion to one short question
+        asking for their names.
+      - Set clarificationQuestion only when a detail the user explicitly requested
+        is ambiguous or incomplete enough to change the resulting toDō. Do not ask
+        about optional details the user did not mention.
+      - If clarificationQuestion is not needed, set it to null.
       - Do not add facts the user did not say.
 
       Current ISO date: \(formatter.string(from: now))
@@ -367,7 +398,8 @@ enum AppleIntelligenceService {
             tagNames: payload.tagNames ?? [],
             nanoDoTitles: payload.nanoDoTitles ?? [],
             locationLabel: payload.locationLabel,
-            locationTrigger: payload.locationTrigger
+            locationTrigger: payload.locationTrigger,
+            clarificationQuestion: payload.clarificationQuestion
          )
       )
    }

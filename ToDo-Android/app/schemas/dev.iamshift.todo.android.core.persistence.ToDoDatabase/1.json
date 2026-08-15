@@ -1,0 +1,544 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "c31c174b12d3e17f05c36a7aa86b3688",
+    "entities": [
+      {
+        "tableName": "todos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `ownerUserId` TEXT, `collabId` TEXT, `task` TEXT NOT NULL, `notes` TEXT NOT NULL, `lifecycleState` TEXT NOT NULL, `dueAtEpochMillis` INTEGER, `dueTimeZone` TEXT, `reminderIntent` TEXT NOT NULL, `recurrenceUnit` TEXT, `recurrenceInterval` INTEGER, `recurrenceMode` TEXT, `recurrenceCount` INTEGER, `recurrenceAnchorAtEpochMillis` INTEGER, `recurrenceEndAtEpochMillis` INTEGER, `completeWhenAllNanoDosDone` INTEGER NOT NULL, `sortPosition` REAL, `trashedAtEpochMillis` INTEGER, `locationLatitude` REAL, `locationLongitude` REAL, `locationRadiusMeters` REAL, `locationTrigger` TEXT, `locationLabel` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, `completedAtEpochMillis` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "ownerUserId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "collabId",
+            "columnName": "collabId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "task",
+            "columnName": "task",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notes",
+            "columnName": "notes",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lifecycleState",
+            "columnName": "lifecycleState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueAtEpochMillis",
+            "columnName": "dueAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "dueTimeZone",
+            "columnName": "dueTimeZone",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reminderIntent",
+            "columnName": "reminderIntent",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recurrenceUnit",
+            "columnName": "recurrenceUnit",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "recurrenceInterval",
+            "columnName": "recurrenceInterval",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "recurrenceMode",
+            "columnName": "recurrenceMode",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "recurrenceCount",
+            "columnName": "recurrenceCount",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "recurrenceAnchorAtEpochMillis",
+            "columnName": "recurrenceAnchorAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "recurrenceEndAtEpochMillis",
+            "columnName": "recurrenceEndAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "completeWhenAllNanoDosDone",
+            "columnName": "completeWhenAllNanoDosDone",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortPosition",
+            "columnName": "sortPosition",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "trashedAtEpochMillis",
+            "columnName": "trashedAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "locationLatitude",
+            "columnName": "locationLatitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "locationLongitude",
+            "columnName": "locationLongitude",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "locationRadiusMeters",
+            "columnName": "locationRadiusMeters",
+            "affinity": "REAL"
+          },
+          {
+            "fieldPath": "locationTrigger",
+            "columnName": "locationTrigger",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "locationLabel",
+            "columnName": "locationLabel",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "completedAtEpochMillis",
+            "columnName": "completedAtEpochMillis",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_todos_ownerUserId",
+            "unique": false,
+            "columnNames": [
+              "ownerUserId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_todos_ownerUserId` ON `${TABLE_NAME}` (`ownerUserId`)"
+          },
+          {
+            "name": "index_todos_collabId",
+            "unique": false,
+            "columnNames": [
+              "collabId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_todos_collabId` ON `${TABLE_NAME}` (`collabId`)"
+          },
+          {
+            "name": "index_todos_lifecycleState",
+            "unique": false,
+            "columnNames": [
+              "lifecycleState"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_todos_lifecycleState` ON `${TABLE_NAME}` (`lifecycleState`)"
+          },
+          {
+            "name": "index_todos_dueAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "dueAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_todos_dueAtEpochMillis` ON `${TABLE_NAME}` (`dueAtEpochMillis`)"
+          },
+          {
+            "name": "index_todos_updatedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "updatedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_todos_updatedAtEpochMillis` ON `${TABLE_NAME}` (`updatedAtEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "nanodos",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `todoId` TEXT NOT NULL, `ownerUserId` TEXT, `task` TEXT NOT NULL, `isDone` INTEGER NOT NULL, `tagId` TEXT, `dueAtEpochMillis` INTEGER, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "todoId",
+            "columnName": "todoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "ownerUserId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "task",
+            "columnName": "task",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDone",
+            "columnName": "isDone",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tagId",
+            "columnName": "tagId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dueAtEpochMillis",
+            "columnName": "dueAtEpochMillis",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_nanodos_todoId",
+            "unique": false,
+            "columnNames": [
+              "todoId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_nanodos_todoId` ON `${TABLE_NAME}` (`todoId`)"
+          },
+          {
+            "name": "index_nanodos_updatedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "updatedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_nanodos_updatedAtEpochMillis` ON `${TABLE_NAME}` (`updatedAtEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "tags",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `ownerUserId` TEXT, `name` TEXT NOT NULL, `isDefault` INTEGER NOT NULL, `createdAtEpochMillis` INTEGER NOT NULL, `updatedAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ownerUserId",
+            "columnName": "ownerUserId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isDefault",
+            "columnName": "isDefault",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "updatedAtEpochMillis",
+            "columnName": "updatedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_tags_ownerUserId",
+            "unique": false,
+            "columnNames": [
+              "ownerUserId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tags_ownerUserId` ON `${TABLE_NAME}` (`ownerUserId`)"
+          },
+          {
+            "name": "index_tags_name",
+            "unique": false,
+            "columnNames": [
+              "name"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tags_name` ON `${TABLE_NAME}` (`name`)"
+          },
+          {
+            "name": "index_tags_updatedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "updatedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_tags_updatedAtEpochMillis` ON `${TABLE_NAME}` (`updatedAtEpochMillis`)"
+          }
+        ]
+      },
+      {
+        "tableName": "todo_tags",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`todoId` TEXT NOT NULL, `tagId` TEXT NOT NULL, PRIMARY KEY(`todoId`, `tagId`))",
+        "fields": [
+          {
+            "fieldPath": "todoId",
+            "columnName": "todoId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tagId",
+            "columnName": "tagId",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "todoId",
+            "tagId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_todo_tags_tagId",
+            "unique": false,
+            "columnNames": [
+              "tagId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_todo_tags_tagId` ON `${TABLE_NAME}` (`tagId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "sync_outbox",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`mutationId` TEXT NOT NULL, `deduplicationKey` TEXT NOT NULL, `tableName` TEXT NOT NULL, `recordId` TEXT NOT NULL, `relatedRecordId` TEXT, `userId` TEXT NOT NULL, `collabId` TEXT, `operation` TEXT NOT NULL, `payloadJson` TEXT, `changedAtEpochMillis` INTEGER NOT NULL, `originDeviceId` TEXT NOT NULL, `payloadDigest` TEXT, `status` TEXT NOT NULL, `attemptCount` INTEGER NOT NULL, `nextAttemptAtEpochMillis` INTEGER NOT NULL, `lastError` TEXT, `createdAtEpochMillis` INTEGER NOT NULL, PRIMARY KEY(`mutationId`))",
+        "fields": [
+          {
+            "fieldPath": "mutationId",
+            "columnName": "mutationId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "deduplicationKey",
+            "columnName": "deduplicationKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tableName",
+            "columnName": "tableName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "recordId",
+            "columnName": "recordId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "relatedRecordId",
+            "columnName": "relatedRecordId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userId",
+            "columnName": "userId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "collabId",
+            "columnName": "collabId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "operation",
+            "columnName": "operation",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadJson",
+            "columnName": "payloadJson",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "changedAtEpochMillis",
+            "columnName": "changedAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "originDeviceId",
+            "columnName": "originDeviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadDigest",
+            "columnName": "payloadDigest",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attemptCount",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "nextAttemptAtEpochMillis",
+            "columnName": "nextAttemptAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastError",
+            "columnName": "lastError",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "createdAtEpochMillis",
+            "columnName": "createdAtEpochMillis",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "mutationId"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_sync_outbox_status_nextAttemptAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "status",
+              "nextAttemptAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_outbox_status_nextAttemptAtEpochMillis` ON `${TABLE_NAME}` (`status`, `nextAttemptAtEpochMillis`)"
+          },
+          {
+            "name": "index_sync_outbox_deduplicationKey",
+            "unique": false,
+            "columnNames": [
+              "deduplicationKey"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_outbox_deduplicationKey` ON `${TABLE_NAME}` (`deduplicationKey`)"
+          },
+          {
+            "name": "index_sync_outbox_changedAtEpochMillis",
+            "unique": false,
+            "columnNames": [
+              "changedAtEpochMillis"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_sync_outbox_changedAtEpochMillis` ON `${TABLE_NAME}` (`changedAtEpochMillis`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c31c174b12d3e17f05c36a7aa86b3688')"
+    ]
+  }
+}

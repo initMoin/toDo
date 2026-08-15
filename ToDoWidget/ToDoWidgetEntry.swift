@@ -8,7 +8,7 @@ struct ToDoWidgetEntry: TimelineEntry {
 
    var selectedCategory: String {
       let rawValue = configuration.category?.trimmingCharacters(in: .whitespacesAndNewlines)
-      return rawValue?.isEmpty == false ? rawValue! : "All"
+      return rawValue.flatMap { $0.isEmpty ? nil : $0 } ?? "All"
    }
 
    var filteredItems: [ToDoWidgetItem] {

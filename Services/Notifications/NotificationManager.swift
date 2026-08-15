@@ -65,6 +65,7 @@ final class NotificationManager: NSObject, ObservableObject {
 
    private var modelContainer: ModelContainer?
    private var remoteNotificationRegistrar: (@MainActor () -> Void)?
+   private var currentUserIDProvider: @MainActor () -> UUID? = { nil }
    private var scheduledSyncTask: Task<Void, Never>?
    private var isSyncingScheduledNotifications = false
    private var needsScheduledNotificationSyncAfterCurrent = false
@@ -79,10 +80,12 @@ final class NotificationManager: NSObject, ObservableObject {
 
    func configure(
       modelContainer: ModelContainer,
-      remoteNotificationRegistrar: (@MainActor () -> Void)? = nil
+      remoteNotificationRegistrar: (@MainActor () -> Void)? = nil,
+      currentUserIDProvider: @escaping @MainActor () -> UUID? = { nil }
    ) {
       self.modelContainer = modelContainer
       self.remoteNotificationRegistrar = remoteNotificationRegistrar
+      self.currentUserIDProvider = currentUserIDProvider
       center.delegate = self
       registerNotificationCategories()
 
@@ -253,6 +256,14 @@ final class NotificationManager: NSObject, ObservableObject {
    }
 
    func handleRemoteNotification(_ userInfo: [AnyHashable: Any]) async -> RemoteNotificationHandlingResult {
+      if isCollaborationInvitationRefreshPayload(userInfo) {
+         NotificationCenter.default.post(
+            name: .toDoCollaborationInvitationReceived,
+            object: nil
+         )
+         return .newData
+      }
+
       if isRemoteSyncRefreshPayload(userInfo) {
          #if os(macOS)
          return .noData
@@ -293,7 +304,11 @@ final class NotificationManager: NSObject, ObservableObject {
          case "archive":
             toDo.transition(to: .archived)
          case "delete":
-            SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(for: toDo, in: context)
+            SyncDeletionMirroring.deleteDeviceOnlyCounterpartIfNeeded(
+               for: toDo,
+               in: context,
+               actingUserID: currentUserIDProvider()
+            )
             context.delete(toDo)
          default:
             return .noData
@@ -308,6 +323,15 @@ final class NotificationManager: NSObject, ObservableObject {
       } catch {
          return .failed
       }
+   }
+
+   private func isCollaborationInvitationRefreshPayload(_ userInfo: [AnyHashable: Any]) -> Bool {
+      if (userInfo["sourceTable"] as? String)?.lowercased() == "collab_invitations" {
+         return true
+      }
+
+      guard let typeRaw = userInfo["type"] as? String else { return false }
+      return ["collabInvite", "collabUpdate", "circleInvite", "circleUpdate"].contains(typeRaw)
    }
 
    private func isRemoteSyncRefreshPayload(_ userInfo: [AnyHashable: Any]) -> Bool {
@@ -399,6 +423,17 @@ final class NotificationManager: NSObject, ObservableObject {
             center.removePendingNotificationRequests(withIdentifiers: pendingIdentifiers)
          }
 
+         let deliveredIdentifiers = await center.deliveredNotifications()
+            .map(\.request.identifier)
+            .filter {
+               $0.hasPrefix(notificationPrefix)
+                  || $0.hasPrefix(nanoDoNotificationPrefix)
+            }
+
+         if !deliveredIdentifiers.isEmpty {
+            center.removeDeliveredNotifications(withIdentifiers: deliveredIdentifiers)
+         }
+
          var scheduledCount = 0
          for occurrence in schedulableOccurrences {
             let notificationType = notificationType(
@@ -482,7 +517,7 @@ final class NotificationManager: NSObject, ObservableObject {
          }
          let nextFireDate = schedulableOccurrences.first?.fireDate.formatted(date: .numeric, time: .standard) ?? "none"
          AppLog.info(
-            "Notification sync finished: scheduled=\(scheduledCount), removedPending=\(pendingIdentifiers.count), nextFire=\(nextFireDate).",
+            "Notification sync finished: scheduled=\(scheduledCount), removedPending=\(pendingIdentifiers.count), removedDelivered=\(deliveredIdentifiers.count), nextFire=\(nextFireDate).",
             logger: AppLog.notifications
          )
       } catch {
@@ -604,6 +639,11 @@ final class NotificationManager: NSObject, ObservableObject {
    }
 
    private func notificationTitle(for toDo: ToDo, fireDate: Date) -> String {
+      let task = toDo.task.trimmingCharacters(in: .whitespacesAndNewlines)
+      if !task.isEmpty {
+         return task
+      }
+
       guard toDo.dueDate != nil else {
          return String(localized: "toDō reminder")
       }
@@ -708,7 +748,7 @@ final class NotificationManager: NSObject, ObservableObject {
       let toDoTitle = toDo?.task.trimmingCharacters(in: .whitespacesAndNewlines)
       let content = NotificationContentBuilder.debugContent(
          for: scenario,
-         toDoTitle: toDoTitle?.isEmpty == false ? toDoTitle! : "Review toDō",
+         toDoTitle: toDoTitle.flatMap { $0.isEmpty ? nil : $0 } ?? "Review toDō",
          toDoIdentifier: toDo.map(persistentIdentifierString(for:)),
          toDoCloudIdentifier: toDo?.cloudID
       )
@@ -787,7 +827,8 @@ final class NotificationManager: NSObject, ObservableObject {
       occurrences.reserveCapacity(maxScheduledNotificationRequests)
 
       for toDo in activeToDos {
-         for occurrence in scheduledNotificationOccurrences(for: toDo, now: now) {
+         let occurrenceLimit = toDo.isRecurring ? 1 : 24
+         for occurrence in scheduledNotificationOccurrences(for: toDo, now: now, limit: occurrenceLimit) {
             occurrences.append(ScheduledOccurrence(
                toDo: toDo,
                fireDate: occurrence.fireDate,

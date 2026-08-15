@@ -2,9 +2,14 @@ import Foundation
 import SwiftData
 import WidgetKit
 
+private final class WidgetModelContainerCache: @unchecked Sendable {
+   let lock = NSLock()
+   var container: ModelContainer?
+   var syncMode: SyncMode?
+}
+
 struct WidgetToDoService {
-   private static var cachedModelContainer: ModelContainer?
-   private static var cachedSyncMode: SyncMode?
+   private static let modelContainerCache = WidgetModelContainerCache()
    private let fileManager = FileManager.default
 
    func snapshot() -> ToDoWidgetSnapshot? {
@@ -56,7 +61,7 @@ struct WidgetToDoService {
                isOverdue: isOverdue,
                isDueToday: isDueToday,
                isTimeSensitive: toDo.reminderIntent == .timeSensitive,
-               tagNames: Array(toDo.tags.map(\.name).prefix(4))
+               tagNames: Array(toDo.effectiveTags.map(\.displayName).prefix(4))
             )
          }
 
@@ -117,8 +122,11 @@ struct WidgetToDoService {
 
    private func modelContainer(for snapshot: ToDoWidgetSnapshot) throws -> ModelContainer {
       let syncMode = SyncMode(rawValue: snapshot.syncModeRaw) ?? AppPreferences.preferredSyncMode()
-      if let cachedModelContainer = Self.cachedModelContainer,
-         Self.cachedSyncMode == syncMode {
+      Self.modelContainerCache.lock.lock()
+      defer { Self.modelContainerCache.lock.unlock() }
+
+      if let cachedModelContainer = Self.modelContainerCache.container,
+         Self.modelContainerCache.syncMode == syncMode {
          return cachedModelContainer
       }
 
@@ -138,8 +146,8 @@ struct WidgetToDoService {
          SyncConflict.self,
          configurations: configuration
       )
-      Self.cachedModelContainer = container
-      Self.cachedSyncMode = syncMode
+      Self.modelContainerCache.container = container
+      Self.modelContainerCache.syncMode = syncMode
       return container
    }
 
@@ -205,7 +213,7 @@ struct WidgetToDoService {
    private func categorySummaries(from activeToDos: [ToDo]) -> [ToDoWidgetCategorySummary] {
       let allCategory = ToDoWidgetCategorySummary(id: "__all__", name: "All", incompleteCount: activeToDos.count)
       let counts = activeToDos.reduce(into: [String: Int]()) { partialResult, toDo in
-         for tag in toDo.tags {
+         for tag in toDo.effectiveTags {
             partialResult[tag.displayName, default: 0] += 1
          }
       }

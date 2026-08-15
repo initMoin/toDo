@@ -34,9 +34,9 @@ final class NotificationRouter {
                 cloudID: payload.toDoID
             )
 
-        case .circleInvite, .circleUpdate:
-            guard let circleID = payload.circleID else { return }
-            NavigationCoordinator.shared.notificationRoute = .circle(circleID)
+        case .collabInvite, .collabUpdate:
+            guard let collabID = payload.collabID else { return }
+            NavigationCoordinator.shared.notificationRoute = .collab(collabID)
 
         case .syncConflict, .syncCompleted:
             NavigationCoordinator.shared.notificationRoute = .sync
@@ -62,7 +62,9 @@ final class NotificationRouter {
                 from: userInfo["todoCloudIdentifier"]
             ),
             toDoLocalIdentifier: stringValue(from: userInfo["todoIdentifier"]),
-            circleID: uuidValue(from: userInfo["circleID"]),
+            collabID: uuidValue(
+                from: userInfo["collabID"] ?? userInfo["circleID"]
+            ),
             isRecurring: userInfo["isRecurring"] as? Bool ?? false,
             isTimeSensitive: userInfo["isTimeSensitive"] as? Bool ?? false
         )

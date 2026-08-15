@@ -11,7 +11,7 @@ enum NotificationRoute: Equatable, Sendable {
 
     case toDo(localIdentifier: String?, cloudID: UUID?)
 
-    case circle(UUID)
+    case collab(UUID)
 
     case sync
 

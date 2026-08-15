@@ -9,9 +9,24 @@ enum SyncRecordTable: String, Codable, CaseIterable {
 
 struct SyncTombstone: Codable, Hashable {
    let userID: UUID
+   let collabID: UUID?
    let recordTable: SyncRecordTable
    let recordID: UUID
    let deletedAt: Date
+
+   init(
+      userID: UUID,
+      collabID: UUID? = nil,
+      recordTable: SyncRecordTable,
+      recordID: UUID,
+      deletedAt: Date
+   ) {
+      self.userID = userID
+      self.collabID = collabID
+      self.recordTable = recordTable
+      self.recordID = recordID
+      self.deletedAt = deletedAt
+   }
 
    fileprivate var key: SyncTombstoneKey {
       SyncTombstoneKey(userID: userID, recordTable: recordTable, recordID: recordID)
@@ -27,10 +42,15 @@ private struct SyncTombstoneKey: Hashable {
 enum SyncTombstoneStore {
    private static let storageKey = "pendingSyncTombstones"
 
+   static func removeAll(userDefaults: UserDefaults = .standard) {
+      userDefaults.removeObject(forKey: storageKey)
+   }
+
    static func recordDelete(
       table: SyncRecordTable,
       recordID: UUID?,
       userID: UUID?,
+      collabID: UUID? = nil,
       deletedAt: Date = .now,
       userDefaults: UserDefaults = .standard
    ) {
@@ -45,11 +65,37 @@ enum SyncTombstoneStore {
 
       let newTombstone = SyncTombstone(
          userID: userID,
+         collabID: collabID,
          recordTable: table,
          recordID: recordID,
          deletedAt: deletedAt
       )
       tombstoneDict[newTombstone.key] = newTombstone
+      save(Array(tombstoneDict.values), userDefaults: userDefaults)
+   }
+
+   /// Records a reset or other bulk deletion with one decode and one write.
+   /// Complexity is O(p + n), where p is the pending count and n is the batch size.
+   static func recordDeletes(
+      _ tombstones: [SyncTombstone],
+      userDefaults: UserDefaults = .standard
+   ) {
+      guard !tombstones.isEmpty else { return }
+
+      var tombstoneDict = Dictionary(
+         pendingTombstones(userDefaults: userDefaults).map { ($0.key, $0) },
+         uniquingKeysWith: { existing, replacement in
+            existing.deletedAt >= replacement.deletedAt ? existing : replacement
+         }
+      )
+
+      for tombstone in tombstones {
+         if let existing = tombstoneDict[tombstone.key], existing.deletedAt > tombstone.deletedAt {
+            continue
+         }
+         tombstoneDict[tombstone.key] = tombstone
+      }
+
       save(Array(tombstoneDict.values), userDefaults: userDefaults)
    }
 
