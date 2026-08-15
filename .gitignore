@@ -1,0 +1,49 @@
+# Operating-system and editor files
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Apple / Xcode generated output
+/Build/
+DerivedData/
+*.xcarchive/
+*.ipa
+*.dSYM/
+**/xcuserdata/
+
+# Swift package and local build state
+.build/
+.swiftpm/
+
+# Android / Gradle generated output and machine-local configuration
+ToDo-Android/.gradle/
+ToDo-Android/**/build/
+ToDo-Android/local.properties
+ToDo-Android/**/local.properties
+ToDo-Android/app/google-services.json
+ToDo-Android/app/supabase.properties
+
+# Web / Node generated output and local configuration
+Web/node_modules/
+Web/.next/
+Web/.vinext/
+Web/dist/
+Web/.wrangler/
+Web/.env*
+Web/tsconfig.tsbuildinfo
+
+# Shared secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Supabase local development state
+supabase/.temp/
+supabase/.branches/
+supabase/**/node_modules/
+supabase/**/.deno/
+!supabase/.env.todo-sync-push.example
+
+# Local export artifacts
+/ExportedIPA/
