@@ -4,10 +4,10 @@ This is the shortest path to testing the current Web foundation locally.
 
 ## 1. Install and start the Web package
 
-From the repository:
+From the repository root:
 
 ```bash
-cd "/Users/shift/Development/Mobile/2026/Feb/ToDo/Web"
+cd Web
 npm install
 npm run dev
 ```

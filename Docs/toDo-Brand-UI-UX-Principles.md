@@ -6,7 +6,7 @@
 
 **Applies to:** iPhone, iPad, Mac, Apple Watch, Android phone/tablet, Wear OS, Web, widgets, notifications, Live Activities, and future clients
 
-**Reference implementation:** Current Apple build in `/Users/shift/Development/Mobile/2026/Feb/ToDo/ToDo`
+**Reference implementation:** Current Apple targets at the repository root.
 
 **Purpose:** Preserve recognition and behavioral familiarity as toDō moves across Apple, Android, and Web while allowing each platform to remain native.
 
@@ -60,19 +60,19 @@ The current Apple build is the reference for the product’s full behavior and v
 
 The written source material audited for this document includes:
 
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/3.0-Changelog.md`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/testing_feedback.txt`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/ToDo/Docs/Typography-Adaptive-QA.md`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/ToDo/Docs/FeatureParity-v3.1.md`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/ToDo/Docs/v3.1-FeatureList.md`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/Docs/AccountArchitectureAndMigration.md`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/Docs/WebLocalDevelopment.md`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/Docs/WebProductionSetup.md`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/Web/docs/WebFoundationDecisions.md`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/ToDo-Android/Docs/Android-Watch-Plan.md`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/ToDo-Android/Docs/SyncProviderSetup.md`
+- `Docs/Typography-Adaptive-QA.md`
+- `Docs/FeatureParity-v3.1.md`
+- `Docs/v3.1-FeatureList.md`
+- `Docs/AccountArchitectureAndMigration.md`
+- `Docs/WebLocalDevelopment.md`
+- `Docs/WebProductionSetup.md`
+- `Web/docs/WebFoundationDecisions.md`
+- `ToDo-Android/Docs/Android-Watch-Plan.md`
+- `ToDo-Android/Docs/SyncProviderSetup.md`
 
-The repository root is a shared workspace rather than a Git repository. This document is intentionally delivered at the workspace root so it can be downloaded without changing the independent Apple, Android, or Web repositories.
+The repository root is the shared product monorepo. This document is stored
+under `Docs/` so the same brand contract can guide every client without
+creating platform-specific copies.
 
 ---
 

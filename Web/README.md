@@ -1,7 +1,7 @@
 # toDō Web
 
-The Web companion for toDō. This package is being built as the eventual `web/`
-surface of the toDō monorepo and keeps the existing Supabase product contract
+The Web companion for toDō. This package is the `Web/` surface of the toDō
+monorepo and keeps the existing Supabase product contract
 at its boundary.
 
 The current slice includes the TypeScript/Vinext foundation, browser-native

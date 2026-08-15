@@ -1,6 +1,6 @@
 # toDō Web foundation decisions
 
-This document records the decisions for the first Web implementation slice. The product and UX source of truth is [`toDo_on_Web_Product_Design_Engineering_Spec.md`](/Users/shift/Downloads/toDo_on_Web_Product_Design_Engineering_Spec.md), with the Apple application used as the established behavior and terminology reference. The standard is: **Familiar to a toDō user. Native to the platform.**
+This document records the decisions for the first Web implementation slice. The supplied toDō Web Product, Design & Engineering Specification is the product and UX source of truth, with the Apple application used as the established behavior and terminology reference. The standard is: **Familiar to a toDō user. Native to the platform.**
 
 ## Product translation
 

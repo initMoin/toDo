@@ -1,162 +1,189 @@
 # toDō
 
-A productivity system for the user.
+toDō is a focused task-management product built around clarity, structure,
+and daily momentum. This repository is the product monorepo for the native
+Apple clients, Android client, Web client, and shared Supabase backend.
 
-[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
-[![Platform: iOS | iPadOS | watchOS](https://img.shields.io/badge/Platform-iOS%20%7C%20iPadOS%20%7C%20watchOS-blue.svg)](#)
-[![Swift 6](https://img.shields.io/badge/Swift-6.0-orange.svg)](#)
+The guiding standard is:
 
-<p align="center">
-  <img src="Screenshots/home.png" width="17%" alt="Home">
-  <img src="Screenshots/todosview.png" width="17%" alt="ToDosView">
-  <img src="Screenshots/todo-detail.png" width="17%" alt="ToDo Detail">
-  <img src="Screenshots/stats.png" width="17%" alt="Stats">
-  <img src="Screenshots/watch.png" width="17%" alt="Apple Watch">
-</p>
+> Familiar to a toDō user. Native to the platform.
 
-<p align="center">
-  Home&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;Tasks&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;Details&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;Statistics&nbsp;&nbsp;&nbsp;•&nbsp;&nbsp;&nbsp;Watch
-</p>
+The Apple implementation remains the primary reference for product behavior,
+terminology, information hierarchy, and interaction intent. Android and Web
+adapt those behaviors to their platforms without turning toDō into a generic
+dashboard or copying Apple-only controls literally.
 
----
+## Repository structure
 
-## What is toDō?
+```text
+App/, Core/, Features/, Resources/, Services/   Apple iPhone/iPad/Mac code
+ToDo Watch App/, ToDoWidget/                     watchOS and widget targets
+ToDo-Android/                                    Kotlin / Jetpack Compose app
+Web/                                             React / TypeScript Web app
+supabase/                                        migrations, RLS, Edge Functions
+Docs/                                            product, brand, QA, and operations
+```
 
-toDō is a task management application built around a simple premise: productivity software should help people make progress, not become another thing that requires management.
+The Apple targets intentionally remain at the repository root so the existing
+Xcode project and native target paths do not need to be rewritten. Android and
+Web are explicit platform boundaries inside the same repository.
 
-The project began as a personal effort to create a reliable system for managing responsibilities during a period when memory, cognition, and consistency became distinctly unreliable. Existing tools either felt too complicated, too rigid, or too disconnected from the way responsibilities accumulate and evolve in everyday life. What started as a personal solution gradually evolved into a broader exploration of how software can help people build structure, maintain momentum, and follow through on meaningful work.
+The public marketing site at [yourtodo.today](https://yourtodo.today) remains
+a separate project and repository: [initMoin/yourToDo.today](https://github.com/initMoin/yourToDo.today).
+It is not deployed or modified by the Web product build.
 
-Many productivity applications attempt to solve every organizational problem imaginable. Over time, they accumulate features, settings, hierarchies, and workflows that often become work themselves. toDō takes a different approach. The project intentionally prioritizes clarity, execution, and long-term usability over feature accumulation. New functionality is expected to justify its existence by reducing friction, improving understanding, or helping users move forward.
+## Platform surfaces
 
-Today, toDō serves as both a production application and an ongoing software engineering project focused on intentional design, platform integration, accessibility, and sustainable long-term development.
+### Apple
 
----
+The root Xcode project contains the iPhone, iPad, Mac, Apple Watch, widgets,
+App Intents, StoreKit, notifications, calendar, and Supabase synchronization
+surfaces. Apple is the established product reference for the other clients.
 
-## Repository Status & Source Code Availability
+Open `toDo.xcodeproj` in Xcode, or inspect the available targets and schemes:
 
-This repository contains the source code for the production version of toDō.
+```bash
+xcodebuild -list -project toDo.xcodeproj
+```
 
-The source code is publicly available to:
+### Android
 
-- Share architectural and engineering decisions
-- Encourage technical discussion
-- Document the evolution of the project
-- Accept bug reports and community contributions
-- Serve as a public portfolio of the work
+`ToDo-Android/` is a native Kotlin and Jetpack Compose application. It uses a
+Room-backed local source of truth, a durable sync outbox, Supabase transport,
+Realtime invalidation, and adaptive phone/tablet layouts.
 
-The repository exists as a transparent record of how the application is designed, built, and maintained. Architectural discussions, bug reports, accessibility improvements, documentation updates, and targeted pull requests are welcome when they align with the direction of the project.
+Open `ToDo-Android/` in Android Studio and use its checked-in Gradle wrapper.
+Local Supabase and Google/Firebase configuration is documented in
+[`ToDo-Android/Docs/SyncProviderSetup.md`](ToDo-Android/Docs/SyncProviderSetup.md).
+Those machine-local files are ignored and must not be committed.
 
-While the source code is publicly available, toDō remains a proprietary commercial application. Please review the [accompanying license](LICENSE) before using, modifying, or contributing to the project.
+```bash
+cd ToDo-Android
+./gradlew test
+```
 
----
+### Web
 
-## Philosophy & Design
+`Web/` is the gated toDō+ Web surface at
+[`https://do.yourtodo.today`](https://do.yourtodo.today). Cloudflare Workers
+serves the Web application; Supabase remains responsible for authentication,
+entitlements, RLS-protected data, Web Push persistence, calendar-feed
+generation, and related Edge Functions.
 
-The design of toDō is guided by a small number of principles that influence both product and engineering decisions.
+Local setup:
 
-### Simplicity Before Features
+```bash
+cd Web
+npm install
+npm run dev
+```
 
-toDō intentionally resists feature accumulation. New functionality should reduce friction, improve clarity, or solve a specific problem. Features that increase complexity without creating meaningful value are unlikely to be adopted.
+Create `Web/.env.local` with browser-safe values only:
 
-### Structure Encourages Action
+```text
+VITE_SUPABASE_URL=https://<project-ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+VITE_WEB_PUSH_VAPID_PUBLIC_KEY=your-vapid-public-key
+```
 
-The objective is not to help users manage more tasks. The objective is to help users complete the tasks that matter. Product decisions should support momentum, follow-through, and intentional action rather than endless organization.
+Never use a Supabase service-role key in Web environment variables or browser
+code. Without these values, the correct local result is an explicit setup
+state—not demo data.
 
-### Native Experiences Matter
+The Web foundation currently includes Apple and Google OAuth, separate account
+identity handling, toDō+ entitlement gating, authenticated ToDo retrieval,
+Collabs/shared-list reads, browser-native routes, responsive Apple-shaped UI,
+settings subviews, Web Push registration, and a private iCalendar feed.
 
-Modern platforms provide powerful capabilities that should be embraced rather than abstracted away. Widgets, Live Activities, App Intents, notifications, and platform-specific interactions are treated as first-class experiences because they allow the software to integrate naturally into a user's workflow.
+The current Web slice does not claim offline-first behavior, realtime conflict
+resolution, or complete task and Collab lifecycle coverage. Those require their
+own sync, RLS, rollback, and cross-platform verification work.
 
-### Maintainability Is a Feature
+## Shared Supabase backend
 
-Software intended to exist for years should be designed with long-term maintenance in mind. The project favors straightforward solutions, sustainable architecture, and clear ownership of responsibility over unnecessary abstraction and short-lived trends.
+The `supabase/` directory is the shared backend contract for Apple, Android, and
+Web. It contains:
 
----
+- ordered schema and RLS migrations;
+- Collabs, usernames, entitlements, account deletion, and profile storage;
+- notification and sync infrastructure;
+- Web Push and private calendar-feed migrations;
+- Edge Functions for push, calendar, account, and Apple commerce workflows;
+- database contract tests and sanitized schema snapshots.
 
-## Architecture
+Apply migrations to a Supabase project only after reviewing the migration order
+and comparing it with the project’s applied migration history. The browser and
+mobile clients use publishable credentials with RLS; privileged credentials
+belong only in protected server or Edge Function configuration.
 
-toDō is built primarily with SwiftUI and SwiftData and follows a lightweight architecture focused on maintainability, performance, and platform integration.
+## Verification
 
-The application adopts a local-first approach to task management. Core functionality remains available regardless of network connectivity, while synchronization services enhance the experience rather than define it. Users can choose workflows that best fit their needs, whether operating locally or synchronizing across supported services.
+Web:
 
-A significant amount of development effort has gone into ensuring that the application feels at home on every platform it supports. Rather than treating platform-specific capabilities as optional enhancements, integrations such as Widgets, Live Activities, App Intents, notifications, and Apple Watch support are considered core parts of the overall experience.
+```bash
+cd Web
+npm run lint
+npm test
+```
 
-### Technology Stack
+Android:
 
-#### Languages & Frameworks
+```bash
+cd ToDo-Android
+./gradlew test
+```
 
-- Swift 6
-- SwiftUI
-- SwiftData
+Apple build verification can use a generic simulator destination without code
+signing:
 
-#### Data & Synchronization
+```bash
+xcodebuild \
+  -project toDo.xcodeproj \
+  -scheme ToDo \
+  -configuration Debug \
+  -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath /private/tmp/todo-apple-deriveddata \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+```
 
-- CloudKit
-- Supabase
+## Cloudflare deployment shape
 
-#### System Integration
+The Web project is deployed independently from the public marketing site:
 
-- WidgetKit
-- ActivityKit
-- App Intents
-- UserNotifications
+- Cloudflare Worker name: `todo-web`;
+- Cloudflare Workers & Pages project root: `Web`;
+- build command: `npm run build`;
+- generated deployment configuration: `Web/dist/server/wrangler.json`;
+- custom domain: `do.yourtodo.today`;
+- application backend: the existing Supabase project.
 
-#### Development Environment
+Use a Cloudflare Custom Domain for `do.yourtodo.today`; do not add a second
+provider-hostname CNAME. Cloudflare should manage the DNS record and TLS
+certificate for the custom domain. The complete setup, Supabase redirect URLs,
+secrets, Workers Builds configuration, and post-deployment checks are in
+[`Docs/WebProductionSetup.md`](Docs/WebProductionSetup.md).
 
-- Xcode 27 Beta
-- iOS 27
-- iPadOS 27
-- watchOS 27
+## Product and design references
 
-#### Engineering Tooling
+- [Brand, UI, and UX principles](Docs/toDo-Brand-UI-UX-Principles.md)
+- [Web foundation decisions](Web/docs/WebFoundationDecisions.md)
+- [Web local development](Docs/WebLocalDevelopment.md)
+- [Web production setup](Docs/WebProductionSetup.md)
+- [Supabase Web Push and calendar integration](Docs/SupabaseWebPushAndCalendar.md)
+- [Android branding implementation](ToDo-Android/Docs/Android-Branding-Implementation.md)
+- [Android sync provider setup](ToDo-Android/Docs/SyncProviderSetup.md)
 
-- Git & GitHub
-- OpenAI Codex
-- ChatGPT
-- Google Gemini
+## Security and repository hygiene
 
----
+The root `.gitignore` excludes Xcode and Gradle output, Node and Deno
+dependencies, local environment files, Firebase configuration, Supabase
+runtime state, and exported IPAs. Review `git status --ignored` before every
+commit. Do not force-push `main`, commit local provider configuration, or
+deploy a backend migration without confirming its production impact.
 
-## Development Workflow
+## License and contribution
 
-toDō is developed using a modern engineering workflow that combines established software engineering practices with AI-assisted development.
-
-OpenAI Codex, ChatGPT, and Google Gemini are used where appropriate to accelerate implementation, explore technical approaches, troubleshoot issues, refine algorithms, improve documentation, and assist in developing and refining automated tests.
-
-Every AI-assisted contribution is manually reviewed, validated, and refined before becoming part of the project. Architectural decisions, feature design, implementation details, debugging, performance considerations, and final acceptance remain engineering decisions made throughout development. AI-generated code is treated as a starting point rather than a finished solution and must satisfy the same standards for readability, maintainability, correctness, testing, and overall quality as handwritten code.
-
-The objective is not to replace engineering judgment, but to reduce repetitive work so more time can be invested in product quality, platform integration, accessibility, performance, and long-term maintainability.
-
----
-
-## Current Capabilities
-
-The current release includes:
-
-- Task management with due dates and reminders
-- Recurring tasks with automatic regeneration
-- NanoDos for breaking down larger efforts
-- Tagging, organization, and progress statistics
-- Native platform integrations (Widgets, Live Activities, App Intents, Apple Watch)
-- Flexible synchronization (Local-only, iCloud, Supabase)
-
-The project continues to evolve as new platform capabilities emerge and opportunities for improving the overall experience are identified.
-
----
-
-## Documentation
-
-Additional repository documentation can be found here:
-
-- [CONTRIBUTING.md](CONTRIBUTING.md)
-- [SECURITY.md](SECURITY.md)
-- [LICENSE](LICENSE)
-
----
-
-## Creator
-
-Created, designed, developed, and maintained by Moinuddin Ahmad.
-
-toDō is an independently developed product built with modern Apple technologies and contemporary engineering practices. The project continues to evolve alongside the Apple platforms while maintaining a strong focus on intentional design, long-term maintainability, and thoughtful platform integration.
-
-[iamshift.dev](https://iamshift.dev)
+See [`LICENSE.md`](LICENSE.md), [`SECURITY.md`](SECURITY.md),
+[`CONTRIBUTING.md`](CONTRIBUTING.md), and the GitHub issue and pull-request
+templates for project-specific guidance.
