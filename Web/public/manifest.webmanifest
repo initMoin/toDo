@@ -1,0 +1,15 @@
+{
+  "name": "toDō Web",
+  "short_name": "toDō",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbfaf8",
+  "theme_color": "#ef6941",
+  "description": "Tasks, NanoDos, and shared lists with room to think.",
+  "icons": [{
+    "src": "/favicon.svg",
+    "sizes": "any",
+    "type": "image/svg+xml",
+    "purpose": "any maskable"
+  }]
+}
