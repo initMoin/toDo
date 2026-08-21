@@ -34,8 +34,8 @@ Treat the decisions in this document as the product contract. Before changing co
 Workspace considerations:
 
 - The workspace root is not itself a Git repository.
-- `ToDo/`, `ToDo-Android/`, and `Web/` are independent repositories and may have independent uncommitted changes.
-- Shared Supabase migrations and functions are under the workspace-level `supabase/` directory.
+- `Apple/`, `Google/`, and `Web/` are platform boundaries inside the same repository. Shared backend infrastructure lives under `Shared/Supabase/`.
+- Shared Supabase migrations and functions are under the repository-level `Shared/Supabase/` directory.
 - Workspace-level product documentation is under `Docs/`.
 - Do not modify archived/copy directories such as `ToDo copy/` or `ToDo copy 2/`, generated `Build/` content, Derived Data, or repomix output.
 - Preserve existing user changes and avoid broad auth/schema rewrites when a focused extension of the current contracts is sufficient.
@@ -137,13 +137,13 @@ No new application-level account UUID should be introduced. The current schema a
 
 Codex should preserve and build on these existing contracts:
 
-- `supabase/schemas/01_profiles.sql` defines `public.profiles.id` as the primary key referencing `auth.users(id)`.
-- `supabase/migrations/20260806120000_add_collab_usernames.sql` already provides case-insensitive, trimmed username uniqueness.
+- `Shared/Supabase/schemas/01_profiles.sql` defines `public.profiles.id` as the primary key referencing `auth.users(id)`.
+- `Shared/Supabase/migrations/20260806120000_add_collab_usernames.sql` already provides case-insensitive, trimmed username uniqueness.
 - `ToDo/Core/Profile/ToDoProfile.swift` currently normalizes usernames to lowercase and validates a 3–30 character client contract.
 - `ToDo/Core/Infrastructure/Supabase/SupabaseAuthStore.swift` currently calls `signInWithIdToken` for native Apple and Google authentication.
 - The installed Supabase Swift SDK includes `linkIdentityWithIdToken`, `userIdentities`, and `unlinkIdentity` support.
-- `supabase/config.toml` currently has `enable_manual_linking = false` and MFA enrollment/verification disabled.
-- `supabase/migrations/20260715090000_add_apple_iap_entitlements.sql` already stores `todo_plus`, `legacy_3_1`, and `founding_supporter` entitlements against `public.profiles.id`.
+- `Shared/Supabase/config.toml` currently has `enable_manual_linking = false` and MFA enrollment/verification disabled.
+- `Shared/Supabase/migrations/20260715090000_add_apple_iap_entitlements.sql` already stores `todo_plus`, `legacy_3_1`, and `founding_supporter` entitlements against `public.profiles.id`.
 - The current Web and Android clients perform provider-first sign-in and do not yet resolve or validate the expected username before allowing the authenticated account into the application.
 - `Docs/WebProductionSetup.md`, `Docs/WebLocalDevelopment.md`, and the Web sign-in card currently state that Apple and Google remain separate accounts. Those statements become obsolete when identity linking ships and must be updated in the same change.
 
@@ -537,9 +537,9 @@ Never merge accounts merely because someone knows or enters the same username.
 
 ### Shared Supabase
 
-- `supabase/schemas/01_profiles.sql`
-- A new replayable migration under `supabase/migrations/`
-- `supabase/config.toml`
+- `Shared/Supabase/schemas/01_profiles.sql`
+- A new replayable migration under `Shared/Supabase/migrations/`
+- `Shared/Supabase/config.toml`
 - Hosted Supabase Auth manual-linking configuration
 - Existing profile bootstrap trigger/function contracts
 - RLS and contract tests
@@ -567,8 +567,8 @@ Never merge accounts merely because someone knows or enters the same username.
 
 ### Android
 
-- `ToDo-Android/app/src/main/java/dev/iamshift/todo/android/core/auth/SupabaseAuthSessionProvider.kt`
-- `ToDo-Android/app/src/main/java/dev/iamshift/todo/android/ui/ToDoApp.kt`
+- `Google/ToDo_onGoogle/app/src/main/java/dev/iamshift/todo/android/core/auth/SupabaseAuthSessionProvider.kt`
+- `Google/ToDo_onGoogle/app/src/main/java/dev/iamshift/todo/android/ui/ToDoApp.kt`
 - Provider callback/deep-link account resolution
 - Username/profile loading and migration UI
 

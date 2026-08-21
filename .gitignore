@@ -5,7 +5,7 @@
 *.iml
 
 # Apple / Xcode generated output
-/Build/
+Apple/Build/
 DerivedData/
 *.xcarchive/
 *.ipa
@@ -17,17 +17,19 @@ DerivedData/
 .swiftpm/
 
 # Android / Gradle generated output and machine-local configuration
-ToDo-Android/.gradle/
-ToDo-Android/**/build/
-ToDo-Android/local.properties
-ToDo-Android/**/local.properties
-ToDo-Android/app/google-services.json
-ToDo-Android/app/supabase.properties
+Google/ToDo_onGoogle/.gradle/
+Google/ToDo_onGoogle/.kotlin/
+Google/ToDo_onGoogle/**/build/
+Google/ToDo_onGoogle/local.properties
+Google/ToDo_onGoogle/**/local.properties
+Google/ToDo_onGoogle/app/google-services.json
+Google/ToDo_onGoogle/app/supabase.properties
 
 # Web / Node generated output and local configuration
 Web/node_modules/
 Web/.next/
 Web/.vinext/
+Web/build/
 Web/dist/
 Web/.wrangler/
 Web/.env*
@@ -39,11 +41,11 @@ Web/tsconfig.tsbuildinfo
 !.env.example
 
 # Supabase local development state
-supabase/.temp/
-supabase/.branches/
-supabase/**/node_modules/
-supabase/**/.deno/
-!supabase/.env.todo-sync-push.example
+Shared/Supabase/.temp/
+Shared/Supabase/.branches/
+Shared/Supabase/**/node_modules/
+Shared/Supabase/**/.deno/
+!Shared/Supabase/.env.todo-sync-push.example
 
 # Local export artifacts
-/ExportedIPA/
+Apple/ExportedIPA/

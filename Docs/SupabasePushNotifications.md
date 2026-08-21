@@ -4,12 +4,12 @@ This setup adds background sync nudges for ToDo Sync. Foreground sync still uses
 
 ## What Was Added
 
-- `supabase/functions/todo-sync-push/index.ts`
+- `Shared/Supabase/functions/todo-sync-push/index.ts`
   - Supabase Edge Function that sends silent APNs pushes.
   - Reads active iOS APNs tokens from `public.device_tokens`.
   - Sends `todoSync: "refresh"` so the app calls `SyncCoordinator.refreshFromRemote`.
 
-- `supabase/migrations/20260508211000_add_todo_sync_push_events.sql`
+- `Shared/Supabase/migrations/20260508211000_add_todo_sync_push_events.sql`
   - Creates `public.sync_push_events` as a push outbox.
   - Adds triggers on `todos`, `tags`, `nanodos`, `todo_tags`, and `sync_tombstones`.
   - Each sync data change inserts one outbox row.

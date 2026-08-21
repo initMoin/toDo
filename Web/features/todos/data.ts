@@ -6,6 +6,7 @@ import type {
   RemoteSnapshot,
   Tag,
   Todo,
+  TodoEditorDraft,
   TodoPresentation,
   TodoTag,
 } from "@/lib/types";
@@ -37,6 +38,14 @@ const TODO_COLUMNS = [
 ].join(",");
 
 export type TodoCompletionPatch = Pick<Todo, "is_done" | "completed_at" | "lifecycle_state">;
+
+export type TodoSaveResult = {
+  todo: Todo;
+  nanoDos: NanoDo[];
+  tags: Tag[];
+  todoTags: TodoTag[];
+  collabName: string | null;
+};
 
 export function todoCompletionPatch(
   isDone: boolean,
@@ -265,18 +274,37 @@ export async function deleteTag(tagID: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function createTodo(task: string, userID: string): Promise<Todo> {
+export async function createTodo(
+  draft: TodoEditorDraft | string,
+  userID: string,
+): Promise<TodoSaveResult> {
   if (!supabase) {
     throw new Error("Supabase is not configured for this local Web build.");
   }
+
+  const normalizedDraft = typeof draft === "string"
+    ? defaultTodoDraft(draft)
+    : normalizeTodoDraft(draft);
 
   const { data, error } = await supabase
     .from("todos")
     .insert({
       user_id: userID,
-      task: task.trim(),
+      task: normalizedDraft.task,
+      notes: normalizedDraft.notes,
       is_done: false,
       lifecycle_state: "active",
+      due_at: normalizedDraft.due_at,
+      reminder_intent: normalizedDraft.reminder_intent,
+      is_recurring: normalizedDraft.is_recurring,
+      recurrence_unit: normalizedDraft.is_recurring ? normalizedDraft.recurrence_unit : null,
+      recurrence_interval: normalizedDraft.is_recurring ? normalizedDraft.recurrence_interval : null,
+      recurrence_mode: normalizedDraft.is_recurring ? normalizedDraft.recurrence_mode : null,
+      recurrence_count: normalizedDraft.is_recurring && normalizedDraft.recurrence_mode === "finite"
+        ? normalizedDraft.recurrence_count
+        : null,
+      complete_when_all_nanodos_done: normalizedDraft.complete_when_all_nanodos_done,
+      collab_id: normalizedDraft.collab_id,
     })
     .select(TODO_COLUMNS)
     .single();
@@ -289,7 +317,165 @@ export async function createTodo(task: string, userID: string): Promise<Todo> {
     throw new Error("The new toDō could not be saved.");
   }
 
-  return data as Todo;
+  return saveTodoRelations(data as Todo, normalizedDraft);
+}
+
+export async function updateTodoDetails(
+  todoID: string,
+  draft: TodoEditorDraft,
+): Promise<TodoSaveResult> {
+  if (!supabase) {
+    throw new Error("Supabase is not configured for this local Web build.");
+  }
+
+  const normalizedDraft = normalizeTodoDraft(draft);
+  const { data, error } = await supabase
+    .from("todos")
+    .update({
+      task: normalizedDraft.task,
+      notes: normalizedDraft.notes,
+      due_at: normalizedDraft.due_at,
+      reminder_intent: normalizedDraft.reminder_intent,
+      is_recurring: normalizedDraft.is_recurring,
+      recurrence_unit: normalizedDraft.is_recurring ? normalizedDraft.recurrence_unit : null,
+      recurrence_interval: normalizedDraft.is_recurring ? normalizedDraft.recurrence_interval : null,
+      recurrence_mode: normalizedDraft.is_recurring ? normalizedDraft.recurrence_mode : null,
+      recurrence_count: normalizedDraft.is_recurring && normalizedDraft.recurrence_mode === "finite"
+        ? normalizedDraft.recurrence_count
+        : null,
+      complete_when_all_nanodos_done: normalizedDraft.complete_when_all_nanodos_done,
+      collab_id: normalizedDraft.collab_id,
+    })
+    .eq("id", todoID)
+    .select(TODO_COLUMNS)
+    .single();
+
+  if (error) throw error;
+  if (!data) throw new Error("The toDō could not be updated.");
+
+  return saveTodoRelations(data as Todo, normalizedDraft);
+}
+
+async function saveTodoRelations(todo: Todo, draft: TodoEditorDraft): Promise<TodoSaveResult> {
+  if (!supabase) throw new Error("Supabase is not configured for this local Web build.");
+
+  const tags = await resolveTags(draft.tags, todo.user_id);
+  const { error: deleteTagError } = await supabase.from("todo_tags").delete().eq("todo_id", todo.id);
+  if (deleteTagError) throw deleteTagError;
+
+  const todoTags = tags.length
+    ? tags.map((tag) => ({ todo_id: todo.id, tag_id: tag.id }))
+    : [];
+  if (todoTags.length) {
+    const { error } = await supabase.from("todo_tags").insert(todoTags);
+    if (error) throw error;
+  }
+
+  const { error: deleteNanoDoError } = await supabase.from("nanodos").delete().eq("todo_id", todo.id);
+  if (deleteNanoDoError) throw deleteNanoDoError;
+
+  const nanoDoDrafts = draft.nanoDos.filter((nanoDo) => nanoDo.task.trim());
+  const { data: nanoDos, error: nanoDoError } = nanoDoDrafts.length
+    ? await supabase
+      .from("nanodos")
+      .insert(nanoDoDrafts.map((nanoDo) => ({
+        todo_id: todo.id,
+        user_id: todo.user_id,
+        task: nanoDo.task.trim(),
+        is_done: nanoDo.is_done,
+        due_at: nanoDo.due_at,
+      })))
+      .select("id,todo_id,user_id,task,is_done,tag_id,due_at,created_at,updated_at")
+    : { data: [], error: null };
+  if (nanoDoError) throw nanoDoError;
+
+  let collabName: string | null = null;
+  if (todo.collab_id) {
+    const collabResult = await supabase
+      .from("collabs")
+      .select("name")
+      .eq("id", todo.collab_id)
+      .maybeSingle();
+    if (!collabResult.error) collabName = collabResult.data?.name ?? "Collab";
+  }
+
+  return {
+    todo,
+    nanoDos: (nanoDos ?? []) as NanoDo[],
+    tags,
+    todoTags,
+    collabName,
+  };
+}
+
+async function resolveTags(names: string[], userID: string): Promise<Tag[]> {
+  if (!supabase) throw new Error("Supabase is not configured for this local Web build.");
+
+  const normalizedNames = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+  if (!normalizedNames.length) return [];
+
+  const { data: existing, error } = await supabase
+    .from("tags")
+    .select("id,user_id,name,is_default,created_at,updated_at")
+    .eq("user_id", userID);
+  if (error) throw error;
+
+  const tags = (existing ?? []) as Tag[];
+  const resolved: Tag[] = [];
+  for (const name of normalizedNames) {
+    const existingTag = tags.find((tag) => tag.name.toLocaleLowerCase() === name.toLocaleLowerCase());
+    if (existingTag) {
+      resolved.push(existingTag);
+      continue;
+    }
+    resolved.push(await createTag(name, userID));
+  }
+  return resolved;
+}
+
+function defaultTodoDraft(task: string): TodoEditorDraft {
+  return {
+    task,
+    notes: "",
+    due_at: null,
+    reminder_intent: "soft",
+    is_recurring: false,
+    recurrence_unit: null,
+    recurrence_interval: null,
+    recurrence_mode: null,
+    recurrence_count: null,
+    collab_id: null,
+    tags: [],
+    nanoDos: [],
+    complete_when_all_nanodos_done: false,
+  };
+}
+
+function normalizeTodoDraft(draft: TodoEditorDraft): TodoEditorDraft {
+  const task = draft.task.trim();
+  if (!task) throw new Error("Give this toDō a task.");
+
+  const isRecurring = Boolean(draft.is_recurring);
+  return {
+    ...draft,
+    task,
+    notes: draft.notes.trim(),
+    due_at: draft.due_at || null,
+    reminder_intent: draft.due_at ? draft.reminder_intent : "soft",
+    is_recurring: isRecurring,
+    recurrence_unit: isRecurring ? draft.recurrence_unit ?? "days" : null,
+    recurrence_interval: isRecurring ? Math.max(1, draft.recurrence_interval ?? 1) : null,
+    recurrence_mode: isRecurring ? draft.recurrence_mode ?? "continuous" : null,
+    recurrence_count: isRecurring && draft.recurrence_mode === "finite"
+      ? Math.max(1, draft.recurrence_count ?? 1)
+      : null,
+    tags: [...new Set(draft.tags.map((tag) => tag.trim()).filter(Boolean))],
+    nanoDos: draft.nanoDos.map((nanoDo) => ({
+      ...nanoDo,
+      task: nanoDo.task.trim(),
+      due_at: nanoDo.due_at || null,
+    })),
+  };
 }
 
 export function isVisibleActiveTodo(todo: Todo) {
@@ -314,7 +500,7 @@ export function isTodoDueSoon(
 }
 
 export function isTodoTimeSensitive(todo: Pick<Todo, "reminder_intent">) {
-  return todo.reminder_intent === "time_sensitive";
+  return todo.reminder_intent === "timeSensitive" || todo.reminder_intent === "time_sensitive";
 }
 
 export function presentTodo(

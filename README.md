@@ -16,17 +16,17 @@ dashboard or copying Apple-only controls literally.
 ## Repository structure
 
 ```text
-App/, Core/, Features/, Resources/, Services/   Apple iPhone/iPad/Mac code
-ToDo Watch App/, ToDoWidget/                     watchOS and widget targets
-ToDo-Android/                                    Kotlin / Jetpack Compose app
+Apple/                                          Apple iPhone/iPad/Mac/watchOS code
+Apple/toDo.xcodeproj                           Apple Xcode project and targets
+Google/ToDo_onGoogle/                          Kotlin / Jetpack Compose app
 Web/                                             React / TypeScript Web app
-supabase/                                        migrations, RLS, Edge Functions
+Shared/Supabase/                               migrations, RLS, Edge Functions
 Docs/                                            product, brand, QA, and operations
 ```
 
-The Apple targets intentionally remain at the repository root so the existing
-Xcode project and native target paths do not need to be rewritten. Android and
-Web are explicit platform boundaries inside the same repository.
+Each client now has an explicit platform boundary. Apple remains the primary
+product reference, while Google and Web implement the same product semantics in
+platform-native ways. Shared backend infrastructure lives under `Shared/`.
 
 The public marketing site at [yourtodo.today](https://yourtodo.today) remains
 a separate project and repository: [initMoin/yourToDo.today](https://github.com/initMoin/yourToDo.today).
@@ -40,25 +40,25 @@ The root Xcode project contains the iPhone, iPad, Mac, Apple Watch, widgets,
 App Intents, StoreKit, notifications, calendar, and Supabase synchronization
 surfaces. Apple is the established product reference for the other clients.
 
-Open `toDo.xcodeproj` in Xcode, or inspect the available targets and schemes:
+Open `Apple/toDo.xcodeproj` in Xcode, or inspect the available targets and schemes:
 
 ```bash
-xcodebuild -list -project toDo.xcodeproj
+xcodebuild -list -project Apple/toDo.xcodeproj
 ```
 
 ### Android
 
-`ToDo-Android/` is a native Kotlin and Jetpack Compose application. It uses a
+`Google/ToDo_onGoogle/` is a native Kotlin and Jetpack Compose application. It uses a
 Room-backed local source of truth, a durable sync outbox, Supabase transport,
 Realtime invalidation, and adaptive phone/tablet layouts.
 
-Open `ToDo-Android/` in Android Studio and use its checked-in Gradle wrapper.
+Open `Google/ToDo_onGoogle/` in Android Studio and use its checked-in Gradle wrapper.
 Local Supabase and Google/Firebase configuration is documented in
-[`ToDo-Android/Docs/SyncProviderSetup.md`](ToDo-Android/Docs/SyncProviderSetup.md).
+[`Google/ToDo_onGoogle/Docs/SyncProviderSetup.md`](Google/ToDo_onGoogle/Docs/SyncProviderSetup.md).
 Those machine-local files are ignored and must not be committed.
 
 ```bash
-cd ToDo-Android
+cd Google/ToDo_onGoogle
 ./gradlew test
 ```
 
@@ -101,7 +101,7 @@ own sync, RLS, rollback, and cross-platform verification work.
 
 ## Shared Supabase backend
 
-The `supabase/` directory is the shared backend contract for Apple, Android, and
+The `Shared/Supabase/` directory is the shared backend contract for Apple, Android, and
 Web. It contains:
 
 - ordered schema and RLS migrations;
@@ -129,7 +129,7 @@ npm test
 Android:
 
 ```bash
-cd ToDo-Android
+cd Google/ToDo_onGoogle
 ./gradlew test
 ```
 
@@ -138,7 +138,7 @@ signing:
 
 ```bash
 xcodebuild \
-  -project toDo.xcodeproj \
+  -project Apple/toDo.xcodeproj \
   -scheme ToDo \
   -configuration Debug \
   -destination 'generic/platform=iOS Simulator' \
@@ -171,8 +171,8 @@ secrets, Workers Builds configuration, and post-deployment checks are in
 - [Web local development](Docs/WebLocalDevelopment.md)
 - [Web production setup](Docs/WebProductionSetup.md)
 - [Supabase Web Push and calendar integration](Docs/SupabaseWebPushAndCalendar.md)
-- [Android branding implementation](ToDo-Android/Docs/Android-Branding-Implementation.md)
-- [Android sync provider setup](ToDo-Android/Docs/SyncProviderSetup.md)
+- [Android branding implementation](Google/ToDo_onGoogle/Docs/Android-Branding-Implementation.md)
+- [Android sync provider setup](Google/ToDo_onGoogle/Docs/SyncProviderSetup.md)
 
 ## Security and repository hygiene
 

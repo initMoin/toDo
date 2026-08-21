@@ -36,6 +36,7 @@ type AuthContextValue = {
   ) => Promise<void>;
   completeAccountSetup: (username: string) => Promise<boolean>;
   continueWithAuthenticatedAccount: () => Promise<boolean>;
+  saveProfileImage: (image: Blob) => Promise<boolean>;
   connectProvider: (provider: WebProvider) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -58,6 +59,8 @@ type ProfileResolutionRecord = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const pendingLinkAccountStorageKey = "todo.pendingLinkAccountID";
+const pendingAuthenticationStorageKey = "todo.pendingAuthentication";
+const AUTH_REQUEST_TIMEOUT_MS = 8000;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<WebSession | null>(null);
@@ -88,9 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // the link. Sign out the unexpected session instead of exposing its
         // data or allowing it to enter the resolved sync path.
         pendingLinkAccountID.current = null;
-        if (typeof window !== "undefined") {
-          window.sessionStorage.removeItem(pendingLinkAccountStorageKey);
-        }
+        clearPendingLinkAccount();
         //await supabase.auth.signOut();
         await supabase.auth.signOut({ scope: "local" });
         setSession(null);
@@ -102,19 +103,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       if (expectedLinkAccountID) {
         pendingLinkAccountID.current = null;
-        if (typeof window !== "undefined") {
-          window.sessionStorage.removeItem(pendingLinkAccountStorageKey);
-        }
+        clearPendingLinkAccount();
       }
 
       setResolutionState("resolving");
       setProfile(null);
 
-      const { data, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, username, avatar_url, account_setup_version")
-        .eq("id", nextSession.user.id)
-        .maybeSingle<ProfileResolutionRecord>();
+      let profileResult: {
+        data: ProfileResolutionRecord | null;
+        error: { message: string } | null;
+      };
+      try {
+        profileResult = await withTimeout(
+          supabase
+            .from("profiles")
+            .select("id, username, avatar_url, account_setup_version")
+            .eq("id", nextSession.user.id)
+            .maybeSingle<ProfileResolutionRecord>(),
+          "Your toDō profile could not be loaded in time.",
+        );
+      } catch (profileLoadError) {
+        setError(getErrorMessage(profileLoadError, "Your toDō profile could not be loaded."));
+        setIsLoading(false);
+        return;
+      }
+
+      const { data, error: profileError } = profileResult;
 
       if (profileError) {
         setResolutionState("needsUsername");
@@ -169,6 +183,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setResolutionState("resolved");
       setError(null);
+      clearPendingAuthentication();
+      pendingIntent.current = "restoreSession";
+      pendingExpectedUsername.current = null;
       setIsLoading(false);
     },
     [],
@@ -185,18 +202,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       typeof window === "undefined"
         ? null
         : window.sessionStorage.getItem(pendingLinkAccountStorageKey);
+    const pendingAuthentication = readPendingAuthentication();
+    pendingIntent.current = pendingAuthentication?.intent ?? "restoreSession";
+    pendingExpectedUsername.current = pendingAuthentication?.expectedUsername ?? null;
+    const callbackError = readAuthCallbackError();
+    if (callbackError) {
+      clearPendingAuthentication();
+    }
 
-    void authClient.auth.getSession().then(({ data, error: sessionError }) => {
-      if (!isMounted) return;
-      if (sessionError) setError(sessionError.message);
-      setSession(data.session);
-      void resolveSession(data.session, "restoreSession", null);
-    });
+    let hasInitialSession = false;
+    const initializationTimeout = setTimeout(() => {
+      if (!isMounted || hasInitialSession) return;
+      setSession(null);
+      setProfile(null);
+      setResolutionState("signedOut");
+      setError(null);
+      setIsLoading(false);
+    }, AUTH_REQUEST_TIMEOUT_MS);
 
     const {
       data: { subscription },
     } = authClient.auth.onAuthStateChange((event, nextSession) => {
       if (!isMounted) return;
+      if (event === "INITIAL_SESSION") {
+        hasInitialSession = true;
+        clearTimeout(initializationTimeout);
+      }
       setSession(nextSession);
       if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
         setError(null);
@@ -212,8 +243,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       );
     });
 
+    // The auth client initializes as soon as it is created. Calling initialize
+    // again here is safe and gives us the callback error/session result even
+    // when the initial auth event was emitted before this component subscribed.
+    void authClient.auth.initialize().then(({ error: initializationError }) => {
+      if (!isMounted) return;
+      if (callbackError || initializationError) {
+        setSession(null);
+        setProfile(null);
+        setResolutionState("signedOut");
+        setError(
+          callbackError
+            ?? `Sign-in could not be completed: ${initializationError.message}`,
+        );
+        setIsLoading(false);
+        return;
+      }
+
+      void authClient.auth.getSession().then(({ data, error: sessionError }) => {
+        if (!isMounted) return;
+        if (sessionError) {
+          setError(`Sign-in session could not be restored: ${sessionError.message}`);
+          setIsLoading(false);
+          return;
+        }
+        if (!data.session) return;
+        setSession(data.session);
+        void resolveSession(
+          data.session,
+          pendingIntent.current,
+          pendingExpectedUsername.current,
+        );
+      });
+    }).catch((initializationError: unknown) => {
+      if (!isMounted) return;
+      setError(`Sign-in could not be completed: ${getErrorMessage(initializationError, "The callback could not be processed.")}`);
+      setIsLoading(false);
+    });
+
     return () => {
       isMounted = false;
+      clearTimeout(initializationTimeout);
       subscription.unsubscribe();
     };
   }, [resolveSession]);
@@ -228,8 +298,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    pendingLinkAccountID.current = null;
+    clearPendingLinkAccount();
     pendingIntent.current = intent;
     pendingExpectedUsername.current = normalizeUsername(expectedUsername);
+    writePendingAuthentication(intent, pendingExpectedUsername.current);
     setError(null);
     setIsLoading(true);
     const { error: signInError } = await supabase.auth.signInWithOAuth({
@@ -243,6 +316,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     if (signInError) {
+      clearPendingAuthentication();
+      pendingIntent.current = "restoreSession";
+      pendingExpectedUsername.current = null;
       setError(signInError.message);
       setIsLoading(false);
     }
@@ -268,6 +344,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     pendingIntent.current = "restoreSession";
     pendingExpectedUsername.current = normalized;
+    clearPendingAuthentication();
     await resolveSession(session, "restoreSession", normalized);
     return true;
   }, [resolveSession, session]);
@@ -276,9 +353,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!session || !profile?.username) return false;
     pendingIntent.current = "restoreSession";
     pendingExpectedUsername.current = profile.username;
+    clearPendingAuthentication();
     await resolveSession(session, "restoreSession", profile.username);
     return true;
   }, [profile, resolveSession, session]);
+
+  const saveProfileImage = useCallback(async (image: Blob) => {
+    if (!supabase || !session?.user.id || resolutionState !== "resolved") {
+      setError("Sign in to edit your profile.");
+      return false;
+    }
+
+    const userID = session.user.id;
+    const imagePath = `${userID.toLowerCase()}/avatar.jpg`;
+    const { error: uploadError } = await supabase.storage
+      .from("profile-images")
+      .upload(imagePath, image, {
+        cacheControl: "3600",
+        contentType: "image/jpeg",
+        upsert: true,
+      });
+    if (uploadError) {
+      setError(uploadError.message);
+      return false;
+    }
+
+    const { data: publicURL } = supabase.storage
+      .from("profile-images")
+      .getPublicUrl(imagePath);
+    const avatarURL = `${publicURL.publicUrl}?v=${Date.now()}`;
+    const { data: updatedProfile, error: profileError } = await supabase
+      .from("profiles")
+      .update({ avatar_url: avatarURL })
+      .eq("id", userID)
+      .select("id, username, avatar_url, account_setup_version")
+      .single<ProfileResolutionRecord>();
+    if (profileError || !updatedProfile) {
+      setError(profileError?.message ?? "Your profile image could not be saved.");
+      return false;
+    }
+
+    setProfile(updatedProfile);
+    setError(null);
+    return true;
+  }, [resolutionState, session]);
 
   const connectProvider = useCallback(async (provider: WebProvider) => {
     if (!supabase || resolutionState !== "resolved" || !session?.user.id) {
@@ -302,9 +420,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     if (linkError) {
       pendingLinkAccountID.current = null;
-      if (typeof window !== "undefined") {
-        window.sessionStorage.removeItem(pendingLinkAccountStorageKey);
-      }
+      clearPendingLinkAccount();
       setError(linkError.message);
     }
   }, [resolutionState, session]);
@@ -323,9 +439,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     pendingIntent.current = "restoreSession";
     pendingExpectedUsername.current = null;
     pendingLinkAccountID.current = null;
-    if (typeof window !== "undefined") {
-      window.sessionStorage.removeItem(pendingLinkAccountStorageKey);
-    }
+    clearPendingLinkAccount();
+    clearPendingAuthentication();
   }, []);
 
   const value = useMemo<AuthContextValue>(
@@ -333,11 +448,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       session,
       profileUsername: profile?.username ?? null,
-      profileAvatarURL:
-        profile?.avatar_url ??
-        (session?.user.user_metadata?.avatar_url as string | undefined) ??
-        (session?.user.user_metadata?.picture as string | undefined) ??
-        null,
+      profileAvatarURL: profile?.avatar_url ?? null,
       accountSetupVersion: profile?.account_setup_version ?? null,
       resolutionState,
       isResolved: resolutionState === "resolved",
@@ -347,6 +458,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       completeAccountSetup,
       continueWithAuthenticatedAccount,
+      saveProfileImage,
       connectProvider,
       signOut,
     }),
@@ -356,10 +468,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       continueWithAuthenticatedAccount,
       error,
       isLoading,
-      profile?.account_setup_version,
-      profile?.avatar_url,
-      profile?.username,
+      profile,
       resolutionState,
+      saveProfileImage,
       session,
       signIn,
       signOut,
@@ -374,6 +485,91 @@ function normalizeUsername(value: string | null | undefined): string | null {
   if (!/^[a-z0-9._]{3,30}$/.test(normalized)) return null;
   if (normalized.startsWith(".") || normalized.endsWith(".")) return null;
   return normalized;
+}
+
+function readPendingAuthentication(): {
+  intent: "signIn" | "createAccount";
+  expectedUsername: string | null;
+} | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.sessionStorage.getItem(pendingAuthenticationStorageKey);
+    if (!value) return null;
+    const parsed = JSON.parse(value) as {
+      intent?: unknown;
+      expectedUsername?: unknown;
+    };
+    if (parsed.intent !== "signIn" && parsed.intent !== "createAccount") return null;
+    return {
+      intent: parsed.intent,
+      expectedUsername:
+        typeof parsed.expectedUsername === "string"
+          ? normalizeUsername(parsed.expectedUsername)
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writePendingAuthentication(
+  intent: AccountAuthenticationIntent,
+  expectedUsername: string | null,
+) {
+  if (typeof window === "undefined" || intent === "restoreSession") return;
+  try {
+    window.sessionStorage.setItem(
+      pendingAuthenticationStorageKey,
+      JSON.stringify({ intent, expectedUsername }),
+    );
+  } catch {
+    // OAuth can still proceed when session storage is unavailable.
+  }
+}
+
+function clearPendingAuthentication() {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(pendingAuthenticationStorageKey);
+  } catch {
+    // Ignore storage cleanup failures; the authenticated session is primary.
+  }
+}
+
+function clearPendingLinkAccount() {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(pendingLinkAccountStorageKey);
+  } catch {
+    // Ignore storage cleanup failures; the fresh sign-in can continue.
+  }
+}
+
+function readAuthCallbackError() {
+  if (typeof window === "undefined") return null;
+  const search = new URLSearchParams(window.location.search);
+  const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+  const error = search.get("error") ?? hash.get("error");
+  if (!error) return null;
+  const description = search.get("error_description") ?? hash.get("error_description");
+  return `Sign-in could not be completed: ${description ?? error}`;
+}
+
+function withTimeout<T>(promise: PromiseLike<T>, message: string): Promise<T> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(message)), AUTH_REQUEST_TIMEOUT_MS);
+    }),
+  ]);
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null && "message" in error && typeof error.message === "string") {
+    return error.message;
+  }
+  return fallback;
 }
 
 export function useAuth() {

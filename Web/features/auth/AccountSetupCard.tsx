@@ -61,7 +61,6 @@ export function AccountSetupCard() {
             placeholder="yourname"
             disabled={isLoading || resolutionState === "resolving"}
           />
-          <p className="field-help">Displayed as @{normalized ?? "username"}. Apple or Google proves ownership.</p>
           <button
             className="primary-button"
             type="button"

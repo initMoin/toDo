@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
 import { Icon } from "@/components/Icon";
-import { AuthProvider, useAuth } from "@/features/auth/AuthProvider";
+import { useAuth } from "@/features/auth/AuthProvider";
 import { ProfileAvatar } from "@/features/account/ProfileAvatar";
 
 type AppFrameMode =
@@ -76,7 +76,7 @@ function SiteHeader({ mode, title }: { mode: AppFrameMode; title?: string }) {
 function headerTitle(mode: AppFrameMode) {
   switch (mode) {
     case "todos":
-      return "toDōs";
+      return "toDō";
     case "detail":
       return "your toDō";
     case "stats":
@@ -114,7 +114,7 @@ function HeaderAccountActions({
       {user && mode === "home" ? (
         <>
           <Link className="header-profile-link" href="/account" aria-label={`Open @${username} Account`} title={`Open @${username} Account`}>
-            <ProfileAvatar username={username} avatarURL={avatarURL} size={42} />
+            <ProfileAvatar username={username} avatarURL={avatarURL} size={46} />
           </Link>
           <Link className="header-link header-icon-button header-settings-link" href="/settings" aria-label="Settings" title="Settings">
             <Icon name="gear" />
@@ -151,11 +151,9 @@ export function AppFrame({
   title?: string;
 }) {
   return (
-    <AuthProvider>
-      <div className="app-background">
-        <SiteHeader mode={mode} title={title} />
-        <main className="app-main">{children}</main>
-      </div>
-    </AuthProvider>
+    <div className="app-background">
+      <SiteHeader mode={mode} title={title} />
+      <main className="app-main">{children}</main>
+    </div>
   );
 }

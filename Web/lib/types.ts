@@ -82,3 +82,26 @@ export type TodoPresentation = Todo & {
   tags: Tag[];
   collabName: string | null;
 };
+
+export type TodoEditorNanoDo = {
+  id?: string;
+  task: string;
+  is_done: boolean;
+  due_at: string | null;
+};
+
+export type TodoEditorDraft = {
+  task: string;
+  notes: string;
+  due_at: string | null;
+  reminder_intent: "soft" | "due" | "timeSensitive";
+  is_recurring: boolean;
+  recurrence_unit: string | null;
+  recurrence_interval: number | null;
+  recurrence_mode: "finite" | "continuous" | null;
+  recurrence_count: number | null;
+  collab_id: string | null;
+  tags: string[];
+  nanoDos: TodoEditorNanoDo[];
+  complete_when_all_nanodos_done: boolean;
+};

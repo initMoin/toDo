@@ -1,84 +1,129 @@
 "use client";
 
 import { useAuth } from "./AuthProvider";
-import { useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Icon } from "@/components/Icon";
 
 export function SignInCard() {
   const { signIn, isLoading, error } = useAuth();
   const [mode, setMode] = useState<"signIn" | "createAccount">("signIn");
   const [username, setUsername] = useState("");
+  const [providerStepVisible, setProviderStepVisible] = useState(false);
+  const firstProviderButtonRef = useRef<HTMLButtonElement>(null);
   const normalizedUsername = normalizeUsername(username);
+
+  useEffect(() => {
+    if (providerStepVisible) firstProviderButtonRef.current?.focus();
+  }, [providerStepVisible]);
+
+  function advanceToProviderStep() {
+    if (!normalizedUsername || isLoading) return;
+    setProviderStepVisible(true);
+  }
+
+  function handleUsernameSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    advanceToProviderStep();
+  }
+
+  function handleUsernameChange(value: string) {
+    setUsername(value);
+    setProviderStepVisible(false);
+  }
+
+  function handleModeChange(nextMode: "signIn" | "createAccount") {
+    setMode(nextMode);
+    setProviderStepVisible(false);
+  }
 
   return (
     <section className="sign-in-card">
       <p className="eyebrow">toDō Sync</p>
       <h1>Keep what matters in step.</h1>
-      <p className="sign-in-copy">
-        Sign in to see the toDōs you already use across iPhone, Android, and Web.
-        Web access is part of toDō+.
-      </p>
 
       <div className="sign-in-mode" role="group" aria-label="Account action">
         <button
           className={mode === "signIn" ? "mode-button mode-button-selected" : "mode-button"}
           type="button"
-          onClick={() => setMode("signIn")}
+          onClick={() => handleModeChange("signIn")}
         >
           Sign in
         </button>
         <button
           className={mode === "createAccount" ? "mode-button mode-button-selected" : "mode-button"}
           type="button"
-          onClick={() => setMode("createAccount")}
+          onClick={() => handleModeChange("createAccount")}
         >
           Create account
         </button>
       </div>
 
-      <label className="field-label" htmlFor="sign-in-username">Username</label>
-      <input
-        id="sign-in-username"
-        className="text-input"
-        value={username}
-        onChange={(event) => setUsername(event.target.value)}
-        autoCapitalize="none"
-        autoCorrect="off"
-        spellCheck={false}
-        placeholder="yourname"
-      />
-      <p className="field-help">Displayed as @{normalizedUsername ?? "username"}. Apple or Google proves ownership.</p>
+      <form className="sign-in-username-form" onSubmit={handleUsernameSubmit}>
+        <div className="sign-in-username-control">
+          <label className="field-label" htmlFor="sign-in-username">Username</label>
+          <input
+            id="sign-in-username"
+            className="text-input"
+            value={username}
+            onChange={(event) => handleUsernameChange(event.target.value)}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder="yourname"
+            aria-invalid={Boolean(username && !normalizedUsername)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                advanceToProviderStep();
+              }
+            }}
+          />
+        </div>
+        <button
+          className="sign-in-forward-button"
+          type="submit"
+          aria-label="Move forward to sign-in options"
+          title="Move forward"
+          disabled={isLoading || !normalizedUsername}
+        >
+          <Icon name="arrow-right" size={21} />
+        </button>
+      </form>
 
-      <div className="sign-in-actions">
-        <button
-          className="provider-button provider-button-apple"
-          type="button"
-          onClick={() => void signIn("apple", mode, normalizedUsername ?? "")}
-          disabled={isLoading || !normalizedUsername}
+      {providerStepVisible ? (
+        <div
+          className="sign-in-provider-step"
+          role="group"
+          aria-live="polite"
+          aria-label="Sign-in options"
         >
-          <span className="provider-symbol" aria-hidden="true"><Icon name="apple" size={20} /></span>
-          <span>Continue with Apple</span>
-        </button>
-        <button
-          className="provider-button provider-button-google"
-          type="button"
-          onClick={() => void signIn("google", mode, normalizedUsername ?? "")}
-          disabled={isLoading || !normalizedUsername}
-        >
-          <span className="provider-symbol" aria-hidden="true"><Icon name="google" size={20} /></span>
-          <span>Continue with Google</span>
-        </button>
-      </div>
+          <div className="sign-in-actions">
+            <button
+              ref={firstProviderButtonRef}
+              className="provider-button provider-button-apple"
+              type="button"
+              onClick={() => void signIn("apple", mode, normalizedUsername ?? "")}
+              disabled={isLoading || !normalizedUsername}
+            >
+              <span className="provider-symbol" aria-hidden="true"><Icon name="apple" size={20} /></span>
+              <span>Continue with Apple</span>
+            </button>
+            <button
+              className="provider-button provider-button-google"
+              type="button"
+              onClick={() => void signIn("google", mode, normalizedUsername ?? "")}
+              disabled={isLoading || !normalizedUsername}
+            >
+              <span className="provider-symbol" aria-hidden="true"><Icon name="google" size={20} /></span>
+              <span>Continue with Google</span>
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {error && !error.includes("VITE_SUPABASE") ? (
         <p className="inline-error" role="alert">{error}</p>
       ) : null}
-
-      <p className="sign-in-note">
-        Your username identifies the toDō account you mean. You can connect the
-        other provider later from Account Settings; usernames and email addresses
-        never connect accounts automatically.
-      </p>
     </section>
   );
 }

@@ -1,0 +1,127 @@
+{
+  "$schema": "https://repomix.com/schemas/latest/schema.json",
+  "input": {
+    "maxFileSize": 50000000
+  },
+  "output": {
+    "filePath": "todo-web-repomix.md",
+    "style": "markdown",
+    "parsableStyle": false,
+    "compress": false,
+    "fileSummary": true,
+    "directoryStructure": true,
+    "files": true,
+    "removeComments": false,
+    "removeEmptyLines": false,
+    "showLineNumbers": true,
+    "truncateBase64": true,
+    "topFilesLength": 10,
+    "includeEmptyDirectories": false,
+    "git": {
+      "sortByChanges": true,
+      "sortByChangesMaxCommits": 100,
+      "includeDiffs": false,
+      "includeLogs": false,
+      "includeLogsCount": 25
+    }
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.js",
+    "**/*.jsx",
+    "**/*.css",
+    "**/*.scss",
+    "**/*.html",
+    "**/*.json",
+
+    "supabase/**/*.sql",
+
+    ".github/workflows/**/*.yml",
+    ".github/workflows/**/*.yaml",
+
+    "Docs/**/*.md",
+    "docs/**/*.md",
+    "*.md",
+
+    "package.json",
+    "tsconfig*.json",
+    "vite.config.*",
+    "vitest.config.*",
+    "playwright.config.*",
+    "eslint.config.*",
+    "prettier.config.*",
+    "postcss.config.*",
+    "tailwind.config.*",
+
+    "wrangler.toml",
+    "wrangler.json",
+    "wrangler.jsonc",
+
+    "repomix.config.json"
+  ],
+  "ignore": {
+    "useGitignore": true,
+    "useDotIgnore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.next/**",
+      "**/.nuxt/**",
+      "**/.output/**",
+      "**/.vite/**",
+      "**/.cache/**",
+      "**/.turbo/**",
+      "**/.wrangler/**",
+      "**/coverage/**",
+      "**/playwright-report/**",
+      "**/test-results/**",
+
+      "**/*.map",
+      "**/*.min.js",
+      "**/*.min.css",
+
+      "**/.env",
+      "**/.env.*",
+      "!**/.env.example",
+      "!**/.env.sample",
+
+      "**/*secret*",
+      "**/*credentials*",
+      "**/*.pem",
+      "**/*.key",
+      "**/*.p12",
+      "**/*.p8",
+
+      "**/package-lock.json",
+      "**/pnpm-lock.yaml",
+      "**/yarn.lock",
+      "**/bun.lock",
+      "**/bun.lockb",
+
+      "**/*.png",
+      "**/*.jpg",
+      "**/*.jpeg",
+      "**/*.gif",
+      "**/*.webp",
+      "**/*.svg",
+      "**/*.ico",
+      "**/*.avif",
+      "**/*.woff",
+      "**/*.woff2",
+      "**/*.ttf",
+      "**/*.otf",
+
+      "**/*repomix-output*",
+      "**/*-repomix.md"
+    ]
+  },
+  "security": {
+    "enableSecurityCheck": true
+  },
+  "tokenCount": {
+    "encoding": "o200k_base"
+  }
+}

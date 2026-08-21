@@ -7,7 +7,7 @@ import { SignInCard } from "@/features/auth/SignInCard";
 import { AccountSetupCard } from "@/features/auth/AccountSetupCard";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { StateCard, LoadingCard } from "@/components/StateCard";
-import type { TodoPresentation } from "@/lib/types";
+import type { Collab, Tag, TodoEditorDraft, TodoPresentation } from "@/lib/types";
 import { readOnboardingStep, saveOnboardingStep, subscribeToOnboarding, type OnboardingStep } from "@/lib/onboarding";
 import {
   hasWebPlusAccess,
@@ -17,6 +17,8 @@ import {
   presentTodo,
   updateTodoCompletion,
 } from "./data";
+import { TodoEditor } from "./TodoEditor";
+import type { TodoSaveResult } from "./data";
 
 export function ToDoDetail({
   todoId,
@@ -60,7 +62,7 @@ export function ToDoDetail({
           return;
         }
         if (isCurrent) {
-          setState({ status: "ready", todo: presentTodo(record, snapshot) });
+          setState({ status: "ready", todo: presentTodo(record, snapshot), collabs: snapshot.collabs, tags: snapshot.tags });
         }
       } catch (error) {
         if (!isCurrent) return;
@@ -161,7 +163,7 @@ export function ToDoDetail({
       const updatedTodo = await updateTodoCompletion(state.todo.id, isDone);
       setState((current) =>
         current.status === "ready"
-          ? { status: "ready", todo: { ...current.todo, ...updatedTodo } }
+          ? { ...current, todo: { ...current.todo, ...updatedTodo } }
           : current,
       );
     } catch (error) {
@@ -176,10 +178,23 @@ export function ToDoDetail({
   return (
     <DetailContent
       todo={state.todo}
+      userID={user.id}
+      collabs={state.collabs}
+      existingTags={state.tags}
       guidedStep={guidedStep}
       isUpdating={isUpdating}
       mutationError={mutationError}
       onCompletionChange={handleCompletionChange}
+      onTodoSaved={(result) => setState((current) => current.status === "ready" ? {
+        ...current,
+        todo: {
+          ...current.todo,
+          ...result.todo,
+          nanoDos: result.nanoDos,
+          tags: result.tags,
+          collabName: result.collabName,
+        },
+      } : current)}
     />
   );
 }
@@ -188,23 +203,51 @@ type DetailState =
   | { status: "idle" | "loading" }
   | { status: "blocked" | "missing" }
   | { status: "error"; message: string }
-  | { status: "ready"; todo: TodoPresentation };
+  | { status: "ready"; todo: TodoPresentation; collabs: Collab[]; tags: Tag[] };
 
 function DetailContent({
   todo,
+  userID,
+  collabs,
+  existingTags,
   guidedStep,
   isUpdating,
   mutationError,
   onCompletionChange,
+  onTodoSaved,
 }: {
   todo: TodoPresentation;
+  userID: string;
+  collabs: Collab[];
+  existingTags: Tag[];
   guidedStep: OnboardingStep | null;
   isUpdating: boolean;
   mutationError: string | null;
   onCompletionChange: (isDone: boolean) => Promise<void>;
+  onTodoSaved: (result: TodoSaveResult, draft: TodoEditorDraft) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
   const isDone = todo.is_done || todo.lifecycle_state === "done";
   const isOverdue = !isDone && isTodoOverdue(todo);
+
+  if (isEditing) {
+    return (
+      <section className="detail-shell" aria-labelledby="detail-edit-title">
+        <TodoEditor
+          userID={userID}
+          mode="edit"
+          initialTodo={todo}
+          collabs={collabs}
+          existingTags={existingTags}
+          onSaved={(result, draft) => {
+            onTodoSaved(result, draft);
+            setIsEditing(false);
+          }}
+          onCancel={() => setIsEditing(false)}
+        />
+      </section>
+    );
+  }
 
   return (
     <section className="detail-shell" aria-labelledby="detail-title">
@@ -217,15 +260,28 @@ function DetailContent({
             </span>
             {isDone ? "Completed toDō" : isOverdue ? "Overdue toDō" : "Active toDō"}
           </p>
+          <div className="detail-actions">
           <button
-            className="primary-button"
+            className="detail-edit-button"
+            type="button"
+            onClick={() => setIsEditing(true)}
+            aria-label="Edit toDō"
+            title="Edit toDō"
+          >
+            <Icon name="edit" size={19} />
+            <span>Edit</span>
+          </button>
+          <button
+            className="primary-button detail-complete-action"
             type="button"
             onClick={() => void onCompletionChange(!isDone)}
             disabled={isUpdating}
             aria-busy={isUpdating}
           >
+            <Icon name="check" size={19} />
             {isUpdating ? "Saving…" : isDone ? "Reopen toDō" : "Complete toDō"}
           </button>
+          </div>
         </div>
       </div>
 

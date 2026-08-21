@@ -67,8 +67,8 @@ The written source material audited for this document includes:
 - `Docs/WebLocalDevelopment.md`
 - `Docs/WebProductionSetup.md`
 - `Web/docs/WebFoundationDecisions.md`
-- `ToDo-Android/Docs/Android-Watch-Plan.md`
-- `ToDo-Android/Docs/SyncProviderSetup.md`
+- `Google/ToDo_onGoogle/Docs/Android-Watch-Plan.md`
+- `Google/ToDo_onGoogle/Docs/SyncProviderSetup.md`
 
 The repository root is the shared product monorepo. This document is stored
 under `Docs/` so the same brand contract can guide every client without
@@ -728,9 +728,9 @@ Android should use Material 3 and Compose conventions while retaining toDō sema
 
 Android source references:
 
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/ToDo-Android/app/src/main/java/dev/iamshift/todo/android/ui/theme/Color.kt`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/ToDo-Android/app/src/main/java/dev/iamshift/todo/android/ui/theme/Theme.kt`
-- `/Users/shift/Development/Mobile/2026/Feb/ToDo/ToDo-Android/app/src/main/java/dev/iamshift/todo/android/ui/AdaptiveLayout.kt`
+- `/Users/shift/Development/Mobile/2026/Feb/ToDo/Google/ToDo_onGoogle/app/src/main/java/dev/iamshift/todo/android/ui/theme/Color.kt`
+- `/Users/shift/Development/Mobile/2026/Feb/ToDo/Google/ToDo_onGoogle/app/src/main/java/dev/iamshift/todo/android/ui/theme/Theme.kt`
+- `/Users/shift/Development/Mobile/2026/Feb/ToDo/Google/ToDo_onGoogle/app/src/main/java/dev/iamshift/todo/android/ui/AdaptiveLayout.kt`
 
 ### 9.4 Wear OS
 
