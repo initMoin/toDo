@@ -19,13 +19,10 @@ export function AccountView({ fromSettings = false }: { fromSettings?: boolean }
     isResolved,
     profileUsername,
     profileAvatarURL,
-    connectProvider,
     continueWithAuthenticatedAccount,
     signOut,
     error: authError,
   } = useAuth();
-  const [linkingProvider, setLinkingProvider] = useState<"apple" | "google" | null>(null);
-  const [linkError, setLinkError] = useState<string | null>(null);
 
   if (!isConfigured) {
     return <div className="state-layout"><StateMessage title="Connect Supabase to open Account"><p>Add the browser-safe Supabase values to <code>Web/.env.local</code> and restart the local server.</p></StateMessage></div>;
@@ -50,39 +47,9 @@ export function AccountView({ fromSettings = false }: { fromSettings?: boolean }
 
         <ProviderMethodsCard
           connectedProviders={new Set((user.identities ?? []).map((identity) => identity.provider))}
-          linkingProvider={linkingProvider}
-          error={linkError}
-          onConnect={async (provider) => {
-            setLinkError(null);
-            setLinkingProvider(provider);
-            try {
-              await connectProvider(provider);
-            } catch (error) {
-              setLinkError(error instanceof Error ? error.message : "The provider could not be connected.");
-            } finally {
-              setLinkingProvider(null);
-            }
-          }}
         />
 
         <CollabsSection userID={user.id} />
-
-        <section className="account-section" aria-labelledby="account-sync-title">
-          <h2 className="account-section-title" id="account-sync-title">Where to Save</h2>
-          <div className="account-section-card account-sync-card">
-            <div className="account-list-row account-list-row-static">
-              <Icon name="repeat" size={19} />
-              <span>
-                <strong>Connected account</strong>
-                <small>Changes sync with your signed-in toDō account.</small>
-              </span>
-            </div>
-            <div className="account-sync-status">
-              <span>Current Sync</span>
-              <strong>Connected account</strong>
-            </div>
-          </div>
-        </section>
 
         <section className="account-section" aria-labelledby="account-actions-title">
           <h2 className="account-section-title" id="account-actions-title">Account Actions</h2>
@@ -98,10 +65,10 @@ export function AccountView({ fromSettings = false }: { fromSettings?: boolean }
           </div>
         </section>
 
-        {authError || linkError ? (
+        {authError ? (
           <section className="account-section" aria-labelledby="account-issue-title">
             <h2 className="account-section-title" id="account-issue-title">Account Issue</h2>
-            <p className="account-issue" role="alert">{linkError ?? authError}</p>
+            <p className="account-issue" role="alert">{authError}</p>
           </section>
         ) : null}
       </div>

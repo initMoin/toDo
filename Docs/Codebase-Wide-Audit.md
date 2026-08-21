@@ -145,9 +145,9 @@ Remaining unwraps should be classified as trusted invariants, test-only assumpti
 - `ruby Scripts/validate_localizations.rb`: passed; all supported languages are complete in both string catalogs.
 - `ruby Scripts/validate_raw_logging.rb`: passed; no production raw console logging remains.
 - `bash Scripts/validate_release_readiness.sh`: passed after localization completion.
-- `xcodebuild -project toDo.xcodeproj -scheme ToDo -configuration Debug -destination 'generic/platform=iOS' ... build`: passed.
-- `xcodebuild -project toDo.xcodeproj -scheme 'ToDo Mac' -configuration Debug -destination 'platform=macOS' ... build`: passed.
-- `xcodebuild -project toDo.xcodeproj -scheme 'ToDo Watch App' -configuration Debug -destination 'generic/platform=watchOS' ... build`: passed.
+- `xcodebuild -project Apple/toDo.xcodeproj -scheme ToDo -configuration Debug -destination 'generic/platform=iOS' ... build`: passed.
+- `xcodebuild -project Apple/toDo.xcodeproj -scheme 'ToDo Mac' -configuration Debug -destination 'platform=macOS' ... build`: passed.
+- `xcodebuild -project Apple/toDo.xcodeproj -scheme 'ToDo Watch App' -configuration Debug -destination 'generic/platform=watchOS' ... build`: passed.
 - iOS `build-for-testing`: passed; Xcode emitted an App Intents metadata warning for the test-build phase because the test target does not link `AppIntents.framework`.
 - Watch test `build-for-testing`: passed after correcting the test host to `ToDo Watch.app`, aligning the test module import, and moving the Watch test/UI-test/widget targets to Swift 6/watchOS 27. Xcode still emitted the non-fatal App Intents metadata warning described above.
 - iOS, macOS, and watchOS static analysis: passed after the WidgetKit cache was moved behind an explicit lock-backed cache object.

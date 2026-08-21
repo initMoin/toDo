@@ -180,23 +180,25 @@ function ReadyHome({ snapshot, userID }: { snapshot: RemoteSnapshot; userID: str
             <Icon name="arrow-right" />
           </Link>
         </div>
-        <p className="home-action-note" id="capture-note">
-          Text first. Add details when you need them.
-        </p>
         {isComposerOpen ? (
           <NewTodoComposer
             userID={userID}
+            collabs={localSnapshot.collabs}
+            existingTags={localSnapshot.tags}
             onCancel={() => setIsComposerOpen(false)}
-            onCreated={(todo) => {
+            onCreated={(result) => {
               const isFirstTodo = activeTodos.length === 0;
               setLocalSnapshot((current) => ({
                 ...current,
-                todos: [todo, ...current.todos],
+                todos: [result.todo, ...current.todos],
+                nanoDos: [...result.nanoDos, ...current.nanoDos],
+                tags: [...result.tags, ...current.tags.filter((tag) => !result.tags.some((item) => item.id === tag.id))],
+                todoTags: [...result.todoTags, ...current.todoTags],
               }));
               setIsComposerOpen(false);
               if (isFirstTodo) {
                 saveOnboardingStep("detail");
-                router.push(`/todos/${todo.id}?onboarding=detail`);
+                router.push(`/todos/${result.todo.id}?onboarding=detail`);
               }
             }}
           />
@@ -284,10 +286,12 @@ function HomePreviewRow({ todo }: { todo: TodoPresentation }) {
     <Link className={`home-preview-row${isOverdue(todo) ? " home-preview-row-overdue" : ""}`} href={`/todos/${todo.id}`}>
       <span className="home-preview-copy">
         <span className="home-preview-title">{todo.task}</span>
-        <span className="home-preview-meta">
-          {isOverdue(todo) ? <span className="home-preview-overdue-label"><Icon name="alert" size={14} /> Overdue</span> : null}
-          {todo.due_at ? formatDue(todo.due_at) : "No due date"}
-        </span>
+        {isOverdue(todo) || todo.due_at ? (
+          <span className="home-preview-meta">
+            {isOverdue(todo) ? <span className="home-preview-overdue-label"><Icon name="alert" size={14} /> Overdue</span> : null}
+            {todo.due_at ? formatDue(todo.due_at) : null}
+          </span>
+        ) : null}
       </span>
       {isTodoTimeSensitive(todo) ? (
         <span className="home-urgent-mark" aria-label="Time-sensitive"><Icon name="clock" /></span>
@@ -298,15 +302,14 @@ function HomePreviewRow({ todo }: { todo: TodoPresentation }) {
 
 function HomePreviewEmpty({ filter }: { filter: PreviewFilter }) {
   const copy = {
-    due: ["Nothing is due in the next seven days.", "Use New toDō to capture what matters next."],
-    "time-sensitive": ["No time-sensitive toDōs right now.", "You can add reminder intent from a toDō’s details."],
-    recent: ["No recent toDōs in the current window.", "Start with a quick capture when something comes to mind."],
+    due: "Nothing is due in the next seven days.",
+    "time-sensitive": "No time-sensitive toDōs right now.",
+    recent: "No recent toDōs in the current window.",
   }[filter];
 
   return (
     <div className="home-empty-preview">
-      <p>{copy[0]}</p>
-      <span>{copy[1]}</span>
+      <p>{copy}</p>
     </div>
   );
 }

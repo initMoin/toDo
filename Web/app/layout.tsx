@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { RouteTransition } from "@/components/RouteTransition";
+import { AuthProvider } from "@/features/auth/AuthProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -34,7 +35,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body><RouteTransition>{children}</RouteTransition></body>
+      <body>
+        <AuthProvider>
+          <RouteTransition>{children}</RouteTransition>
+        </AuthProvider>
+      </body>
     </html>
   );
 }

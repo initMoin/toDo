@@ -1,6 +1,6 @@
 # toDō Data Structures and Algorithms Audit
 
-**Last reviewed:** 2026-08-14
+**Last reviewed:** 2026-08-20
 **Scope:** Apple platforms, Web, and the authoritative Supabase backend
 **Status:** Living engineering document
 
@@ -53,11 +53,11 @@ Every new entry must record the source location, invariant, selected structure, 
 ### 1. Ordered tag deduplication
 
 **Where:** `ToDo/Features/ToDos/Models/ToDo.swift`, tag selection/canonicalization helpers.
-**Structures:** An ordered array plus sets of tag IDs and normalized names.
-**How:** Tags are visited in presentation order. The ID set prevents duplicate object identity and the normalized-name set prevents semantic duplicates while the array preserves the user's order.
-**Why:** A set alone would lose presentation order; an array alone would make uniqueness checks linear.
-**Complexity:** Average `O(n)` time and `O(k)` auxiliary space, with the UI limiting the number of tags.
-**Status:** Source-verified; regression tests cover the contract.
+**Structures:** A primary-tag reference, a deterministically sorted array, and sets of tag IDs and normalized names.
+**How:** The explicit primary tag is emitted first. Remaining tags from SwiftData's unordered to-many relationship are sorted by normalized name and stable identity, then ID and normalized-name sets remove object and semantic duplicates.
+**Why:** SwiftData does not preserve to-many insertion order. Prioritizing the explicit primary relationship preserves the user's primary choice, while deterministic sorting prevents devices from presenting the remaining tags differently. Sets retain average constant-time uniqueness checks.
+**Complexity:** `O(k log k)` time and `O(k)` auxiliary space. `k` is bounded by `ToDo.maxTagSelection`, so the practical cost is constant and intentionally favors correctness.
+**Status:** Source-verified; App Intent persistence regression tests cover primary ordering and deduplication.
 
 ### 2. Canonical tag selection
 
@@ -378,7 +378,7 @@ Every new entry must record the source location, invariant, selected structure, 
 
 ### 40. Indexed username locator with UUID authority
 
-**Where:** `supabase/migrations/20260811120000_add_account_architecture.sql` and `20260811133000_fix_account_username_claim_ambiguity.sql`.
+**Where:** `Shared/Supabase/migrations/20260811120000_add_account_architecture.sql` and `20260811133000_fix_account_username_claim_ambiguity.sql`.
 **Structures:** Partial unique index on normalized username, reserved-name table, row lock, and security-definer claim RPC.
 **How:** Username is normalized and unique for lookup, while `auth.users.id` remains every account-scoped record's authorization identity. Claiming locks the caller's profile and converts uniqueness races into a stable error.
 **Why:** A client-side availability check cannot enforce uniqueness under concurrency. The database index can, without weakening UUID-based RLS.
@@ -393,7 +393,7 @@ Every new entry must record the source location, invariant, selected structure, 
 
 ### 42. Transaction-serialized collaboration admission
 
-**Where:** `supabase/migrations/20260716120000_add_collabs.sql`.
+**Where:** `Shared/Supabase/migrations/20260716120000_add_collabs.sql`.
 **Structures and algorithms:** Partial unique pending-invitation index, invitation row lock, owner-scoped PostgreSQL advisory transaction lock, and atomic invitation/member updates.
 **How:** Acceptance locks the invitation and serializes acceptances for one owner before checking the free-user limit. Membership upsert and invitation acceptance occur in the same transaction.
 **Why:** Two simultaneous acceptances cannot both observe one final available slot. This policy is concurrency-sensitive and cannot safely be enforced only in UI.
@@ -401,7 +401,7 @@ Every new entry must record the source location, invariant, selected structure, 
 
 ### 43. Event-driven collaboration invalidation
 
-**Where:** `supabase/migrations/20260811143000_add_collaboration_invitation_push_events.sql`.
+**Where:** `Shared/Supabase/migrations/20260811143000_add_collaboration_invitation_push_events.sql`.
 **Structure:** Triggered, user-scoped sync push events.
 **How:** Invitation mutations enqueue an invalidation event for affected accounts. Clients refresh an authoritative snapshot when nudged instead of continuously polling.
 **Why:** Event-driven invalidation reduces idle network work without treating a push payload as authoritative collaboration state.
@@ -409,7 +409,7 @@ Every new entry must record the source location, invariant, selected structure, 
 
 ### 44. Bounded concurrent push-outbox cleanup
 
-**Where:** `supabase/migrations/20260717140500_bound_sync_push_outbox_cleanup.sql`.
+**Where:** `Shared/Supabase/migrations/20260717140500_bound_sync_push_outbox_cleanup.sql`.
 **Structures and algorithms:** Composite `(created_at, id)` index, clamped batch size, oldest-first ordering, and `FOR UPDATE SKIP LOCKED`.
 **How:** One call deletes at most 10,000 stale rows, with a default of 5,000. Concurrent workers skip rows another cleanup owns instead of blocking or selecting the same rows.
 **Why:** A migration, webhook, or scheduled job must not trigger an unbounded delete. Oldest-first order gives predictable backlog reduction.
@@ -417,11 +417,29 @@ Every new entry must record the source location, invariant, selected structure, 
 
 ### 45. Immutable completion history with a partial index
 
-**Where:** `supabase/migrations/20260801090000_add_todo_completion_activity.sql`.
+**Where:** `Shared/Supabase/migrations/20260801090000_add_todo_completion_activity.sql`.
 **Structure:** `completed_at` transition timestamp and partial index on `(user_id, completed_at desc)` for done rows.
 **How:** Completion is recorded at the transition into done instead of inferred from a later edit. Legacy done records are backfilled from `updated_at`.
 **Why:** Activity graphs remain historically correct after subsequent edits, and the partial index excludes irrelevant active rows.
 **Complexity:** Expected `O(log D + resultCount)` account/time-range access.
+
+### 46. UUID-keyed account namespace partition and cache invalidation
+
+**Where:** `ToDo/Core/Sync/SyncMode.swift`, `SupabaseAuthStore.swift`, `ToDoMacAuthStore.swift`, `AppRootView.swift`, `ToDoMacViews.swift`, `NotificationManager.swift`, `LocationReminderService.swift`, `WidgetSnapshotService.swift`, `LiveActivityService.swift`, and Watch connectivity/store code.
+**Structures:** `ToDoDataScope` as a value-type personal namespace key, `ToDoVisibilityScope` as the account-plus-sharing admission policy, immutable account UUIDs on persisted entities, `Set<UUID>` for accessible collaboration IDs, account-tagged widget completion requests, and a versioned Mac menu snapshot carrying owner/collaboration identity.
+**How:** Every personal row is admitted by exact optional-UUID equality: `nil` is the unsigned namespace and a resolved `auth.users.id` is one account namespace. Ownership follows account resolution independently of whether transport is Device Only, iCloud, or toDō Sync; the backend decides where bytes move, not who owns them. Collaboration access is an explicit set-membership exception. Notification and location services receive dynamic owner and collaboration providers so delayed work is checked against the current session rather than the session that scheduled it. Cross-process widget completion requests carry the originating account UUID and remain queued if another account is active. Anonymous records can be adopted by an account only through an explicit, account-UUID-bound migration token; ordinary sign-in never copies the `nil` namespace. After a successful final toDō Sync flush, sign-out removes only that account's personal cache and currently accessible collaboration cache without creating deletion tombstones. Anonymous and other-account partitions remain intact, while the server remains authoritative for later rehydration. Watch queues are cleared at an account boundary because their legacy payloads do not carry an account UUID, and a persisted unsigned-session gate rejects later mirrored phone snapshots until deliberate authentication reopens the account boundary.
+**Why:** This prevents account A, account B, and unsigned data from leaking into one another through either foreground presentation or delayed background actions, while allowing the same UUID namespace to rehydrate from Supabase after sign-in. Explicit adoption prevents an unsigned toDō from silently becoming Account B's data. Post-flush cache removal keeps signed-in data off the unsigned surface without turning local privacy cleanup into remote deletion. Versioning the Mac snapshot prevents ownerless decoding of older cached payloads, and account-tagging widget requests prevents a stale action from mutating the next signed-in account.
+**Complexity:** Scope resolution and UUID comparison are `O(1)`. Collaboration-set construction is `O(C)` with average `O(1)` membership. Sign-out cleanup builds a `Set` of selected parent IDs in `O(D)` and uses average `O(1)` membership while filtering nanoDos, for total `O(D + N + T + F)` work across toDōs, nanoDos, tags, and conflicts. Current SwiftData presentation filtering is `O(D)` per fetched collection and is intentionally documented for later measured predicate optimization.
+**Status:** Source-verified with focused namespace tests; multi-account real-device QA remains required.
+
+### 47. Bounded final-sync barrier before account cache removal
+
+**Where:** `ToDo/Core/Infrastructure/Supabase/SupabaseSyncService.swift`, `ToDo/Core/Sync/SyncCoordinator.swift`, `SupabaseAuthStore.swift`, and `ToDoMacAuthStore.swift`.
+**Structures and algorithms:** A deadline-bounded readiness loop, a three-pass reconciliation cap, explicit Boolean success propagation, and cancellation-aware account guards.
+**How:** Sign-out waits up to 30 seconds for bootstrap, remote application, refresh, and an in-flight push to settle. It then performs at most three upload/reconciliation passes because a remote apply can legitimately enqueue one follow-up upload. Every pass revalidates the active account UUID. Cache removal and provider sign-out proceed only after the backend reports success; a timeout, cancellation, account switch, or network/backend failure keeps the session and cache intact.
+**Why:** A fixed delay cannot prove data reached the server, while an unbounded wait can strand the UI. The bounded barrier provides a concrete durability result and prevents account data from being removed locally before it is safe to rehydrate.
+**Complexity:** Polling is capped at 300 readiness checks at 100-millisecond intervals, and upload reconciliation is capped at three passes. Memory overhead is `O(1)` beyond each existing sync snapshot.
+**Status:** Source-verified; offline timeout and multi-device sign-out still require runtime QA.
 
 ## Optimization Backlog
 
@@ -456,6 +474,25 @@ Before merging a future data-heavy change:
 This document is a source-level audit. It does not claim measured latency, memory, energy, or query-plan performance. Those claims require representative data and runtime tools such as Apple Instruments/signposts, the React Profiler, hosted PostgreSQL `EXPLAIN (ANALYZE, BUFFERS)`, and multi-device sync testing.
 
 ## Audit Action Log
+
+**2026-08-20**
+
+- Corrected tag presentation after a regression test exposed SwiftData's unordered to-many relationship behavior.
+- Made the explicit primary tag authoritative and sorted remaining tags deterministically by normalized name and stable identity.
+- Retained ID/name sets for average `O(1)` duplicate checks within the app's small fixed tag-selection bound.
+
+**2026-08-15**
+
+- Added the UUID-keyed signed-in/unsigned namespace contract and tests.
+- Decoupled personal ownership from storage mode so every resolved-account creation receives that account UUID in Device Only, iCloud, and toDō Sync modes.
+- Removed sign-out cloning from the account boundary so ownership remains immutable.
+- Added `ToDoVisibilityScope` for average `O(1)` collaboration admission alongside exact account UUID matching.
+- Added dynamic account/collaboration checks for notifications and location reminders, plus account-tagged widget completion requests.
+- Added account-aware invalidation for Mac menu snapshots, widgets, notifications, Live Activities, notification routing, and Watch presentation/action caches.
+- Added a persisted Watch unsigned-session gate and regression test so mirrored iPhone snapshots cannot silently reopen a locally closed account boundary.
+- Documented the current linear presentation-filter cost rather than claiming indexed SwiftData execution without runtime query evidence.
+- Replaced implicit anonymous-data adoption with an explicit account-UUID-bound migration token.
+- Added a bounded final-sync barrier and account-scoped local-cache purge for sign-out, preserving unsigned and other-account partitions and emitting no remote deletion tombstones.
 
 **2026-08-14**
 

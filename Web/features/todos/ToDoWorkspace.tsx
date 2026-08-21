@@ -8,7 +8,8 @@ import { SignInCard } from "@/features/auth/SignInCard";
 import { AccountSetupCard } from "@/features/auth/AccountSetupCard";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { StateCard, LoadingCard } from "@/components/StateCard";
-import type { RemoteSnapshot, Todo, TodoPresentation } from "@/lib/types";
+import type { RemoteSnapshot, TodoPresentation } from "@/lib/types";
+import type { TodoSaveResult } from "./data";
 import {
   hasWebPlusAccess,
   isVisibleActiveTodo,
@@ -84,14 +85,17 @@ export function ToDoWorkspace({
     }
   }
 
-  function handleTodoCreated(todo: Todo) {
+  function handleTodoCreated(result: TodoSaveResult) {
     setDataState((current) => {
       if (current.status !== "ready") return current;
       return {
         status: "ready",
         snapshot: {
           ...current.snapshot,
-          todos: [todo, ...current.snapshot.todos],
+          todos: [result.todo, ...current.snapshot.todos],
+          nanoDos: [...result.nanoDos, ...current.snapshot.nanoDos],
+          tags: [...result.tags, ...current.snapshot.tags.filter((tag) => !result.tags.some((item) => item.id === tag.id))],
+          todoTags: [...result.todoTags, ...current.snapshot.todoTags],
         },
       };
     });
@@ -269,7 +273,7 @@ function ReadyWorkspace({
   updatingTodoID: string | null;
   mutationError: string | null;
   onCompletionChange: (todoID: string, isDone: boolean) => Promise<void>;
-  onTodoCreated: (todo: Todo) => void;
+  onTodoCreated: (result: TodoSaveResult) => void;
 }) {
   const { user } = useAuth();
   const router = useRouter();
@@ -307,24 +311,30 @@ function ReadyWorkspace({
       <div className="workspace-intro">
         <h1 className="sr-only" id="workspace-title">Active toDōs</h1>
         <div className="workspace-intro-actions">
-          <button className="workspace-new-button" type="button" onClick={() => setIsComposerOpen(true)}>
-            <Icon name="plus" /> New toDō
+          <button className="workspace-new-button" type="button" onClick={() => setIsComposerOpen(true)} aria-label="Add a new toDō" title="Add a new toDō">
+            <Icon name="plus" size={25} strokeWidth={2.2} />
           </button>
-          <span className="sync-status" aria-label="Sync status: synced"><Icon name="check" size={13} strokeWidth={3} /> Synced</span>
         </div>
+      </div>
+
+      <div className="workspace-sync-line" aria-live="polite">
+        <span className="sync-status" aria-label="Sync status: synced"><Icon name="check" size={16} strokeWidth={2.8} /> Synced</span>
+        <span>{todos.length} active {todos.length === 1 ? "toDō" : "toDōs"}</span>
       </div>
 
       {isComposerOpen && user ? (
         <NewTodoComposer
           userID={user.id}
+          collabs={snapshot.collabs}
+          existingTags={snapshot.tags}
           onCancel={() => setIsComposerOpen(false)}
-          onCreated={(todo) => {
+            onCreated={(result) => {
             const isFirstTodo = todos.length === 0;
-            onTodoCreated(todo);
+              onTodoCreated(result);
             setIsComposerOpen(false);
             if (isFirstTodo) {
               saveOnboardingStep("detail");
-              router.push(`/todos/${todo.id}?onboarding=detail`);
+                router.push(`/todos/${result.todo.id}?onboarding=detail`);
             }
           }}
         />
@@ -471,6 +481,8 @@ function ToDoRow({
           {isOverdue(todo) ? <span className="meta-chip meta-chip-overdue"><Icon name="alert" size={14} /> Overdue</span> : null}
           {todo.due_at ? <span className="meta-chip meta-chip-due"><Icon name="calendar" size={14} /> {formatDue(todo.due_at)}</span> : null}
           {todo.nanoDos.length ? <span className="meta-chip"><Icon name="task-list" size={14} /> {todo.nanoDos.filter((nanoDo) => nanoDo.is_done).length}/{todo.nanoDos.length}</span> : null}
+          {todo.notes?.trim() ? <span className="meta-chip"><Icon name="copy" size={14} /> Notes</span> : null}
+          {todo.due_at && todo.reminder_intent === "due" ? <span className="meta-chip"><Icon name="bell" size={14} /> Reminder</span> : null}
           {isTodoTimeSensitive(todo) ? <span className="meta-chip meta-chip-urgent"><Icon name="clock" size={14} /> Time-sensitive</span> : null}
           {todo.is_recurring ? <span className="meta-chip"><Icon name="repeat" size={14} /> {recurrenceLabel(todo)}</span> : null}
           {todo.collabName ? <span className="meta-chip meta-chip-collab"><Icon name="users" size={14} /> {todo.collabName}</span> : null}

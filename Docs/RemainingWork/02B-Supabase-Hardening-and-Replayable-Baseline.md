@@ -114,7 +114,7 @@ immutable, so this is not repaired by reordering or editing history.
 A baseline cutover is a separate operation:
 
 1. Deploy and verify webhook hardening first.
-2. Run `supabase/scripts/generate_sanitized_baseline.sh` to create a schema-only review
+2. Run `Shared/Supabase/scripts/generate_sanitized_baseline.sh` to create a schema-only review
    artifact outside the repository.
 3. Confirm the tool rejects any dump containing the legacy webhook helper, fixed
    production endpoint, or a known local secret/key value.

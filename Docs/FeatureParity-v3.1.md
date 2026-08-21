@@ -14,7 +14,7 @@ The Stats surface now includes a GitHub-style completion activity graph on every
 - Re-editing an already completed toDō does not create a new activity entry.
 - Reopening a completed toDō clears its completion activity until it is completed again.
 - Legacy completed records use their last known update timestamp until the database migration is applied.
-- The app stores the completion transition in `completed_at`; the migration is source-controlled at `supabase/migrations/20260801090000_add_todo_completion_activity.sql` and still requires explicit production deployment.
+- The app stores the completion transition in `completed_at`; the migration is source-controlled at `Shared/Supabase/migrations/20260801090000_add_todo_completion_activity.sql` and still requires explicit production deployment.
 - Differentiate Without Color adds a visible cell border so intensity is not communicated by color alone.
 - Dynamic Type, accessibility labels, and compact platform-specific sizing are included.
 

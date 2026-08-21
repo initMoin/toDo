@@ -298,7 +298,7 @@ purchase-flow testing.
    `--no-verify-jwt` is intentional for both functions. Apple cannot supply a Supabase
    JWT to the webhook, which instead verifies Apple's signed JWS payload. The purchase-
    linking function reads the caller's bearer token and validates it with Supabase Auth
-   inside the function. The same setting is recorded in `supabase/config.toml`.
+   inside the function. The same setting is recorded in `Shared/Supabase/config.toml`.
 
    If deployment reports a local bundler or Docker error, retry that same command with
    `--use-api` appended. Do not use `--prune`; this project contains other deployed

@@ -34,7 +34,7 @@ test("renders ToDosView at the /todos route", async () => {
   assert.equal(response.status, 200);
   const html = await response.text();
   assert.match(html, /Connect Supabase to test the Web app|Checking your toDō account…|Loading your toDōs…/);
-  assert.match(html, /class="site-header-title">toDōs<\/span>/);
+  assert.match(html, /class="site-header-title">toDō<\/span>/);
 });
 
 test("renders the Web-native Account, Stats, Settings, and nested detail routes", async () => {
@@ -102,11 +102,11 @@ test("keeps the documented Web and Supabase boundaries present", async () => {
     readFile(new URL("../features/auth/SignInCard.tsx", import.meta.url), "utf8"),
     readFile(new URL("../features/todos/data.ts", import.meta.url), "utf8"),
     readFile(new URL("../docs/WebFoundationDecisions.md", import.meta.url), "utf8"),
-    readFile(new URL("../../supabase/migrations/20260716190000_add_collab_todos.sql", import.meta.url), "utf8"),
-    readFile(new URL("../../supabase/migrations/20260814150000_add_web_push_and_calendar_integration.sql", import.meta.url), "utf8"),
+    readFile(new URL("../../Shared/Supabase/migrations/20260716190000_add_collab_todos.sql", import.meta.url), "utf8"),
+    readFile(new URL("../../Shared/Supabase/migrations/20260814150000_add_web_push_and_calendar_integration.sql", import.meta.url), "utf8"),
     readFile(new URL("../lib/webIntegrations.ts", import.meta.url), "utf8"),
-    readFile(new URL("../../supabase/functions/todo-web-push/index.ts", import.meta.url), "utf8"),
-    readFile(new URL("../../supabase/functions/todo-calendar-feed/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../Shared/Supabase/functions/todo-web-push/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../Shared/Supabase/functions/todo-calendar-feed/index.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/RouteTransition.tsx", import.meta.url), "utf8"),
     readFile(new URL("../features/home/Home.tsx", import.meta.url), "utf8"),
@@ -127,6 +127,8 @@ test("keeps the documented Web and Supabase boundaries present", async () => {
   ]);
 
   assert.match(auth, /signInWithOAuth/);
+  assert.match(auth, /pendingAuthenticationStorageKey/);
+  assert.match(auth, /sessionStorage/);
   assert.match(signIn, /apple/);
   assert.match(signIn, /google/);
   assert.match(data, /current_account_entitlements/);
@@ -162,11 +164,13 @@ test("keeps the documented Web and Supabase boundaries present", async () => {
   assert.match(submenu, /updateTodoLifecycle/);
   assert.match(submenu, /createTag/);
   assert.match(submenu, /todoTheme|data-todo-theme/);
+  assert.match(submenu, /Supabase account/);
+  assert.match(settings, /href="\/settings\/sync"/);
   assert.doesNotMatch(submenu, /coming later|not available yet|not enabled in this slice/);
   assert.match(account, /ProviderMethodsCard/);
   assert.match(account, /signOut/);
   assert.match(account, /Collabs/);
-  assert.match(account, /Where to Save/);
+  assert.doesNotMatch(account, /Where to Save/);
   assert.match(account, /Account Actions/);
   assert.doesNotMatch(account, /support/i);
   assert.match(appFrame, /href="\/account"/);
@@ -174,8 +178,12 @@ test("keeps the documented Web and Supabase boundaries present", async () => {
   assert.doesNotMatch(appFrame, /legal\/(privacy|terms)/);
   assert.match(avatar, /profile-avatar/);
   assert.match(avatar, /avatarURL/);
+  assert.doesNotMatch(avatar, /profile-avatar-initials|getInitials/);
+  assert.doesNotMatch(home, /Text first|Use New toDō|You can add reminder intent|No due date/);
   assert.match(styles, /brand\/brand-plus-reference\.jpg/);
   assert.match(styles, /background-clip: text/);
+  assert.match(styles, /sign-in-provider-reveal/);
+  assert.match(styles, /clip-path: inset/);
   assert.match(styles, /flex: 0 0 var\(--profile-avatar-size\)/);
   assert.match(icon, /gear/);
   assert.match(stats, /Measure what matters/);

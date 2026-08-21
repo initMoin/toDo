@@ -177,11 +177,12 @@ function MembershipSettings({ userID }: { userID: string | null }) {
   </div>;
 }
 
-function SyncSettings({ preferences, setPreferences, isBusy, setMessage }: SettingsSharedProps) {
+function SyncSettings({ preferences, setPreferences }: SettingsSharedProps) {
   return <div className="settings-control-stack">
-    <SettingsCard title="Current choice" icon="repeat"><div className="settings-status-banner settings-status-active"><span className="settings-status-icon"><Icon name="repeat" size={18} /></span><div><strong>Supabase account</strong><p>Web changes are saved to the signed-in account and remain available to the other supported platforms.</p></div></div></SettingsCard>
+    <SettingsCard title="Current choice" icon="repeat"><div className="settings-status-banner settings-status-active"><span className="settings-status-icon"><Icon name="repeat" size={18} /></span><div><strong>Supabase account</strong><p>Web changes are saved to the signed-in account and remain available to the supported toDō platforms.</p></div></div></SettingsCard>
+    <SettingsCard title="What syncs" icon="repeat"><SettingsList items={[["Personal ToDos", "Active, completed, archived, and trashed items."], ["Collabs", "Shared lists and their access stay with the account."], ["Profile image", "The finalized image from Profile is used across the site."]]} /></SettingsCard>
+    <SettingsCard title="Account boundary" icon="users"><SettingsList items={[["Apple Sign-In", "A separate toDō account."], ["Google Sign-In", "A separate toDō account."], ["Account transfer", "Not part of the current Web flow."]]} /></SettingsCard>
     <SettingsCard title="Delete behavior" icon="repeat"><SettingsSwitch icon="repeat" label="Match Deletes Everywhere" detail="Keep task deletion behavior consistent with the synced account." checked={preferences.matchDeletes} onChange={(value) => setPreferences("matchDeletes", value)} /></SettingsCard>
-    <SettingsCard title="Account boundary" icon="users"><SettingsList items={[["Apple Sign-In", "Remains its own account."], ["Google Sign-In", "Remains its own account."], ["Account transfer", "Not part of the current Web flow."]]} /><button className="settings-detail-action" type="button" disabled={isBusy} onClick={() => setMessage("Web sync is already connected to this account.")}><Icon name="repeat" size={16} /><span>Confirm sync connection</span></button></SettingsCard>
   </div>;
 }
 

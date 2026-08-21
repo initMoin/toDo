@@ -18,6 +18,7 @@ export type IconName =
   | "filter"
   | "flame"
   | "download"
+  | "edit"
   | "google"
   | "group"
   | "home"
@@ -56,6 +57,7 @@ const paths: Record<IconName, ReactNode> = {
   copy: <path d="M8 8h11v12H8V8Zm-3 8H4V4h11v4" />,
   filter: <path d="M4 5h16l-6.5 7.2v5.2l-3 1v-6.2L4 5Z" />,
   download: <path d="M12 3v12m0 0 4-4m-4 4-4-4M4 20h16" />,
+  edit: <path d="m4 16.5-.8 3.3 3.3-.8L18.8 6.7a2.3 2.3 0 0 0-3.3-3.3L4 16.5Zm9.8-10.8 4.5 4.5" />,
   flame: <path d="M12.1 21c4.1 0 7-2.8 7-6.8 0-3.5-2-6.3-5.2-9.4.1 2.5-1 4.1-2.4 5.1-.3-2.2-1.6-4-3.4-5.1.2 3.1-2.3 5.1-2.3 8.5 0 4.4 2.7 7.7 6.3 7.7Z" />,
   google: <><path d="M20 12a8 8 0 1 1-2.3-5.7" /><path d="M20 12h-7" /></>,
   group: <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8-1a2.5 2.5 0 1 0 0-5m-12 12a4 4 0 0 1 8 0m2 0a4 4 0 0 1 6 0" />,
