@@ -35,6 +35,20 @@
                ReferencedContainer = "container:toDo.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "61A8790E2FB52AAD007660A2"
+               BuildableName = "ToDo Watch Tests.xctest"
+               BlueprintName = "ToDo Watch Tests"
+               ReferencedContainer = "container:toDo.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction
@@ -49,6 +63,17 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "61A8790E2FB52AAD007660A2"
+               BuildableName = "ToDo Watch Tests.xctest"
+               BlueprintName = "ToDo Watch Tests"
+               ReferencedContainer = "container:toDo.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "61A879182FB52AAD007660A2"
                BuildableName = "ToDo Watch UITests.xctest"
                BlueprintName = "ToDo Watch UITests"
@@ -58,7 +83,7 @@
       </Testables>
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Release"
+      buildConfiguration = "Debug"
       selectedDebuggerIdentifier = ""
       selectedLauncherIdentifier = "Xcode.IDEFoundation.Launcher.PosixSpawn"
       launchStyle = "0"
