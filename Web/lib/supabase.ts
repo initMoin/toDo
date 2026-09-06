@@ -26,6 +26,9 @@ export const supabase: SupabaseClient | null = supabaseConfigured
         autoRefreshToken: true,
         detectSessionInUrl: true,
         persistSession: true,
+        experimental: {
+          passkey: true,
+        },
       },
     })
   : null;

@@ -91,11 +91,14 @@ export async function revokeCalendarFeed(): Promise<void> {
   if (error) throw error;
 }
 
-function decodeBase64URL(value: string): Uint8Array {
+function decodeBase64URL(value: string): ArrayBuffer {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
   const base64 = value.replace(/-/g, "+").replace(/_/g, "/") + padding;
   const raw = window.atob(base64);
-  return Uint8Array.from(raw, (character) => character.charCodeAt(0));
+  const bytes = Uint8Array.from(raw, (character) => character.charCodeAt(0));
+  const buffer = new ArrayBuffer(bytes.length);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }
 
 function encodeBase64URL(value: ArrayBuffer | null): string {

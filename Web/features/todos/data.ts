@@ -47,6 +47,15 @@ export type TodoSaveResult = {
   collabName: string | null;
 };
 
+export class TodoSaveError extends Error {
+  readonly parentSaved = true;
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "TodoSaveError";
+  }
+}
+
 export function todoCompletionPatch(
   isDone: boolean,
   completedAt = new Date().toISOString(),
@@ -132,7 +141,7 @@ export async function loadRemoteSnapshot(): Promise<RemoteSnapshot> {
   }
 
   return {
-    todos: (todosResult.data ?? []) as Todo[],
+    todos: (todosResult.data ?? []) as unknown as Todo[],
     nanoDos: (nanoDosResult.data ?? []) as NanoDo[],
     tags: (tagsResult.data ?? []) as Tag[],
     todoTags: (todoTagsResult.data ?? []) as TodoTag[],
@@ -204,7 +213,7 @@ export async function updateTodoCompletion(todoId: string, isDone: boolean): Pro
     throw new Error("The toDō could not be updated.");
   }
 
-  return data as Todo;
+  return data as unknown as Todo;
 }
 
 export type TodoLifecycleState = "active" | "done" | "archived" | "trashed";
@@ -317,7 +326,11 @@ export async function createTodo(
     throw new Error("The new toDō could not be saved.");
   }
 
-  return saveTodoRelations(data as Todo, normalizedDraft);
+  try {
+    return await saveTodoRelations(data as unknown as Todo, normalizedDraft);
+  } catch (relationError) {
+    throw asPartialTodoSaveError(relationError);
+  }
 }
 
 export async function updateTodoDetails(
@@ -353,7 +366,20 @@ export async function updateTodoDetails(
   if (error) throw error;
   if (!data) throw new Error("The toDō could not be updated.");
 
-  return saveTodoRelations(data as Todo, normalizedDraft);
+  try {
+    return await saveTodoRelations(data as unknown as Todo, normalizedDraft);
+  } catch (relationError) {
+    throw asPartialTodoSaveError(relationError);
+  }
+}
+
+function asPartialTodoSaveError(error: unknown): TodoSaveError {
+  if (error instanceof TodoSaveError) return error;
+  const detail = error instanceof Error ? error.message : "The detail records could not be saved.";
+  return new TodoSaveError(
+    `The toDō text was saved, but its details could not finish syncing (${detail}). Reload this view before trying again.`,
+    { cause: error },
+  );
 }
 
 async function saveTodoRelations(todo: Todo, draft: TodoEditorDraft): Promise<TodoSaveResult> {
@@ -416,8 +442,7 @@ async function resolveTags(names: string[], userID: string): Promise<Tag[]> {
 
   const { data: existing, error } = await supabase
     .from("tags")
-    .select("id,user_id,name,is_default,created_at,updated_at")
-    .eq("user_id", userID);
+    .select("id,user_id,name,is_default,created_at,updated_at");
   if (error) throw error;
 
   const tags = (existing ?? []) as Tag[];

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { Icon } from "@/components/Icon";

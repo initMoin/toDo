@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
@@ -20,12 +20,22 @@ import {
   isTodoOverdue,
   isTodoTimeSensitive,
   updateTodoCompletion,
+  updateTodoLifecycle,
 } from "./data";
 import { NewTodoComposer } from "./NewTodoComposer";
 import { saveOnboardingStep } from "@/lib/onboarding";
+import {
+  defaultWebPreferences,
+  readStoredWebPreferences,
+  saveStoredWebPreferences,
+  webPreferencesChangedEvent,
+  type WebPreferences,
+} from "@/lib/webPreferences";
+import { subscribeToWebRefresh } from "@/lib/webRefresh";
 
 type DataState =
-  | { status: "idle" | "loading" }
+  | { status: "idle" }
+  | { status: "loading" }
   | { status: "blocked" }
   | { status: "ready"; snapshot: RemoteSnapshot }
   | { status: "error"; message: string };
@@ -43,6 +53,7 @@ export function ToDoWorkspace({
 }) {
   const {
     user,
+    session,
     isLoading: authLoading,
     isConfigured,
     isResolved,
@@ -52,6 +63,7 @@ export function ToDoWorkspace({
   const [retryKey, setRetryKey] = useState(0);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>(initialFilter);
+  const [preferences, setPreferences] = useState<WebPreferences>(defaultWebPreferences);
   const [sort, setSort] = useState<Sort>(initialSort);
   const [group, setGroup] = useState<Group>("none");
   const [updatingTodoID, setUpdatingTodoID] = useState<string | null>(null);
@@ -63,19 +75,12 @@ export function ToDoWorkspace({
     setUpdatingTodoID(todoID);
     setMutationError(null);
     try {
-      const updatedTodo = await updateTodoCompletion(todoID, isDone);
-      setDataState((current) => {
-        if (current.status !== "ready") return current;
-        return {
-          status: "ready",
-          snapshot: {
-            ...current.snapshot,
-            todos: current.snapshot.todos.map((todo) =>
-              todo.id === updatedTodo.id ? updatedTodo : todo,
-            ),
-          },
-        };
-      });
+      if (isDone) {
+        await updateTodoLifecycle(todoID, preferences.removeAction === "archive" ? "archived" : "trashed");
+      } else {
+        await updateTodoCompletion(todoID, false);
+      }
+      setRetryKey((value) => value + 1);
     } catch (error) {
       setMutationError(
         error instanceof Error ? error.message : "The toDō could not be updated. Try again.",
@@ -84,6 +89,26 @@ export function ToDoWorkspace({
       setUpdatingTodoID(null);
     }
   }
+
+  useEffect(() => {
+    const handlePreferencesChange = () => {
+      const next = readStoredWebPreferences();
+      setPreferences(next);
+      setSort(initialSort === "position" ? next.sort : initialSort);
+      setGroup(next.group);
+    };
+    handlePreferencesChange();
+    window.addEventListener("storage", handlePreferencesChange);
+    window.addEventListener(webPreferencesChangedEvent, handlePreferencesChange);
+    return () => {
+      window.removeEventListener("storage", handlePreferencesChange);
+      window.removeEventListener(webPreferencesChangedEvent, handlePreferencesChange);
+    };
+  }, [initialSort]);
+
+  useEffect(() => {
+    return subscribeToWebRefresh(() => setRetryKey((value) => value + 1));
+  }, []);
 
   function handleTodoCreated(result: TodoSaveResult) {
     setDataState((current) => {
@@ -135,7 +160,7 @@ export function ToDoWorkspace({
     return () => {
       isCurrent = false;
     };
-  }, [authLoading, isConfigured, isResolved, retryKey, user]);
+  }, [authLoading, isConfigured, isResolved, retryKey, session?.access_token, user]);
 
   if (!isConfigured) {
     return (
@@ -212,8 +237,8 @@ export function ToDoWorkspace({
         <StateCard eyebrow="Sync" title="Your toDōs could not be loaded" tone="error">
           <p>{dataState.message}</p>
           <p>
-            The Web client only reads records allowed by Supabase RLS. No changes
-            were attempted.
+            The Web client could not complete this remote read. No local
+            success state was shown, and no mutation was attempted.
           </p>
           <button
             className="primary-button"
@@ -235,9 +260,20 @@ export function ToDoWorkspace({
       filter={filter}
       onFilter={setFilter}
       sort={sort}
-      onSort={setSort}
+      onSort={(value) => {
+        setSort(value);
+        const next = { ...preferences, sort: value };
+        setPreferences(next);
+        saveStoredWebPreferences(next);
+      }}
       group={group}
-      onGroup={setGroup}
+      onGroup={(value) => {
+        setGroup(value);
+        const next = { ...preferences, group: value };
+        setPreferences(next);
+        saveStoredWebPreferences(next);
+      }}
+      sortReversed={preferences.sortReversed}
       updatingTodoID={updatingTodoID}
       mutationError={mutationError}
       onCompletionChange={handleCompletionChange}
@@ -255,6 +291,7 @@ function ReadyWorkspace({
   sort,
   onSort,
   group,
+  sortReversed,
   onGroup,
   updatingTodoID,
   mutationError,
@@ -269,6 +306,7 @@ function ReadyWorkspace({
   sort: Sort;
   onSort: (value: Sort) => void;
   group: Group;
+  sortReversed: boolean;
   onGroup: (value: Group) => void;
   updatingTodoID: string | null;
   mutationError: string | null;
@@ -290,8 +328,11 @@ function ReadyWorkspace({
       todos
         .filter((todo) => matchesSearch(todo, search))
         .filter((todo) => matchesFilter(todo, filter))
-        .sort((left, right) => compareTodos(left, right, sort)),
-    [filter, search, sort, todos],
+        .sort((left, right) => {
+          const comparison = compareTodos(left, right, sort);
+          return sortReversed ? -comparison : comparison;
+        }),
+    [filter, search, sort, sortReversed, todos],
   );
   const groups = useMemo(
     () => groupTodos(visibleTodos, group),

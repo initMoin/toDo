@@ -11,6 +11,8 @@ export type IconName =
   | "bell"
   | "bolt"
   | "calendar"
+  | "chevron-down"
+  | "chevron-up"
   | "check"
   | "clock"
   | "close"
@@ -22,6 +24,8 @@ export type IconName =
   | "google"
   | "group"
   | "home"
+  | "key"
+  | "lock"
   | "location"
   | "mail"
   | "moon"
@@ -30,6 +34,7 @@ export type IconName =
   | "repeat"
   | "reset"
   | "search"
+  | "shield"
   | "speaker"
   | "sparkles"
   | "sun"
@@ -51,6 +56,8 @@ const paths: Record<IconName, ReactNode> = {
   bell: <path d="M6 10a6 6 0 0 1 12 0c0 6 2 6 2 8H4c0-2 2-2 2-8Zm4 11h4" />,
   bolt: <path d="m13.2 2.8-8 11h6.1l-.5 8.4 8-11h-6.1l.5-8.4Z" />,
   calendar: <path d="M6 3v3m12-3v3M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z" />,
+  "chevron-down": <path d="m6 9 6 6 6-6" />,
+  "chevron-up": <path d="m6 15 6-6 6 6" />,
   check: <path d="m5 12 4.5 4.5L19 7" />,
   clock: <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-14v5l3.5 2" />,
   close: <path d="m6 6 12 12M18 6 6 18" />,
@@ -62,6 +69,8 @@ const paths: Record<IconName, ReactNode> = {
   google: <><path d="M20 12a8 8 0 1 1-2.3-5.7" /><path d="M20 12h-7" /></>,
   group: <path d="M8 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8-1a2.5 2.5 0 1 0 0-5m-12 12a4 4 0 0 1 8 0m2 0a4 4 0 0 1 6 0" />,
   home: <path d="m3 10 9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1v-9Z" />,
+  key: <path d="M14 10a4 4 0 1 0-7.7 1.7L3 15v3h3v-2h2v-2h2.3A4 4 0 0 0 14 10Zm0 0h7m-3 0v3m-3-3v2" />,
+  lock: <path d="M6 10h12v10H6V10Zm3 0V7a3 3 0 0 1 6 0v3" />,
   location: <path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Zm-5 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />,
   mail: <path d="M4 6h16v12H4V6Zm0 1 8 6 8-6" />,
   moon: <path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z" />,
@@ -70,6 +79,7 @@ const paths: Record<IconName, ReactNode> = {
   repeat: <path d="M17 2.5 20.5 6 17 9.5M4 6h16m-9 15.5L7.5 18 11 14.5M20 18H4" />,
   reset: <path d="M4 9a8 8 0 1 1 1.6 7.2M4 4v5h5" />,
   search: <path d="m20 20-4.5-4.5m2-4.5a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0Z" />,
+  shield: <path d="M12 3 20 6v6c0 4.6-3.1 7.7-8 9-4.9-1.3-8-4.4-8-9V6l8-3Zm-3 9 2 2 4-5" />,
   speaker: <path d="M4 10h4l5-4v12l-5-4H4v-4Zm12-2a5 5 0 0 1 0 8m2-10a8 8 0 0 1 0 12" />,
   sparkles: <path d="m12 3 1.2 4.8L18 9l-4.8 1.2L12 15l-1.2-4.8L6 9l4.8-1.2L12 3ZM19 15l.6 2.4L22 18l-2.4.6L19 21l-.6-2.4L16 18l2.4-.6L19 15Z" />,
   sun: <path d="M12 3v2m0 14v2M3 12h2m14 0h2M5.6 5.6 7 7m10 10 1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4M16 12a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z" />,

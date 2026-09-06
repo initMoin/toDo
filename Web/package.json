@@ -9,11 +9,14 @@
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
-    "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm run build && node --experimental-strip-types --test tests/rendered-html.test.mjs tests/auth-assurance.test.ts",
+    "test:browser": "playwright test",
+    "test:browser:authenticated": "node --env-file-if-exists=.env.e2e node_modules/@playwright/test/cli.js test tests/browser/authenticated-contract.spec.ts",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
+    "@supabase/supabase-js": "^2.112.4",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
@@ -21,6 +24,7 @@
     "@cloudflare/vite-plugin": "1.37.1",
     "@eslint/js": "9.39.4",
     "@next/eslint-plugin-next": "16.2.6",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "4.2.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",

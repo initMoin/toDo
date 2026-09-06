@@ -1,10 +1,11 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Icon } from "@/components/Icon";
 import { AccountSetupCard } from "@/features/auth/AccountSetupCard";
 import { ProviderMethodsCard } from "@/features/auth/ProviderMethodsCard";
+import { AccountSecurityCard } from "@/features/auth/AccountSecurityCard";
 import { SignInCard } from "@/features/auth/SignInCard";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { createCollab, loadCollabs } from "@/features/todos/data";
@@ -48,6 +49,8 @@ export function AccountView({ fromSettings = false }: { fromSettings?: boolean }
         <ProviderMethodsCard
           connectedProviders={new Set((user.identities ?? []).map((identity) => identity.provider))}
         />
+
+        <AccountSecurityCard />
 
         <CollabsSection userID={user.id} />
 

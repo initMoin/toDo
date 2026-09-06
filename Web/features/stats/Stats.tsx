@@ -16,17 +16,21 @@ import {
   loadRemoteSnapshot,
 } from "@/features/todos/data";
 import type { RemoteSnapshot, Todo } from "@/lib/types";
+import { subscribeToWebRefresh } from "@/lib/webRefresh";
 
 type StatsState =
-  | { status: "idle" | "loading" }
+  | { status: "idle" }
+  | { status: "loading" }
   | { status: "blocked" }
   | { status: "ready"; snapshot: RemoteSnapshot }
   | { status: "error"; message: string };
 
 export function Stats() {
-  const { user, isLoading: authLoading, isConfigured, isResolved } = useAuth();
+  const { user, session, isLoading: authLoading, isConfigured, isResolved } = useAuth();
   const [state, setState] = useState<StatsState>({ status: "idle" });
   const [retryKey, setRetryKey] = useState(0);
+
+  useEffect(() => subscribeToWebRefresh(() => setRetryKey((value) => value + 1)), []);
 
   useEffect(() => {
     let isCurrent = true;
@@ -59,7 +63,7 @@ export function Stats() {
     return () => {
       isCurrent = false;
     };
-  }, [authLoading, isConfigured, isResolved, retryKey, user]);
+  }, [authLoading, isConfigured, isResolved, retryKey, session?.access_token, user]);
 
   if (!isConfigured) {
     return <div className="state-layout"><StateCard eyebrow="Local setup" title="Connect Supabase to open Stats"><p>Add the browser-safe Supabase values to <code>Web/.env.local</code> and restart the local server.</p></StateCard></div>;

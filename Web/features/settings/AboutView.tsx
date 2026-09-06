@@ -1,14 +1,7 @@
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/Link";
 import { Icon } from "@/components/Icon";
-
-const releasePreview = [
-  "Added toDō+ membership and expanded personal Collab options.",
-  "Added custom reminder sounds and improved completion feedback.",
-  "Improved voice entry, NanoDo reminders, onboarding, and accessibility.",
-  "Unified the experience across iPhone, iPad, Apple Watch, and Mac.",
-  "And much more, shaped around the way you work.",
-];
+import { webReleasePreview } from "@/lib/webReleaseData";
 
 export function AboutView() {
   return (
@@ -32,7 +25,7 @@ export function AboutView() {
             <span>3.1</span>
           </div>
           <ul>
-            {releasePreview.map((note, index) => (
+            {webReleasePreview.map((note, index) => (
               <li className={index < 2 ? "about-release-highlight" : undefined} key={note}>
                 <span aria-hidden="true" />
                 <span>{note}</span>

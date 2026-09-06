@@ -1,5 +1,6 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
+import { sites } from "./build/sites-vite-plugin";
 
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
@@ -15,6 +16,12 @@ const localBindingConfig = {
   ],
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  assets: {
+    binding: "ASSETS",
+    // The AASA file is extensionless, so its asset MIME type must be corrected
+    // by the Worker before Cloudflare returns this one response.
+    run_worker_first: ["/.well-known/apple-app-site-association"],
+  },
 };
 
 export default defineConfig(async () => {
@@ -36,8 +43,10 @@ export default defineConfig(async () => {
     },
     plugins: [
       vinext(),
+      sites(),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+        inspectorPort: false,
         config: localBindingConfig,
       }),
     ],

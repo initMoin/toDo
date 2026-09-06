@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import Link from "next/link";
+import Link from "@/components/Link";
 
 export function LegalShell({
   eyebrow,
@@ -18,7 +18,7 @@ export function LegalShell({
       <article className="legal-card">
         <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
-        <p className="legal-updated">Last updated August 9, 2026 · Review before public launch</p>
+        <p className="legal-updated">Draft for internal review · Last reviewed August 19, 2026</p>
         <div className="legal-copy">{children}</div>
       </article>
     </main>

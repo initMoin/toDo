@@ -17,14 +17,5 @@ export function NewTodoComposer({
   onCreated: (result: TodoSaveResult) => void;
   onCancel: () => void;
 }) {
-  return (
-    <TodoEditor
-      userID={userID}
-      mode="create"
-      collabs={collabs}
-      existingTags={existingTags}
-      onSaved={(result) => onCreated(result)}
-      onCancel={onCancel}
-    />
-  );
+  return <TodoEditor userID={userID} mode="create" collabs={collabs} existingTags={existingTags} onSaved={(result) => onCreated(result)} onCancel={onCancel} />;
 }

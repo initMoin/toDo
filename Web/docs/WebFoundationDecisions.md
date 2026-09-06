@@ -1,27 +1,27 @@
 # toDō Web foundation decisions
 
-This document records the decisions for the first Web implementation slice. The supplied toDō Web Product, Design & Engineering Specification is the product and UX source of truth, with the Apple application used as the established behavior and terminology reference. The standard is: **Familiar to a toDō user. Native to the platform.**
+This document records the decisions for the first Web implementation slice. The product and UX source of truth is [`toDo_on_Web_Product_Design_Engineering_Spec.md`](/Users/shift/Downloads/toDo_on_Web_Product_Design_Engineering_Spec.md), with the Apple application used as the established behavior and terminology reference. The standard is: **Familiar to a toDō user. Native to the platform.**
 
 ## Product translation
 
 The Web keeps the Apple mental model: Home orientation, a focused list of active toDōs, compact metadata, a clear completion control, and a detail view that exposes notes, due information, tags, and NanoDos. The Web does not imitate SwiftUI sheets, swipe gestures, Dynamic Island surfaces, or other Apple-only controls.
 
-| Apple behavior | Web equivalent | First-slice status |
+| Apple behavior | Web equivalent | Current status |
 | --- | --- | --- |
 | Tap a row to open its detail surface | Semantic link to `/todos/:id`, with browser Back/Forward support | Included as the route boundary |
-| Leading/trailing swipe actions | Explicit row actions and an accessible action menu | Deferred until broader lifecycle mutations |
-| Long press/context menu | Native pointer/keyboard menu or labeled action menu | Deferred until task mutations begin |
+| Leading/trailing swipe actions | Explicit row/detail actions with accessible labels | Included through browser-native controls |
+| Long press/context menu | Browser-native pointer/keyboard actions where useful | Not required for the current Web contract |
 | Sheet presentation | Responsive detail route; side-by-side detail is a later desktop enhancement | Included as a route boundary |
 | NavigationStack | App Router routes and ordinary browser history | Included |
 | Guided first capture | Browser route continuation from capture → detail → Settings, with a resumable local step | Included for first capture |
 | Utility tray | Search, filter, ordering, grouping, and reset controls in a compact semantic tray | Included |
-| Stats reflection | Read-only `/stats` route with current workload metrics | Included as a first read-only slice |
-| Account/settings access | Apple-shaped `/account` surface for identity, sign-in methods, Collabs, sync choice, and account actions; `/settings` remains the app-preferences surface | Included |
+| Stats reflection | `/stats` route with current workload metrics | Included |
+| Account/settings access | Apple-shaped `/account` surface for identity, sign-in methods, Collabs, and account actions; `/settings` owns sync and app preferences | Included |
 | Apple-only widgets, Live Activities, Watch surfaces | No Web analogue in this slice | Excluded |
 
 ## Framework and structure
 
-The existing Vinext/React/TypeScript project is retained because it already produces a Cloudflare-compatible Worker bundle and keeps the `Web/` package boundary small. The product code is being split into feature and service modules rather than continuing the previous monolithic demo page.
+The existing Vinext/React/TypeScript project is retained because it already produces the Cloudflare-compatible Sites output and keeps the eventual `web/` package boundary small. The product code is being split into feature and service modules rather than continuing the previous monolithic demo page.
 
 The shared visual source of truth is [`toDo-Brand-UI-UX-Principles.md`](../../Docs/toDo-Brand-UI-UX-Principles.md). Web adopts its semantic color roles, typography roles, spacing and shape guidance, accessibility requirements, and native-platform translation rules. The initial Web theme implementation is classic light/dark in that order; additional named Apple themes remain a later shared-token decision.
 
@@ -34,7 +34,7 @@ The first structure is:
 - `features/todos/`: ToDo data loading, list presentation, and detail presentation
 - `lib/`: browser-safe Supabase client and shared data types
 
-The route contract is `/` for Home, `/todos` for the operational ToDosView, `/todos/:id` for browser-native detail navigation, `/stats` for read-only reflection, `/account` for the Apple-shaped account flow, and `/settings` for app preferences. Home uses the document's “What matters now?” hierarchy and first-capture flow; full editing, notifications, and Collab member/invitation management remain later slices.
+The route contract is `/` for Home, `/todos` for the operational ToDosView, `/todos/:id` for browser-native detail navigation, `/stats` for reflection, `/account` for the Apple-shaped account flow, and `/settings` for app preferences. Home uses the document's “What matters now?” hierarchy and first-capture flow. Full editing, lifecycle controls, Tags, NanoDos, basic Collabs, Web Push registration controls, and private calendar-feed controls are now implemented. Full Collab membership administration remains deferred.
 
 ## Brand and typography boundary
 
@@ -44,7 +44,39 @@ No component library is introduced. Tokens and visual primitives are local CSS, 
 
 ## Authentication and entitlement boundary
 
-The browser uses only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`. Apple and Google are started with Supabase OAuth and return to the current Web origin. They remain separate authentication proofs until a resolved account explicitly connects the second provider; the Web client never links identities by username or email and never transfers data between UUIDs. The UI uses the required public username rather than a full name.
+The browser uses only `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+The Web account flow is username-first, but the username is a public locator,
+not proof of ownership. A private email address is verified with a short-lived
+code during account setup or recovery. A passkey is the preferred returning
+sign-in, a password is an optional fallback, and Apple/Google are optional
+backup identities that must be explicitly connected to the same canonical
+Supabase account UUID.
+
+The Web client never links identities by matching usernames, email addresses,
+or provider metadata, and never transfers data between UUIDs. Provider linking
+starts from an authenticated account and must verify that the canonical UUID
+does not change. TOTP is the preferred additional factor; SMS is an optional
+fallback. Email codes verify the private email or support recovery, but are not
+treated as the strongest MFA factor. The UI uses the required public username
+rather than a full name.
+
+### Browser credential and state storage
+
+- Supabase owns passwords, verified-email state, provider identities, passkeys,
+  and MFA factors server-side. Passwords, passkey private keys, TOTP secrets,
+  and SMS secrets never enter browser application storage.
+- Supabase's browser client may persist the authenticated session so a user can
+  return without repeating sign-in. Sign-out must clear that session.
+- Username, email-setup intent, and the current verification-step state may be
+  held briefly in memory or `sessionStorage`; they must be cleared after
+  success, cancellation, sign-out, timeout, or account switch.
+- Email OTPs must remain in transient input state only and must never be saved
+  to `localStorage`, IndexedDB, analytics, URLs, logs, or query strings.
+- Passkeys are created and stored by the browser/operating-system authenticator
+  (including Apple Passwords or Google Password Manager). Web does not store or
+  export the private key.
+- The Web client stores only factor/provider status for presentation. Secret
+  material and verification decisions remain in Supabase Auth.
 
 The Web reads `current_account_entitlements`, not the underlying commerce table, and treats an active/grace `todo_plus` or `legacy_3_1` entitlement as full access. Expired/revoked read-only access is not enough for this gated app. Entitlement state is a capability check, not a visual-only gate.
 
@@ -58,19 +90,19 @@ Authenticated reads and the first safe task mutations use the existing tables an
 - `nanodos`: NanoDos attached to accessible toDōs
 - `tags` and `todo_tags`: accessible tag metadata and relationships
 
-The Web client can create a personal active toDō and can complete/reopen an accessible toDō. These operations are server-confirmed through the existing `todos_insert_accessible` and `todos_update_accessible` policies; no service-role credential or new backend contract is introduced.
+The Web client can create and edit accessible personal or Collab toDōs, update completion/lifecycle state, maintain Tags and NanoDos, create basic Collabs, and perform the account data controls exposed in Settings. These operations are server-confirmed through the existing authenticated policies; no service-role credential is introduced in browser code. The production-equivalent RLS matrix remains a release gate.
 
 The current migration chain enables RLS and grants authenticated select access through policies that call the existing access functions. The Web client therefore performs ordinary Supabase reads with the user's session and never uses a service-role key or a server-side credential in browser code.
 
-No backend migration is required for the current create/complete slice. Before adding full editing, archive/trash, bulk actions, or conflict resolution, we must test the live project's applied migration state and confirm the corresponding policies and conflict behavior. That later work may require a backend contract discussion before it affects Apple or Android.
+The Web Push and calendar integration migration is part of the current backend contract. Before public release, verify the live project's applied migration state and the corresponding RLS, Edge Function, webhook, and token behavior. Full Collab membership administration and conflict-resolution semantics are outside the frozen Web 3.1 contract and require a separate product/backend decision before they affect Apple or Android.
 
 ## Rendering and hydration
 
 The authenticated surface is client-owned because the Supabase session and browser OAuth callback are client state. Server-rendered output is limited to stable shell text and metadata. Dates are formatted only after data is loaded in the browser with an explicit locale/time-zone policy; no current date or locale-dependent value is rendered as a server/client comparison point.
 
-## Sync posture for the first slice
+## Sync posture
 
-The current slice uses confirmed remote retrieval plus confirmed create/complete mutations with explicit loading, empty, error, unauthenticated, entitlement, and configuration states. The UI labels the current state as `Synced` after confirmed retrieval/mutation; it does not claim realtime delivery. It does not claim offline-first behavior, optimistic mutation success, browser push delivery, or realtime conflict resolution. Those will be added only with tests for rollback, stale data, concurrent edits, reconnect, and deletion/completion conflicts.
+The current Web uses confirmed remote retrieval and confirmed mutations with explicit loading, empty, error, unauthenticated, entitlement, and configuration states. The UI labels the current state as `Synced` after confirmed retrieval/mutation; it does not claim realtime delivery. Web Push registration and calendar-feed controls exist, but production delivery and feed compatibility still need verification. The client does not claim offline-first behavior or automatic conflict resolution. Successful lifecycle mutations trigger a fresh remote snapshot, and active views refetch on browser focus, reconnect, page restore, visibility return, and access-token refresh. Detail saves surface a partial-save state rather than silently presenting an optimistic success.
 
 ## Cross-platform impact
 

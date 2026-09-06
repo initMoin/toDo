@@ -1,6 +1,7 @@
 "use client";
 
 import type { CSSProperties } from "react";
+import Image from "next/image";
 
 export function ProfileAvatar({
   username,
@@ -24,9 +25,12 @@ export function ProfileAvatar({
       aria-label={`Profile image for @${username}`}
     >
       {safeURL ? (
-        <img
+        <Image
           src={safeURL}
           alt=""
+          width={size}
+          height={size}
+          unoptimized
           aria-hidden="true"
           referrerPolicy="no-referrer"
           onError={(event) => {

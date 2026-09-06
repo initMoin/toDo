@@ -17,6 +17,10 @@ import {
   type WebProvider,
   type WebSession,
 } from "@/lib/supabase";
+import {
+  isRecentVerification,
+  latestSecondFactorTimestamp,
+} from "@/lib/authAssurance";
 
 type AuthContextValue = {
   user: User | null;
@@ -24,6 +28,8 @@ type AuthContextValue = {
   profileUsername: string | null;
   profileAvatarURL: string | null;
   accountSetupVersion: number | null;
+  mfaFactors: WebMFAFactor[];
+  mfaAssuranceLevel: "aal1" | "aal2" | null;
   resolutionState: AccountResolutionState;
   isResolved: boolean;
   isLoading: boolean;
@@ -34,6 +40,29 @@ type AuthContextValue = {
     intent: AccountAuthenticationIntent,
     expectedUsername: string,
   ) => Promise<void>;
+  requestEmailCode: (
+    intent: "createAccount" | "signIn",
+    expectedUsername: string,
+    email: string,
+  ) => Promise<boolean>;
+  verifyEmailCode: (
+    intent: "createAccount" | "signIn",
+    expectedUsername: string,
+    email: string,
+    code: string,
+  ) => Promise<boolean>;
+  signInWithPassword: (
+    expectedUsername: string,
+    email: string,
+    password: string,
+  ) => Promise<boolean>;
+  setPassword: (password: string, nonce?: string) => Promise<PasswordUpdateResult>;
+  signInWithPasskey: (expectedUsername: string) => Promise<boolean>;
+  registerPasskey: () => Promise<boolean>;
+  enrollTOTP: () => Promise<WebTOTPEnrollment | null>;
+  verifyMFA: (factorID: string, code: string) => Promise<boolean>;
+  unenrollMFA: (factorID: string) => Promise<boolean>;
+  requireAAL2: (action: string, requireEnrollment?: boolean) => Promise<boolean>;
   completeAccountSetup: (username: string) => Promise<boolean>;
   continueWithAuthenticatedAccount: () => Promise<boolean>;
   saveProfileImage: (image: Blob) => Promise<boolean>;
@@ -47,8 +76,24 @@ export type AccountResolutionState =
   | "resolving"
   | "needsUsername"
   | "migrationRequired"
+  | "mfaRequired"
   | "accountMismatch"
   | "resolved";
+
+export type WebMFAFactor = {
+  id: string;
+  friendlyName: string | null;
+  status: "verified";
+};
+
+export type WebTOTPEnrollment = {
+  factorID: string;
+  secret: string;
+  qrCode: string;
+  uri: string;
+};
+
+export type PasswordUpdateResult = "saved" | "verificationRequired" | "failed";
 
 type ProfileResolutionRecord = {
   id: string;
@@ -66,11 +111,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<WebSession | null>(null);
   const [profile, setProfile] = useState<ProfileResolutionRecord | null>(null);
   const [resolutionState, setResolutionState] = useState<AccountResolutionState>("signedOut");
+  const [mfaFactors, setMfaFactors] = useState<WebMFAFactor[]>([]);
+  const [mfaAssuranceLevel, setMfaAssuranceLevel] = useState<"aal1" | "aal2" | null>(null);
   const [isLoading, setIsLoading] = useState(Boolean(supabase));
   const [error, setError] = useState<string | null>(null);
   const pendingIntent = useRef<AccountAuthenticationIntent>("restoreSession");
   const pendingExpectedUsername = useRef<string | null>(null);
   const pendingLinkAccountID = useRef<string | null>(null);
+  const resolutionRequestID = useRef(0);
+
+  const refreshMFAState = useCallback(async () => {
+    if (!supabase) {
+      return { factors: [] as WebMFAFactor[], currentLevel: null, nextLevel: null, verifiedAt: null };
+    }
+
+    const [factorResult, assuranceResult] = await Promise.all([
+      withTimeout(
+        supabase.auth.mfa.listFactors(),
+        "Your authentication factors could not be loaded in time.",
+      ),
+      withTimeout(
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+        "Your authentication level could not be checked in time.",
+      ),
+    ]);
+    if (factorResult.error) throw factorResult.error;
+    if (assuranceResult.error) throw assuranceResult.error;
+
+    const factors = factorResult.data.totp.map((factor) => ({
+      id: factor.id,
+      friendlyName: factor.friendly_name ?? null,
+      status: "verified" as const,
+    }));
+    const currentLevel = assuranceResult.data.currentLevel === "aal2" ? "aal2" : "aal1";
+    const nextLevel = assuranceResult.data.nextLevel === "aal2" ? "aal2" : "aal1";
+    const verifiedAt = latestSecondFactorTimestamp(
+      assuranceResult.data.currentAuthenticationMethods,
+    );
+    setMfaFactors(factors);
+    setMfaAssuranceLevel(currentLevel);
+    return { factors, currentLevel, nextLevel, verifiedAt };
+  }, []);
 
   const resolveSession = useCallback(
     async (
@@ -78,8 +159,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       intent: AccountAuthenticationIntent = "restoreSession",
       expectedUsername: string | null = null,
     ) => {
+      const requestID = ++resolutionRequestID.current;
       if (!nextSession || !supabase) {
         setProfile(null);
+        setMfaFactors([]);
+        setMfaAssuranceLevel(null);
         setResolutionState("signedOut");
         setIsLoading(false);
         return;
@@ -109,6 +193,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setResolutionState("resolving");
       setProfile(null);
 
+      try {
+        const mfaState = await refreshMFAState();
+        if (requestID !== resolutionRequestID.current) return;
+        if (
+          mfaState.factors.length > 0 &&
+          mfaState.currentLevel !== "aal2" &&
+          mfaState.nextLevel === "aal2"
+        ) {
+          setResolutionState("mfaRequired");
+          setError(null);
+          setIsLoading(false);
+          return;
+        }
+      } catch (mfaError) {
+        if (requestID !== resolutionRequestID.current) return;
+        setResolutionState("mfaRequired");
+        setError(getErrorMessage(mfaError, "Your account security could not be checked."));
+        setIsLoading(false);
+        return;
+      }
+
       let profileResult: {
         data: ProfileResolutionRecord | null;
         error: { message: string } | null;
@@ -130,6 +235,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data, error: profileError } = profileResult;
 
+      if (requestID !== resolutionRequestID.current) return;
+
       if (profileError) {
         setResolutionState("needsUsername");
         setError(profileError.message);
@@ -139,21 +246,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       let resolvedProfile = data;
       if ((!resolvedProfile || !resolvedProfile.username) && intent === "createAccount" && expectedUsername) {
-        const { error: claimError } = await supabase.rpc("claim_account_username", {
-          requested_username: expectedUsername,
-        });
-        if (!claimError) {
-          const refreshed = await supabase
-            .from("profiles")
-            .select("id, username, avatar_url, account_setup_version")
-            .eq("id", nextSession.user.id)
-            .maybeSingle<ProfileResolutionRecord>();
-          resolvedProfile = refreshed.data;
-          if (refreshed.error) setError(refreshed.error.message);
-        } else {
-          setError(claimError.message);
+        try {
+          const { error: claimError } = await withTimeout(
+            supabase.rpc("claim_account_username", {
+              requested_username: expectedUsername,
+            }),
+            "Your username could not be claimed in time.",
+          );
+          if (!claimError) {
+            const refreshed = await withTimeout(
+              supabase
+                .from("profiles")
+                .select("id, username, avatar_url, account_setup_version")
+                .eq("id", nextSession.user.id)
+                .maybeSingle<ProfileResolutionRecord>(),
+              "Your toDō profile could not be refreshed in time.",
+            );
+            if (requestID !== resolutionRequestID.current) return;
+            resolvedProfile = refreshed.data;
+            if (refreshed.error) setError(refreshed.error.message);
+          } else {
+            setError(claimError.message);
+          }
+        } catch (claimError) {
+          if (requestID !== resolutionRequestID.current) return;
+          setError(getErrorMessage(claimError, "Your username could not be claimed."));
         }
       }
+
+      if (requestID !== resolutionRequestID.current) return;
 
       if (!resolvedProfile?.username) {
         setResolutionState("needsUsername");
@@ -176,7 +297,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         normalizedExpected !== normalizedActual &&
         (intent === "signIn" || intent === "createAccount")
       ) {
+        clearPendingAuthentication();
+        pendingIntent.current = "restoreSession";
+        pendingExpectedUsername.current = null;
         setResolutionState("accountMismatch");
+        setError("This provider is connected to a different toDō username. Nothing was linked or moved.");
         setIsLoading(false);
         return;
       }
@@ -188,7 +313,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       pendingExpectedUsername.current = null;
       setIsLoading(false);
     },
-    [],
+    [refreshMFAState],
   );
 
   useEffect(() => {
@@ -210,9 +335,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearPendingAuthentication();
     }
 
-    let hasInitialSession = false;
+    let initialSessionSettled = false;
     const initializationTimeout = setTimeout(() => {
-      if (!isMounted || hasInitialSession) return;
+      if (!isMounted || initialSessionSettled) return;
       setSession(null);
       setProfile(null);
       setResolutionState("signedOut");
@@ -225,59 +350,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = authClient.auth.onAuthStateChange((event, nextSession) => {
       if (!isMounted) return;
       if (event === "INITIAL_SESSION") {
-        hasInitialSession = true;
-        clearTimeout(initializationTimeout);
+        // The initial read below is the single source of truth for the first
+        // render. Supabase can emit INITIAL_SESSION before or after this
+        // subscriber is attached, so resolving it here would race getSession.
+        return;
       }
       setSession(nextSession);
       if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
         setError(null);
       }
-      // Supabase invokes this callback from its auth lock. Resolve outside the
-      // callback so the profile query cannot deadlock a later auth operation.
-      void Promise.resolve().then(() =>
-        resolveSession(
-          nextSession,
-          pendingIntent.current,
-          pendingExpectedUsername.current,
-        ),
-      );
+      if (event === "SIGNED_OUT") {
+        void resolveSession(null);
+        return;
+      }
+      if (event === "SIGNED_IN" || event === "USER_UPDATED" || event === "MFA_CHALLENGE_VERIFIED") {
+        // Supabase invokes this callback from its auth lock. Resolve outside
+        // the callback so the profile query cannot deadlock a later operation.
+        void Promise.resolve().then(() =>
+          resolveSession(
+            nextSession,
+            pendingIntent.current,
+            pendingExpectedUsername.current,
+          ),
+        );
+      }
     });
 
-    // The auth client initializes as soon as it is created. Calling initialize
-    // again here is safe and gives us the callback error/session result even
-    // when the initial auth event was emitted before this component subscribed.
-    void authClient.auth.initialize().then(({ error: initializationError }) => {
+    void authClient.auth.getSession().then(({ data, error: sessionError }) => {
       if (!isMounted) return;
-      if (callbackError || initializationError) {
+      initialSessionSettled = true;
+      clearTimeout(initializationTimeout);
+      if (callbackError) {
         setSession(null);
         setProfile(null);
         setResolutionState("signedOut");
-        setError(
-          callbackError
-            ?? `Sign-in could not be completed: ${initializationError.message}`,
-        );
+        setError(callbackError);
         setIsLoading(false);
         return;
       }
-
-      void authClient.auth.getSession().then(({ data, error: sessionError }) => {
-        if (!isMounted) return;
-        if (sessionError) {
-          setError(`Sign-in session could not be restored: ${sessionError.message}`);
-          setIsLoading(false);
-          return;
-        }
-        if (!data.session) return;
-        setSession(data.session);
-        void resolveSession(
-          data.session,
-          pendingIntent.current,
-          pendingExpectedUsername.current,
-        );
-      });
-    }).catch((initializationError: unknown) => {
+      if (sessionError) {
+        setSession(null);
+        setProfile(null);
+        setResolutionState("signedOut");
+        setError(`Sign-in session could not be restored: ${sessionError.message}`);
+        setIsLoading(false);
+        return;
+      }
+      setSession(data.session);
+      void resolveSession(
+        data.session,
+        pendingIntent.current,
+        pendingExpectedUsername.current,
+      );
+    }).catch((sessionError: unknown) => {
       if (!isMounted) return;
-      setError(`Sign-in could not be completed: ${getErrorMessage(initializationError, "The callback could not be processed.")}`);
+      initialSessionSettled = true;
+      clearTimeout(initializationTimeout);
+      setError(`Sign-in session could not be restored: ${getErrorMessage(sessionError, "The session could not be read.")}`);
       setIsLoading(false);
     });
 
@@ -323,6 +452,338 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   }, []);
+
+  const requestEmailCode = useCallback(async (
+    intent: "createAccount" | "signIn",
+    expectedUsername: string,
+    email: string,
+  ) => {
+    if (!supabase) {
+      setError(supabaseConfigurationIssue);
+      return false;
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedUsername = normalizeUsername(expectedUsername);
+    if (!normalizedUsername) {
+      setError("Enter a valid username first.");
+      return false;
+    }
+    if (!normalizedEmail) {
+      setError("Enter a valid email address.");
+      return false;
+    }
+
+    pendingIntent.current = intent;
+    pendingExpectedUsername.current = normalizedUsername;
+    writePendingAuthentication(intent, normalizedUsername, normalizedEmail);
+    setError(null);
+    setIsLoading(true);
+
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      email: normalizedEmail,
+      options: {
+        shouldCreateUser: intent === "createAccount",
+        emailRedirectTo:
+          typeof window === "undefined"
+            ? undefined
+            : `${window.location.origin}/`,
+      },
+    });
+
+    if (otpError) {
+      setError(otpError.message);
+      setIsLoading(false);
+      return false;
+    }
+
+    setIsLoading(false);
+    return true;
+  }, []);
+
+  const verifyEmailCode = useCallback(async (
+    intent: "createAccount" | "signIn",
+    expectedUsername: string,
+    email: string,
+    code: string,
+  ) => {
+    if (!supabase) {
+      setError(supabaseConfigurationIssue);
+      return false;
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedUsername = normalizeUsername(expectedUsername);
+    const normalizedCode = code.trim();
+    if (!normalizedUsername || !normalizedEmail || !/^\d{6}$/.test(normalizedCode)) {
+      setError("Enter the six-digit code from your email.");
+      return false;
+    }
+
+    setError(null);
+    setIsLoading(true);
+    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      email: normalizedEmail,
+      token: normalizedCode,
+      type: "email",
+    });
+    if (verifyError || !data.session) {
+      setError(verifyError?.message ?? "That verification code could not be accepted.");
+      setIsLoading(false);
+      return false;
+    }
+
+    pendingIntent.current = intent;
+    pendingExpectedUsername.current = normalizedUsername;
+    setSession(data.session);
+    await resolveSession(data.session, intent, normalizedUsername);
+    return resolutionRequestID.current > 0 && resolutionState !== "accountMismatch";
+  }, [resolutionState, resolveSession]);
+
+  const signInWithPassword = useCallback(async (
+    expectedUsername: string,
+    email: string,
+    password: string,
+  ) => {
+    if (!supabase) {
+      setError(supabaseConfigurationIssue);
+      return false;
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const normalizedUsername = normalizeUsername(expectedUsername);
+    if (!normalizedUsername || !normalizedEmail || !password) {
+      setError("Enter your username, email, and password.");
+      return false;
+    }
+
+    pendingIntent.current = "signIn";
+    pendingExpectedUsername.current = normalizedUsername;
+    writePendingAuthentication("signIn", normalizedUsername, normalizedEmail);
+    setError(null);
+    setIsLoading(true);
+    const { data, error: passwordError } = await supabase.auth.signInWithPassword({
+      email: normalizedEmail,
+      password,
+    });
+    if (passwordError || !data.session) {
+      setError(passwordError?.message ?? "That email or password could not be accepted.");
+      setIsLoading(false);
+      return false;
+    }
+
+    setSession(data.session);
+    await resolveSession(data.session, "signIn", normalizedUsername);
+    return true;
+  }, [resolveSession]);
+
+  const requireAAL2 = useCallback(async (
+    action: string,
+    requireEnrollment = false,
+  ) => {
+    if (!supabase || !session) {
+      setError("Sign in before continuing.");
+      return false;
+    }
+
+    setError(null);
+    setIsLoading(true);
+    try {
+      const mfaState = await refreshMFAState();
+      const hasRecentVerification =
+        mfaState.currentLevel === "aal2" &&
+        isRecentVerification(mfaState.verifiedAt, session.access_token);
+      if (hasRecentVerification) return true;
+      if (mfaState.factors.length === 0) {
+        if (requireEnrollment) {
+          setError(`Set up an authenticator app in Account before you ${action}.`);
+          return false;
+        }
+        return true;
+      }
+
+      setResolutionState("mfaRequired");
+      setError(`Verify your authenticator before you ${action}.`);
+      return false;
+    } catch (assuranceError) {
+      setError(getErrorMessage(assuranceError, "Your account security could not be checked."));
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [refreshMFAState, session]);
+
+  const setPassword = useCallback(async (
+    password: string,
+    nonce?: string,
+  ): Promise<PasswordUpdateResult> => {
+    if (!supabase || !session || resolutionState !== "resolved") {
+      setError("Finish account setup before adding a password.");
+      return "failed";
+    }
+    if (password.length < 8) {
+      setError("Use a password with at least 8 characters.");
+      return "failed";
+    }
+    const normalizedNonce = nonce?.trim() ?? "";
+    if (normalizedNonce && !/^\d{6}$/.test(normalizedNonce)) {
+      setError("Enter the six-digit verification code.");
+      return "failed";
+    }
+    if (!await requireAAL2("change your password")) return "failed";
+
+    setError(null);
+    setIsLoading(true);
+    try {
+      const { error: passwordError } = await supabase.auth.updateUser({
+        password,
+        ...(normalizedNonce ? { nonce: normalizedNonce } : {}),
+      });
+      if (!passwordError) return "saved";
+
+      if (!normalizedNonce && requiresPasswordReauthentication(passwordError)) {
+        const { error: reauthenticationError } = await supabase.auth.reauthenticate();
+        if (reauthenticationError) {
+          setError(reauthenticationError.message);
+          return "failed";
+        }
+        setError(null);
+        return "verificationRequired";
+      }
+
+      setError(passwordError.message);
+      return "failed";
+    } finally {
+      setIsLoading(false);
+    }
+  }, [requireAAL2, resolutionState, session]);
+
+  const signInWithPasskey = useCallback(async (expectedUsername: string) => {
+    if (!supabase) {
+      setError(supabaseConfigurationIssue);
+      return false;
+    }
+    const normalizedUsername = normalizeUsername(expectedUsername);
+    if (!normalizedUsername) {
+      setError("Enter a valid username first.");
+      return false;
+    }
+
+    setError(null);
+    setIsLoading(true);
+    const { data, error: passkeyError } = await supabase.auth.signInWithPasskey();
+    if (passkeyError || !data.session) {
+      setError(passkeyError?.message ?? "This passkey could not sign you in.");
+      setIsLoading(false);
+      return false;
+    }
+
+    pendingIntent.current = "signIn";
+    pendingExpectedUsername.current = normalizedUsername;
+    setSession(data.session);
+    await resolveSession(data.session, "signIn", normalizedUsername);
+    return true;
+  }, [resolveSession]);
+
+  const registerPasskey = useCallback(async () => {
+    if (!supabase || !session || resolutionState !== "resolved") {
+      setError("Finish account setup before adding a passkey.");
+      return false;
+    }
+    if (!await requireAAL2("change your passkeys")) return false;
+
+    setError(null);
+    setIsLoading(true);
+    const { error: passkeyError } = await supabase.auth.registerPasskey();
+    if (passkeyError) {
+      setError(passkeyError.message);
+      setIsLoading(false);
+      return false;
+    }
+    setIsLoading(false);
+    return true;
+  }, [requireAAL2, resolutionState, session]);
+
+  const enrollTOTP = useCallback(async (): Promise<WebTOTPEnrollment | null> => {
+    if (!supabase || !session || resolutionState !== "resolved") {
+      setError("Finish account setup before adding an authenticator app.");
+      return null;
+    }
+    if (!await requireAAL2("change multi-factor authentication")) return null;
+
+    setError(null);
+    setIsLoading(true);
+    try {
+      const { data, error: enrollmentError } = await supabase.auth.mfa.enroll({
+        factorType: "totp",
+        friendlyName: "toDō Web",
+        issuer: "toDō",
+      });
+      if (enrollmentError) throw enrollmentError;
+      return {
+        factorID: data.id,
+        secret: data.totp.secret,
+        qrCode: data.totp.qr_code,
+        uri: data.totp.uri,
+      };
+    } catch (enrollmentError) {
+      setError(getErrorMessage(enrollmentError, "Your authenticator app could not be set up."));
+      return null;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [requireAAL2, resolutionState, session]);
+
+  const verifyMFA = useCallback(async (factorID: string, code: string) => {
+    if (!supabase || !session || !factorID || !/^\d{6}$/.test(code.trim())) {
+      setError("Enter the six-digit code from your authenticator app.");
+      return false;
+    }
+
+    setError(null);
+    setIsLoading(true);
+    try {
+      const { error: verificationError } = await supabase.auth.mfa.challengeAndVerify({
+        factorId: factorID,
+        code: code.trim(),
+      });
+      if (verificationError) throw verificationError;
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !data.session) {
+        throw sessionError ?? new Error("The verified session could not be restored.");
+      }
+      setSession(data.session);
+      await resolveSession(
+        data.session,
+        pendingIntent.current,
+        pendingExpectedUsername.current,
+      );
+      return true;
+    } catch (verificationError) {
+      setError(getErrorMessage(verificationError, "That authenticator code could not be verified."));
+      setIsLoading(false);
+      return false;
+    }
+  }, [resolveSession, session]);
+
+  const unenrollMFA = useCallback(async (factorID: string) => {
+    if (!supabase || !session || resolutionState !== "resolved") return false;
+    if (!await requireAAL2("change multi-factor authentication")) return false;
+
+    setIsLoading(true);
+    try {
+      const { error: unenrollError } = await supabase.auth.mfa.unenroll({ factorId: factorID });
+      if (unenrollError) throw unenrollError;
+      await refreshMFAState();
+      setError(null);
+      return true;
+    } catch (unenrollError) {
+      setError(getErrorMessage(unenrollError, "The authenticator could not be removed."));
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [refreshMFAState, requireAAL2, resolutionState, session]);
 
   const completeAccountSetup = useCallback(async (username: string) => {
     if (!supabase || !session) return false;
@@ -403,6 +864,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setError("Resolve your toDō account before connecting another sign-in method.");
       return;
     }
+    if (!await requireAAL2("connect another sign-in method")) return;
 
     pendingLinkAccountID.current = session.user.id;
     if (typeof window !== "undefined") {
@@ -423,7 +885,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearPendingLinkAccount();
       setError(linkError.message);
     }
-  }, [resolutionState, session]);
+  }, [requireAAL2, resolutionState, session]);
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
@@ -435,6 +897,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     setProfile(null);
+    setMfaFactors([]);
+    setMfaAssuranceLevel(null);
     setResolutionState("signedOut");
     pendingIntent.current = "restoreSession";
     pendingExpectedUsername.current = null;
@@ -450,12 +914,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profileUsername: profile?.username ?? null,
       profileAvatarURL: profile?.avatar_url ?? null,
       accountSetupVersion: profile?.account_setup_version ?? null,
+      mfaFactors,
+      mfaAssuranceLevel,
       resolutionState,
       isResolved: resolutionState === "resolved",
       isLoading,
       isConfigured: Boolean(supabase),
       error: error ?? supabaseConfigurationIssue,
       signIn,
+      requestEmailCode,
+      verifyEmailCode,
+      signInWithPassword,
+      setPassword,
+      signInWithPasskey,
+      registerPasskey,
+      enrollTOTP,
+      verifyMFA,
+      unenrollMFA,
+      requireAAL2,
       completeAccountSetup,
       continueWithAuthenticatedAccount,
       saveProfileImage,
@@ -467,13 +943,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       connectProvider,
       continueWithAuthenticatedAccount,
       error,
+      enrollTOTP,
       isLoading,
+      mfaAssuranceLevel,
+      mfaFactors,
       profile,
       resolutionState,
       saveProfileImage,
       session,
       signIn,
+      requestEmailCode,
+      verifyEmailCode,
+      signInWithPassword,
+      setPassword,
+      signInWithPasskey,
+      registerPasskey,
+      requireAAL2,
       signOut,
+      unenrollMFA,
+      verifyMFA,
     ],
   );
 
@@ -487,9 +975,15 @@ function normalizeUsername(value: string | null | undefined): string | null {
   return normalized;
 }
 
+function normalizeEmail(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : null;
+}
+
 function readPendingAuthentication(): {
   intent: "signIn" | "createAccount";
   expectedUsername: string | null;
+  email: string | null;
 } | null {
   if (typeof window === "undefined") return null;
   try {
@@ -498,6 +992,7 @@ function readPendingAuthentication(): {
     const parsed = JSON.parse(value) as {
       intent?: unknown;
       expectedUsername?: unknown;
+      email?: unknown;
     };
     if (parsed.intent !== "signIn" && parsed.intent !== "createAccount") return null;
     return {
@@ -505,6 +1000,10 @@ function readPendingAuthentication(): {
       expectedUsername:
         typeof parsed.expectedUsername === "string"
           ? normalizeUsername(parsed.expectedUsername)
+          : null,
+      email:
+        typeof parsed.email === "string"
+          ? normalizeEmail(parsed.email)
           : null,
     };
   } catch {
@@ -515,12 +1014,13 @@ function readPendingAuthentication(): {
 function writePendingAuthentication(
   intent: AccountAuthenticationIntent,
   expectedUsername: string | null,
+  email: string | null = null,
 ) {
   if (typeof window === "undefined" || intent === "restoreSession") return;
   try {
     window.sessionStorage.setItem(
       pendingAuthenticationStorageKey,
-      JSON.stringify({ intent, expectedUsername }),
+      JSON.stringify({ intent, expectedUsername, email }),
     );
   } catch {
     // OAuth can still proceed when session storage is unavailable.
@@ -556,12 +1056,19 @@ function readAuthCallbackError() {
 }
 
 function withTimeout<T>(promise: PromiseLike<T>, message: string): Promise<T> {
-  return Promise.race([
-    Promise.resolve(promise),
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error(message)), AUTH_REQUEST_TIMEOUT_MS);
-    }),
-  ]);
+  return new Promise<T>((resolve, reject) => {
+    const timeoutID = setTimeout(() => reject(new Error(message)), AUTH_REQUEST_TIMEOUT_MS);
+    Promise.resolve(promise).then(
+      (value) => {
+        clearTimeout(timeoutID);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeoutID);
+        reject(error);
+      },
+    );
+  });
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -570,6 +1077,11 @@ function getErrorMessage(error: unknown, fallback: string) {
     return error.message;
   }
   return fallback;
+}
+
+function requiresPasswordReauthentication(error: unknown) {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  return error.code === "reauthentication_needed" || error.code === "reauth_nonce_missing";
 }
 
 export function useAuth() {

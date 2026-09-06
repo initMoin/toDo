@@ -1,12 +1,24 @@
 # toDō Web
 
-The Web companion for toDō. This package is the `Web/` surface of the toDō
-monorepo and keeps the existing Supabase product contract
+The Web companion for toDō. This package is being built as the eventual `web/`
+surface of the toDō monorepo and keeps the existing Supabase product contract
 at its boundary.
 
-The current slice includes the TypeScript/Vinext foundation, browser-native
-routing, Apple and Google Supabase OAuth, toDō+ gating, authenticated ToDos,
-interactive Settings, Web Push registration, and a private iCalendar feed.
+The current Web 3.1 slice includes the TypeScript/Vinext foundation,
+browser-native routing, Apple and Google Supabase OAuth, username/account
+resolution, toDō+ gating, authenticated ToDos, ToDo editing and lifecycle
+controls, Tags, NanoDos, basic Collabs, Account/Profile, interactive Settings,
+Web Push registration controls, and private calendar-feed controls.
+
+Basic Collabs currently means loading existing Collabs, creating a Collab, and
+assigning ToDos to a Collab. Invitation links, membership administration,
+roles, leaving, deletion, and Collab-specific notification workflows are not
+part of the frozen Web 3.1 contract.
+
+Web Push and calendar-feed paths are implemented as controls and server
+infrastructure. Production delivery, calendar-client compatibility, and
+production-equivalent RLS verification are still release checks; this README
+does not promise them as complete.
 
 The Web app is an independent Cloudflare Worker with the custom domain
 `https://do.yourtodo.today`. Supabase remains the authentication and user-data
@@ -60,4 +72,6 @@ See [`WebFoundationDecisions.md`](docs/WebFoundationDecisions.md) for the
 Apple-to-Web interaction decisions and the backend/RLS boundary. See
 [`SupabaseWebPushAndCalendar.md`](../Docs/SupabaseWebPushAndCalendar.md) for
 the Supabase migration, Edge Function deployment, Web Push secrets, and
-calendar-feed setup.
+calendar-feed setup. See [`CHANGELOG.md`](CHANGELOG.md) for the Web-specific
+release record and [`WebReleaseReadiness.md`](docs/WebReleaseReadiness.md) for
+the current release gate and next-phase work.

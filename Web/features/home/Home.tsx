@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/Icon";
@@ -21,9 +21,11 @@ import {
   isTodoTimeSensitive,
 } from "@/features/todos/data";
 import { saveOnboardingStep } from "@/lib/onboarding";
+import { subscribeToWebRefresh } from "@/lib/webRefresh";
 
 type HomeState =
-  | { status: "idle" | "loading" }
+  | { status: "idle" }
+  | { status: "loading" }
   | { status: "blocked" }
   | { status: "ready"; snapshot: RemoteSnapshot }
   | { status: "error"; message: string };
@@ -31,8 +33,11 @@ type HomeState =
 type PreviewFilter = "due" | "time-sensitive" | "recent";
 
 export function Home() {
-  const { user, isLoading: authLoading, isConfigured, isResolved } = useAuth();
+  const { user, session, isLoading: authLoading, isConfigured, isResolved } = useAuth();
   const [state, setState] = useState<HomeState>({ status: "idle" });
+  const [retryKey, setRetryKey] = useState(0);
+
+  useEffect(() => subscribeToWebRefresh(() => setRetryKey((value) => value + 1)), []);
 
   useEffect(() => {
     let isCurrent = true;
@@ -65,7 +70,7 @@ export function Home() {
     return () => {
       isCurrent = false;
     };
-  }, [authLoading, isConfigured, isResolved, user]);
+  }, [authLoading, isConfigured, isResolved, retryKey, session?.access_token, user]);
 
   if (!isConfigured) {
     return (
@@ -143,6 +148,10 @@ function ReadyHome({ snapshot, userID }: { snapshot: RemoteSnapshot; userID: str
   const [previewFilter, setPreviewFilter] = useState<PreviewFilter>("due");
   const [isComposerOpen, setIsComposerOpen] = useState(false);
   const [localSnapshot, setLocalSnapshot] = useState(snapshot);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setLocalSnapshot(snapshot), 0);
+    return () => window.clearTimeout(timer);
+  }, [snapshot]);
   const activeTodos = useMemo(
     () => localSnapshot.todos
       .filter(isVisibleActiveTodo)
@@ -192,7 +201,10 @@ function ReadyHome({ snapshot, userID }: { snapshot: RemoteSnapshot; userID: str
                 ...current,
                 todos: [result.todo, ...current.todos],
                 nanoDos: [...result.nanoDos, ...current.nanoDos],
-                tags: [...result.tags, ...current.tags.filter((tag) => !result.tags.some((item) => item.id === tag.id))],
+                tags: [
+                  ...result.tags,
+                  ...current.tags.filter((tag) => !result.tags.some((item) => item.id === tag.id)),
+                ],
                 todoTags: [...result.todoTags, ...current.todoTags],
               }));
               setIsComposerOpen(false);

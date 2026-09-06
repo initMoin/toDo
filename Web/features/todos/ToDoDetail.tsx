@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/Icon";
 import { SignInCard } from "@/features/auth/SignInCard";
@@ -16,9 +16,12 @@ import {
   loadRemoteSnapshot,
   presentTodo,
   updateTodoCompletion,
+  updateTodoLifecycle,
 } from "./data";
 import { TodoEditor } from "./TodoEditor";
 import type { TodoSaveResult } from "./data";
+import { subscribeToWebRefresh } from "@/lib/webRefresh";
+import { readStoredWebPreferences } from "@/lib/webPreferences";
 
 export function ToDoDetail({
   todoId,
@@ -27,7 +30,7 @@ export function ToDoDetail({
   todoId: string;
   onboardingStep?: OnboardingStep;
 }) {
-  const { user, isLoading: authLoading, isConfigured, isResolved } = useAuth();
+  const { user, session, isLoading: authLoading, isConfigured, isResolved } = useAuth();
   const [state, setState] = useState<DetailState>({ status: "idle" });
   const [retryKey, setRetryKey] = useState(0);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -38,6 +41,8 @@ export function ToDoDetail({
     () => null,
   );
   const guidedStep = onboardingStep ?? storedOnboardingStep;
+
+  useEffect(() => subscribeToWebRefresh(() => setRetryKey((value) => value + 1)), []);
 
   useEffect(() => {
     let isCurrent = true;
@@ -76,7 +81,7 @@ export function ToDoDetail({
     return () => {
       isCurrent = false;
     };
-  }, [authLoading, isConfigured, isResolved, retryKey, todoId, user]);
+  }, [authLoading, isConfigured, isResolved, retryKey, session?.access_token, todoId, user]);
 
   if (!isConfigured) {
     return (
@@ -154,18 +159,26 @@ export function ToDoDetail({
     );
   }
 
+  if (state.status !== "ready") {
+    return null;
+  }
+
   async function handleCompletionChange(isDone: boolean) {
     if (state.status !== "ready" || isUpdating) return;
 
     setIsUpdating(true);
     setMutationError(null);
     try {
-      const updatedTodo = await updateTodoCompletion(state.todo.id, isDone);
-      setState((current) =>
-        current.status === "ready"
-          ? { ...current, todo: { ...current.todo, ...updatedTodo } }
-          : current,
-      );
+      if (isDone) {
+        const preferences = readStoredWebPreferences();
+        await updateTodoLifecycle(
+          state.todo.id,
+          preferences.removeAction === "archive" ? "archived" : "trashed",
+        );
+      } else {
+        await updateTodoCompletion(state.todo.id, false);
+      }
+      setRetryKey((value) => value + 1);
     } catch (error) {
       setMutationError(
         error instanceof Error ? error.message : "The toDō could not be updated. Try again.",
@@ -200,7 +213,8 @@ export function ToDoDetail({
 }
 
 type DetailState =
-  | { status: "idle" | "loading" }
+  | { status: "idle" }
+  | { status: "loading" }
   | { status: "blocked" | "missing" }
   | { status: "error"; message: string }
   | { status: "ready"; todo: TodoPresentation; collabs: Collab[]; tags: Tag[] };
@@ -227,7 +241,7 @@ function DetailContent({
   onTodoSaved: (result: TodoSaveResult, draft: TodoEditorDraft) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
-  const isDone = todo.is_done || todo.lifecycle_state === "done";
+  const isDone = todo.is_done || ["done", "archived"].includes(todo.lifecycle_state ?? "");
   const isOverdue = !isDone && isTodoOverdue(todo);
 
   if (isEditing) {

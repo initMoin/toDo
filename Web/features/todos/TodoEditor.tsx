@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Icon } from "@/components/Icon";
 import type { Collab, Tag, TodoEditorDraft, TodoEditorNanoDo, TodoPresentation } from "@/lib/types";
-import { createTodo, updateTodoDetails, type TodoSaveResult } from "./data";
+import { createTodo, TodoSaveError, updateTodoDetails, type TodoSaveResult } from "./data";
+import { readStoredWebPreferences } from "@/lib/webPreferences";
 
 export function TodoEditor({
   userID,
@@ -25,9 +26,18 @@ export function TodoEditor({
   const [draft, setDraft] = useState<TodoEditorDraft>(() => draftFromTodo(initialTodo));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPartiallySaved, setIsPartiallySaved] = useState(false);
+  const [showTags, setShowTags] = useState(mode === "edit");
+  useEffect(() => {
+    if (mode === "edit") return;
+    const timer = window.setTimeout(() => setShowTags(readStoredWebPreferences().tagsByDefault), 0);
+    return () => window.clearTimeout(timer);
+  }, [mode]);
   const tagSuggestions = useMemo(
-    () => existingTags.filter((tag) => !draft.tags.includes(tag.name)).slice(0, 8),
-    [draft.tags, existingTags],
+    () => showTags
+      ? existingTags.filter((tag) => !draft.tags.includes(tag.name)).slice(0, 8)
+      : [],
+    [draft.tags, existingTags, showTags],
   );
 
   function updateDraft(patch: Partial<TodoEditorDraft>) {
@@ -40,6 +50,7 @@ export function TodoEditor({
 
     setIsSaving(true);
     setError(null);
+    setIsPartiallySaved(false);
     try {
       const result = mode === "create"
         ? await createTodo(draft, userID)
@@ -47,6 +58,7 @@ export function TodoEditor({
       onSaved(result, draft);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "The toDō could not be saved.");
+      setIsPartiallySaved(nextError instanceof TodoSaveError);
       setIsSaving(false);
     }
   }
@@ -102,7 +114,7 @@ export function TodoEditor({
             <input
               type="datetime-local"
               value={toLocalDateTimeInput(draft.due_at)}
-              onChange={(event) => updateDraft({ due_at: event.target.value ? new Date(event.target.value).toISOString() : null })}
+              onChange={(event) => updateDraft({ due_at: event.target.value ? toDueDateISO(event.target.value, readStoredWebPreferences().dueTime) : null })}
             />
           </label>
 
@@ -127,15 +139,17 @@ export function TodoEditor({
             </select>
           </label>
 
-          <label className="todo-editor-field">
-            <span className="todo-editor-label"><Icon name="tag" size={16} /> Tags</span>
-            <input
-              type="text"
-              value={draft.tags.join(", ")}
-              onChange={(event) => updateDraft({ tags: event.target.value.split(",").map((tag) => tag.trim()).filter(Boolean) })}
-              placeholder="work, personal"
-            />
-          </label>
+          {showTags ? (
+            <label className="todo-editor-field">
+              <span className="todo-editor-label"><Icon name="tag" size={16} /> Tags</span>
+              <input
+                type="text"
+                value={draft.tags.join(", ")}
+                onChange={(event) => updateDraft({ tags: event.target.value.split(",").map((tag) => tag.trim()).filter(Boolean) })}
+                placeholder="work, personal"
+              />
+            </label>
+          ) : null}
         </div>
 
         {tagSuggestions.length ? (
@@ -196,9 +210,10 @@ export function TodoEditor({
         </section>
 
         {error ? <p className="inline-error" role="alert">{error}</p> : null}
+        {isPartiallySaved ? <button className="secondary-button" type="button" onClick={() => window.location.reload()}>Reload this view</button> : null}
         <div className="todo-editor-actions">
           <button className="secondary-button" type="button" onClick={onCancel} disabled={isSaving}>Cancel</button>
-          <button className="primary-button todo-editor-save" type="submit" disabled={!draft.task.trim() || isSaving} aria-busy={isSaving}><Icon name="check" size={18} /> {isSaving ? "Saving…" : mode === "create" ? "Save toDō" : "Update toDō"}</button>
+          <button className="primary-button todo-editor-save" type="submit" disabled={!draft.task.trim() || isSaving || isPartiallySaved} aria-busy={isSaving}><Icon name="check" size={18} /> {isSaving ? "Saving…" : mode === "create" ? "Save toDō" : "Update toDō"}</button>
         </div>
       </form>
     </section>
@@ -229,4 +244,10 @@ function toLocalDateTimeInput(value: string | null) {
   if (Number.isNaN(date.getTime())) return "";
   const pad = (part: number) => String(part).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function toDueDateISO(value: string, defaultTime: string) {
+  const [datePart, timePart] = value.split("T");
+  const parsed = new Date(`${datePart}T${timePart || defaultTime}`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/Link";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Icon, type IconName } from "@/components/Icon";
 import { useAuth } from "@/features/auth/AuthProvider";
@@ -24,6 +24,19 @@ import {
 } from "@/lib/webIntegrations";
 import { supabase } from "@/lib/supabase";
 import type { RemoteSnapshot, Tag, Todo } from "@/lib/types";
+import {
+  defaultWebPreferences,
+  readStoredWebPreferences,
+  saveStoredWebPreferences,
+  type BadgePolicy,
+  type CompletionSound,
+  type NotificationSound,
+  type RemoveAction,
+  type SortOption,
+  type ThemeName,
+  type TimeSource,
+  type WebPreferences,
+} from "@/lib/webPreferences";
 
 export type SettingsSubmenuKey =
   | "appearance"
@@ -37,55 +50,7 @@ export type SettingsSubmenuKey =
   | "tour"
   | "trash";
 
-type ThemeName = "classic" | "coastal" | "ember" | "orchard" | "midnight" | "shift";
-type AppearanceMode = "system" | "light" | "dark";
-type SortOption = "dueDate" | "created" | "tag" | "dueMonth" | "tagSections" | "nanoDos";
-type TimeSource = "location" | "device";
-type RemoveAction = "archive" | "trash";
-type NotificationSound = "default" | "silent" | "soft" | "bright" | "urgent" | "custom";
-type CompletionSound = "off" | "soft" | "bright";
-type BadgePolicy = "off" | "active" | "dueToday" | "overdue" | "timeSensitive" | "scheduled";
-
-type SettingsPreferences = {
-  theme: ThemeName;
-  appearance: AppearanceMode;
-  sort: SortOption;
-  sortReversed: boolean;
-  timeSource: TimeSource;
-  dueTime: string;
-  removeAction: RemoveAction;
-  calendarMirror: boolean;
-  tagsByDefault: boolean;
-  reminderAlerts: boolean;
-  notificationSound: NotificationSound;
-  customSoundName: string;
-  completionSound: CompletionSound;
-  badgePolicy: BadgePolicy;
-  snooze: { minutes: number[]; hours: number[]; days: number[] };
-  trashAutoEmpty: "1 Week" | "2 Weeks" | "1 Month" | "3 Months" | "Never";
-  matchDeletes: boolean;
-};
-
-const settingsStorageKey = "todo.web.settings.v2";
-const defaultPreferences: SettingsPreferences = {
-  theme: "classic",
-  appearance: "system",
-  sort: "dueDate",
-  sortReversed: false,
-  timeSource: "location",
-  dueTime: "09:00",
-  removeAction: "archive",
-  calendarMirror: false,
-  tagsByDefault: false,
-  reminderAlerts: false,
-  notificationSound: "default",
-  customSoundName: "",
-  completionSound: "off",
-  badgePolicy: "overdue",
-  snooze: { minutes: [5, 15, 30], hours: [1, 2], days: [1] },
-  trashAutoEmpty: "1 Month",
-  matchDeletes: true,
-};
+type SettingsPreferences = WebPreferences;
 
 const submenuDetails: Record<SettingsSubmenuKey, {
   title: string;
@@ -109,7 +74,7 @@ const submenuDetails: Record<SettingsSubmenuKey, {
 
 export function SettingsSubmenuView({ kind }: { kind: SettingsSubmenuKey }) {
   const content = submenuDetails[kind];
-  const { user, isConfigured, isResolved, signOut } = useAuth();
+  const { user, isConfigured, isResolved, signOut, requireAAL2 } = useAuth();
   const [preferences, setPreferences] = useSettingsPreferences();
   const requiresSnapshot = kind === "tags" || kind === "archives" || kind === "trash" || kind === "data";
   const { snapshot, isLoading, error, refresh } = useSettingsSnapshot(requiresSnapshot && Boolean(user) && isResolved && isConfigured);
@@ -150,7 +115,7 @@ export function SettingsSubmenuView({ kind }: { kind: SettingsSubmenuKey }) {
         {kind === "behavior" ? <BehaviorSettings {...sharedProps} userID={user?.id ?? null} /> : null}
         {kind === "notifications" ? <NotificationsSettings {...sharedProps} userID={user?.id ?? null} /> : null}
         {kind === "tour" ? <TourSettings /> : null}
-        {kind === "data" ? <DataSettings snapshot={snapshot} isLoading={isLoading} userID={user?.id ?? null} runAction={runAction} signOut={signOut} setMessage={setMessage} setPreferences={setPreferences} /> : null}
+        {kind === "data" ? <DataSettings snapshot={snapshot} isLoading={isLoading} userID={user?.id ?? null} runAction={runAction} signOut={signOut} requireAAL2={requireAAL2} setMessage={setMessage} setPreferences={setPreferences} /> : null}
         {kind === "archives" ? <ArchivesSettings snapshot={snapshot} isLoading={isLoading} error={error} runAction={runAction} /> : null}
         {kind === "trash" ? <TrashSettings snapshot={snapshot} isLoading={isLoading} error={error} preferences={preferences} setPreferences={setPreferences} runAction={runAction} /> : null}
       </div>
@@ -171,7 +136,7 @@ function MembershipSettings({ userID }: { userID: string | null }) {
       <div className={`settings-status-banner settings-status-${status}`}><span className="settings-status-icon"><Icon name={status === "active" ? "check" : "sparkles"} size={18} /></span><div><strong>{status === "loading" ? "Checking membership…" : status === "active" ? "toDō+ is active" : "toDō+ membership required"}</strong><p>{status === "active" ? "This account can open the Web app and use its synced task features." : "Sign in with the account that owns your toDō+ entitlement to open the Web app."}</p></div></div>
     </SettingsCard>
     <SettingsCard title="Included with toDō+" icon="sparkles">
-      <SettingsList items={[["Personal Collabs", "Send and receive shared-list invitations."], ["Web access", "Keep your active ToDos available at do.yourtodo.today."], ["New features", "Receive the features included in your membership."]]} />
+      <SettingsList items={[["Personal Collabs", "Create shared lists and assign ToDos to them."], ["Web access", "Keep your active ToDos available at do.yourtodo.today."], ["New features", "Receive the features included in your membership."]]} />
       <p className="settings-note">Membership purchases and subscription management remain tied to the account’s existing purchase system.</p>
     </SettingsCard>
   </div>;
@@ -203,8 +168,8 @@ function AppearanceSettings({ preferences, setPreferences }: SettingsSharedProps
 }
 
 function BehaviorSettings({ preferences, setPreferences, userID, setMessage }: SettingsSharedProps & { userID: string | null }) {
-  const ordering: Array<[SortOption, string]> = [["dueDate", "Due Date"], ["created", "Created"], ["tag", "By Tag"]];
-  const grouping: Array<[SortOption, string]> = [["dueMonth", "Due by Month"], ["tagSections", "Tag Sections"], ["nanoDos", "Most NanoDos"]];
+  const ordering: Array<[SortOption, string]> = [["position", "toDō order"], ["due", "Due date"], ["newest", "Newest first"]];
+  const grouping: Array<[WebPreferences["group"], string]> = [["none", "No groups"], ["due", "Due date"], ["collab", "Collab"]];
   const [calendarFeedURL, setCalendarFeedURL] = useState<string | null>(null);
   const [isCalendarBusy, setIsCalendarBusy] = useState(false);
   async function toggleCalendar(enabled: boolean) {
@@ -247,11 +212,28 @@ function BehaviorSettings({ preferences, setPreferences, userID, setMessage }: S
       setMessage("Copy is unavailable in this browser. Select the URL manually.");
     }
   }
+  async function rotateCalendarFeed() {
+    if (!userID) {
+      setMessage("Sign in to create a private calendar feed.");
+      return;
+    }
+    setIsCalendarBusy(true);
+    try {
+      const feedURL = await createCalendarFeedURL();
+      setCalendarFeedURL(feedURL);
+      setPreferences("calendarMirror", true);
+      setMessage("A new calendar feed URL was created. The previous URL is no longer valid.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The calendar feed could not be regenerated.");
+    } finally {
+      setIsCalendarBusy(false);
+    }
+  }
   return <div className="settings-control-stack">
-    <SettingsCard title="Order" icon="task-list"><ChoiceGroup label="Order" options={ordering} value={preferences.sort} onChange={(value) => setPreferences("sort", value)} /><ChoiceGroup label="Group" options={grouping} value={preferences.sort} onChange={(value) => setPreferences("sort", value)} /><SettingsSwitch icon="repeat" label="Reverse order" detail="Show the selected order in reverse." checked={preferences.sortReversed} onChange={(value) => setPreferences("sortReversed", value)} /></SettingsCard>
+    <SettingsCard title="Order" icon="task-list"><ChoiceGroup label="Order" options={ordering} value={preferences.sort} onChange={(value) => setPreferences("sort", value)} /><ChoiceGroup label="Group" options={grouping} value={preferences.group} onChange={(value) => setPreferences("group", value)} /><SettingsSwitch icon="repeat" label="Reverse order" detail="Show the selected order in reverse." checked={preferences.sortReversed} onChange={(value) => setPreferences("sortReversed", value)} /></SettingsCard>
     <SettingsCard title="Timing" icon="clock"><ChoiceGroup label="Time Source" options={[["location", "Location"], ["device", "Device"]] as Array<[TimeSource, string]>} value={preferences.timeSource} onChange={(value) => setPreferences("timeSource", value)} /><div className="settings-input-row"><span><label htmlFor="default-due-time"><strong>Default Due Time</strong></label><small>Used when a due date is chosen without a time.</small></span><input id="default-due-time" type="time" value={preferences.dueTime} onChange={(event) => setPreferences("dueTime", event.target.value)} /></div></SettingsCard>
     <SettingsCard title="Remove from View" icon="archive"><ChoiceGroup label="Remove Action" options={[["archive", "Move to Archives"], ["trash", "Move to Trash"]] as Array<[RemoveAction, string]>} value={preferences.removeAction} onChange={(value) => setPreferences("removeAction", value)} /></SettingsCard>
-    <SettingsCard title="Calendar" icon="calendar"><SettingsSwitch icon="calendar" label="Add Due toDōs to Calendar" detail="Creates a private calendar feed that Apple Calendar, Google Calendar, and Outlook can subscribe to." checked={preferences.calendarMirror} onChange={(value) => void toggleCalendar(value)} /><div className="settings-calendar-feed"><p>Calendar feeds refresh from your account and contain active ToDos with due dates.</p>{calendarFeedURL ? <><code>{calendarFeedURL}</code><button className="settings-quiet-action" type="button" disabled={isCalendarBusy} onClick={() => void copyCalendarFeed()}><Icon name="copy" size={15} /> Copy Calendar Feed URL</button></> : null}</div></SettingsCard>
+    <SettingsCard title="Calendar" icon="calendar"><SettingsSwitch icon="calendar" label="Add Due toDōs to Calendar" detail="Creates a private calendar feed that Apple Calendar, Google Calendar, and Outlook can subscribe to." checked={preferences.calendarMirror} onChange={(value) => void toggleCalendar(value)} /><div className="settings-calendar-feed"><p>Calendar feeds refresh from your account and contain active ToDos with due dates.</p>{calendarFeedURL ? <><code>{calendarFeedURL}</code><button className="settings-quiet-action" type="button" disabled={isCalendarBusy} onClick={() => void copyCalendarFeed()}><Icon name="copy" size={15} /> Copy Calendar Feed URL</button><button className="settings-quiet-action" type="button" disabled={isCalendarBusy} onClick={() => void rotateCalendarFeed()}><Icon name="reset" size={15} /> Regenerate Feed URL</button></> : null}{preferences.calendarMirror && !calendarFeedURL ? <><p className="settings-note">The private URL is shown only when it is created. Regenerate it to issue a new URL; the previous URL will be revoked.</p><button className="settings-quiet-action" type="button" disabled={isCalendarBusy} onClick={() => void rotateCalendarFeed()}><Icon name="reset" size={15} /> Regenerate Feed URL</button></> : null}</div></SettingsCard>
   </div>;
 }
 
@@ -306,7 +288,7 @@ function NotificationsSettings({ preferences, setPreferences, setMessage, userID
     <SettingsCard title="Reminder Alerts" icon="bell"><div className="settings-status-banner"><span className="settings-status-icon"><Icon name="bell" size={18} /></span><div><strong>{permission === "granted" ? "Allowed" : permission === "denied" ? "Blocked" : "Not requested"}</strong><p>Web push permission controls whether this browser can receive background reminder delivery.</p></div></div><button className="settings-detail-action" type="button" onClick={() => void requestPermission()}><Icon name="bell" size={16} /><span>{permission === "granted" ? "Refresh permission" : "Allow reminder alerts"}</span></button></SettingsCard>
     <SettingsCard title="Sounds" icon="speaker"><ChoiceGroup label="Reminder Sound" options={[["default", "Default"], ["silent", "Silent"], ["soft", "Soft Chime"], ["bright", "Bright Ping"], ["urgent", "Urgent Double"], ["custom", "Custom"]] as Array<[NotificationSound, string]>} value={preferences.notificationSound} onChange={(value) => updateNotificationPreference("notificationSound", value, { web_reminder_sound: value })} />{preferences.notificationSound === "custom" ? <label className="settings-file-action" htmlFor="custom-reminder-sound"><Icon name="speaker" size={16} /><span>{preferences.customSoundName || "Choose a reminder sound"}</span><input id="custom-reminder-sound" className="sr-only" type="file" accept="audio/*" onChange={(event) => { const name = event.target.files?.[0]?.name ?? ""; updateNotificationPreference("customSoundName", name, { web_custom_sound_name: name || null }); }} /></label> : null}<ChoiceGroup label="Completion Sound" options={[["off", "Off"], ["soft", "Soft"], ["bright", "Bright"]] as Array<[CompletionSound, string]>} value={preferences.completionSound} onChange={(value) => updateNotificationPreference("completionSound", value, { web_completion_sound: value })} /><div className="settings-guide-chips"><span><Icon name="bell" size={13} /> Due</span><span><Icon name="flame" size={13} /> Time-Sensitive</span><span><Icon name="speaker" size={13} /> Quiet</span></div></SettingsCard>
     <SettingsCard title="Badge" icon="check"><ChoiceGroup label="App badge" options={[["off", "Off"], ["active", "Active ToDos"], ["dueToday", "Due Today"], ["overdue", "Overdue"], ["timeSensitive", "Time-Sensitive"], ["scheduled", "Scheduled"]] as Array<[BadgePolicy, string]>} value={preferences.badgePolicy} onChange={(value) => updateNotificationPreference("badgePolicy", value, { web_badge_policy: value })} /></SettingsCard>
-    <SettingsCard title="Snooze Options" icon="clock"><SnoozeGroup title="Minutes" values={[5, 10, 15, 30, 60]} selected={snooze.minutes} onChange={(value) => updateNotificationPreference("snooze", { ...snooze, minutes: value }, { web_snooze_options: { ...snooze, minutes: value } })} /><SnoozeGroup title="Hours" values={[1, 2, 4, 8]} selected={snooze.hours} onChange={(value) => updateNotificationPreference("snooze", { ...snooze, hours: value }, { web_snooze_options: { ...snooze, hours: value } })} /><SnoozeGroup title="Days" values={[1, 2, 3, 7]} selected={snooze.days} onChange={(value) => updateNotificationPreference("snooze", { ...snooze, days: value }, { web_snooze_options: { ...snooze, days: value } })} /><button className="settings-quiet-action" type="button" onClick={() => updateNotificationPreference("snooze", defaultPreferences.snooze, { web_snooze_options: defaultPreferences.snooze })}><Icon name="reset" size={15} /> Reset Snooze Options</button></SettingsCard>
+    <SettingsCard title="Snooze Options" icon="clock"><SnoozeGroup title="Minutes" values={[5, 10, 15, 30, 60]} selected={snooze.minutes} onChange={(value) => updateNotificationPreference("snooze", { ...snooze, minutes: value }, { web_snooze_options: { ...snooze, minutes: value } })} /><SnoozeGroup title="Hours" values={[1, 2, 4, 8]} selected={snooze.hours} onChange={(value) => updateNotificationPreference("snooze", { ...snooze, hours: value }, { web_snooze_options: { ...snooze, hours: value } })} /><SnoozeGroup title="Days" values={[1, 2, 3, 7]} selected={snooze.days} onChange={(value) => updateNotificationPreference("snooze", { ...snooze, days: value }, { web_snooze_options: { ...snooze, days: value } })} /><button className="settings-quiet-action" type="button" onClick={() => updateNotificationPreference("snooze", defaultWebPreferences.snooze, { web_snooze_options: defaultWebPreferences.snooze })}><Icon name="reset" size={15} /> Reset Snooze Options</button></SettingsCard>
   </div>;
 }
 
@@ -328,26 +310,38 @@ function TagsSettings({ snapshot, isLoading, error, userID, runAction, preferenc
   </div>;
 }
 
-function DataSettings({ snapshot, isLoading, userID, runAction, signOut, setMessage, setPreferences }: { snapshot: RemoteSnapshot | null; isLoading: boolean; userID: string | null; runAction: (action: () => Promise<void>, successMessage: string) => Promise<void>; signOut: () => Promise<void>; setMessage: (message: string) => void; setPreferences: SettingsSharedProps["setPreferences"] }) {
+function DataSettings({ snapshot, isLoading, userID, runAction, signOut, requireAAL2, setMessage, setPreferences }: { snapshot: RemoteSnapshot | null; isLoading: boolean; userID: string | null; runAction: (action: () => Promise<void>, successMessage: string) => Promise<void>; signOut: () => Promise<void>; requireAAL2: (action: string, requireEnrollment?: boolean) => Promise<boolean>; setMessage: (message: string) => void; setPreferences: SettingsSharedProps["setPreferences"] }) {
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
   const [exported, setExported] = useState(false);
-  function exportData() {
+  async function exportData() {
     if (!snapshot) return;
+    if (!await requireAAL2("export your account data", true)) {
+      setMessage("Set up and verify an authenticator app in Account before exporting account data.");
+      return;
+    }
     const file = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(file); const anchor = document.createElement("a"); anchor.href = url; anchor.download = `todo-export-${new Date().toISOString().slice(0, 10)}.json`; anchor.click(); URL.revokeObjectURL(url); setExported(true);
   }
   async function resetData() {
     if (!userID || !window.confirm("Delete every personal toDō and NanoDo from this account? This cannot be undone.")) return;
+    if (!await requireAAL2("reset your toDō data", true)) {
+      setMessage("Set up and verify an authenticator app in Account before resetting account data.");
+      return;
+    }
     await runAction(() => deleteTodosForUser(userID), "Your personal ToDos were deleted.");
   }
   async function deleteAccount() {
     if (!supabase || !window.confirm("Permanently delete your account, profile, shared lists, purchases, and all account data? This cannot be undone.")) return;
+    if (!await requireAAL2("delete your account", true)) {
+      setMessage("Set up and verify an authenticator app in Account before deleting your account.");
+      return;
+    }
     setIsDeletingAccount(true);
     try { const { error } = await supabase.functions.invoke("delete-account", { body: {} }); if (error) throw error; await signOut(); window.location.assign("/"); } catch (error) { setIsDeletingAccount(false); setMessage(error instanceof Error ? error.message : "Account deletion could not be completed."); }
   }
   return <div className="settings-control-stack">
-    <SettingsCard title="Export" icon="download"><SettingsList items={[["Account export", "Download your current ToDos, NanoDos, tags, and Collabs as JSON."]]} /><button className="settings-detail-action" type="button" disabled={isLoading || !snapshot} onClick={exportData}><Icon name="download" size={16} /><span>{exported ? "Export downloaded" : "Export account data"}</span></button></SettingsCard>
-    <SettingsCard title="Preferences" icon="reset"><SettingsList items={[["Reset Choices", "Restore Web sorting, tag entry, timing, notification, and appearance choices."]]} /><button className="settings-quiet-action" type="button" onClick={() => { (Object.keys(defaultPreferences) as Array<keyof SettingsPreferences>).forEach((key) => setPreferences(key, defaultPreferences[key])); }}><Icon name="reset" size={15} /> Reset Choices</button></SettingsCard>
+    <SettingsCard title="Export" icon="download"><SettingsList items={[["Account export", "Download your current ToDos, NanoDos, tags, and Collabs as JSON."]]} /><button className="settings-detail-action" type="button" disabled={isLoading || !snapshot} onClick={() => void exportData()}><Icon name="download" size={16} /><span>{exported ? "Export downloaded" : "Export account data"}</span></button></SettingsCard>
+    <SettingsCard title="Preferences" icon="reset"><SettingsList items={[["Reset Choices", "Restore Web sorting, tag entry, timing, notification, and appearance choices."]]} /><button className="settings-quiet-action" type="button" onClick={() => { (Object.keys(defaultWebPreferences) as Array<keyof SettingsPreferences>).forEach((key) => setPreferences(key, defaultWebPreferences[key])); }}><Icon name="reset" size={15} /> Reset Choices</button></SettingsCard>
     <SettingsCard title="Start Fresh" icon="trash"><SettingsList items={[["Reset toDō Data", "Permanently delete personal ToDos and NanoDos without deleting your account, tags, or purchases."]]} /><button className="settings-danger-action" type="button" disabled={isLoading} onClick={() => void resetData()}><Icon name="trash" size={16} /> Reset toDō Data</button></SettingsCard>
     <SettingsCard title="Delete Account" icon="alert"><SettingsList items={[["Permanent deletion", "Deletes your profile, personal ToDos, owned shared lists, collaboration access, and account-linked purchases."]]} /><button className="settings-danger-action" type="button" disabled={isDeletingAccount} onClick={() => void deleteAccount()}><Icon name="alert" size={16} /> {isDeletingAccount ? "Deleting account…" : "Delete Account"}</button></SettingsCard>
   </div>;
@@ -394,10 +388,29 @@ function isSnoozeOptions(value: unknown): value is SettingsPreferences["snooze"]
 }
 
 function useSettingsPreferences(): [SettingsPreferences, <K extends keyof SettingsPreferences>(key: K, value: SettingsPreferences[K]) => void] {
-  const [preferences, setPreferencesState] = useState<SettingsPreferences>(defaultPreferences);
+  const [preferences, setPreferencesState] = useState<SettingsPreferences>(defaultWebPreferences);
   const [isHydrated, setIsHydrated] = useState(false);
-  useEffect(() => { window.setTimeout(() => { try { const stored = window.localStorage.getItem(settingsStorageKey); if (stored) setPreferencesState({ ...defaultPreferences, ...JSON.parse(stored) }); } catch { /* Use defaults when local storage is unavailable. */ } setIsHydrated(true); }, 0); }, []);
-  useEffect(() => { if (!isHydrated) return; window.localStorage.setItem(settingsStorageKey, JSON.stringify(preferences)); document.documentElement.dataset.todoTheme = preferences.theme; if (preferences.appearance === "system") delete document.documentElement.dataset.todoAppearance; else document.documentElement.dataset.todoAppearance = preferences.appearance; }, [isHydrated, preferences]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setPreferencesState(readStoredWebPreferences());
+      setIsHydrated(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    if (!isHydrated) return;
+    saveStoredWebPreferences(preferences);
+    document.documentElement.dataset.todoTheme = preferences.theme;
+    if (preferences.appearance === "system") delete document.documentElement.dataset.todoAppearance;
+    else document.documentElement.dataset.todoAppearance = preferences.appearance;
+  }, [isHydrated, preferences]);
+  useEffect(() => {
+    const handleExternalChange = () => setPreferencesState(readStoredWebPreferences());
+    window.addEventListener("storage", handleExternalChange);
+    return () => {
+      window.removeEventListener("storage", handleExternalChange);
+    };
+  }, []);
   const setPreference = useCallback(<K extends keyof SettingsPreferences>(key: K, value: SettingsPreferences[K]) => { setPreferencesState((current) => ({ ...current, [key]: value })); }, []);
   return [preferences, setPreference];
 }
