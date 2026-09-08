@@ -32,8 +32,9 @@ test("server-renders the Home orientation surface without demo tasks", async () 
 
   const html = await response.text();
   assert.match(html, /<title>toDō Web — Keep what matters in step<\/title>/i);
-  assert.match(html, /What matters now\?|Connect Supabase to open Home|Checking your toDō account…|Loading your Home…/);
-  assert.match(html, /See all toDōs|Connect Supabase to open Home|Checking your toDō account…|Loading your Home…/);
+  assert.match(html, /What matters now\?|Connect Supabase to open Home|class="loading-card"/);
+  assert.match(html, /See all toDōs|Connect Supabase to open Home|class="loading-card"/);
+  assert.doesNotMatch(html, /Home stays paused until this provider is resolved to a username\.|Loading your Home…/);
   assert.match(html, /class="wordmark"/);
   assert.doesNotMatch(html, /What needs doing\?|codex-preview|react-loading-skeleton/i);
 });
@@ -42,7 +43,8 @@ test("renders ToDosView at the /todos route", async () => {
   const response = await render("/todos");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Connect Supabase to test the Web app|Checking your toDō account…|Loading your toDōs…/);
+  assert.match(html, /Connect Supabase to test the Web app|class="loading-card"/);
+  assert.doesNotMatch(html, /Sync and account data stay paused until this provider is resolved to a username\.|Loading your toDōs…/);
   assert.match(html, /class="site-header-title">toDō<\/span>/);
 });
 
@@ -63,22 +65,23 @@ test("renders the Web-native Account, Stats, Settings, and nested detail routes"
   assert.equal(profileResponse.status, 200);
   assert.equal(aboutResponse.status, 200);
   assert.equal(releasesResponse.status, 200);
-  assert.match(await accountResponse.text(), /Account|Checking your toDō account…/);
+  assert.match(await accountResponse.text(), /Account|class="loading-card"/);
   const settingsAccountHTML = await settingsAccountResponse.text();
   assert.match(settingsAccountHTML, /site-header-account-settings/);
   assert.match(settingsAccountHTML, /href="\/settings"/);
-  assert.match(await statsResponse.text(), /Measure what matters|Stats|Loading your Stats…/);
-  assert.match(await settingsResponse.text(), /Settings|Checking your toDō account…/);
-  assert.match(await profileResponse.text(), /My Profile|Checking your toDō account…/);
-  assert.match(await aboutResponse.text(), /about toDō|Checking your toDō account…/);
-  assert.match(await releasesResponse.text(), /release history|Checking your toDō account…/);
+  assert.match(await statsResponse.text(), /Measure what matters|Stats|class="loading-card"/);
+  assert.match(await settingsResponse.text(), /Settings|class="loading-card"/);
+  assert.match(await profileResponse.text(), /My Profile|class="loading-card"/);
+  assert.match(await aboutResponse.text(), /about toDō|class="loading-card"/);
+  assert.match(await releasesResponse.text(), /release history|class="loading-card"/);
 });
 
 test("renders the browser-native detail route boundary", async () => {
   const response = await render("/todos/example-todo");
   assert.equal(response.status, 200);
   const html = await response.text();
-  assert.match(html, /Connect Supabase to open this toDō|Loading your toDō…/);
+  assert.match(html, /Connect Supabase to open this toDō|class="loading-card"/);
+  assert.doesNotMatch(html, /Sync and account data stay paused until this provider is resolved to a username\.|Loading your toDō…/);
   assert.match(html, /Back to active toDōs|toDōs/);
 });
 
@@ -217,7 +220,13 @@ test("keeps the documented Web and Supabase boundaries present", async () => {
   assert.match(account, /Account Actions/);
   assert.doesNotMatch(account, /support/i);
   assert.match(appFrame, /href="\/account"/);
-  assert.doesNotMatch(appFrame, /onSignOut|signOut/);
+  assert.match(appFrame, /webAccessState !== "granted"/);
+  assert.match(appFrame, /site-header-restricted/);
+  assert.match(appFrame, /restricted-access-card/);
+  assert.match(appFrame, /restricted-logout-button/);
+  assert.match(appFrame, /toDō\+ required/);
+  assert.match(appFrame, /Log out/);
+  assert.doesNotMatch(appFrame, /<button[^>]*>\s*Log out\s*<\/button>/);
   assert.doesNotMatch(appFrame, /legal\/(privacy|terms)/);
   assert.match(link, /prefetch=\{false\}/);
   assert.match(avatar, /profile-avatar/);
@@ -227,7 +236,7 @@ test("keeps the documented Web and Supabase boundaries present", async () => {
   assert.match(styles, /brand\/brand-plus-reference\.jpg/);
   assert.match(styles, /background-clip: text/);
   assert.match(styles, /sign-in-provider-reveal/);
-  assert.match(styles, /clip-path: inset/);
+  assert.match(styles, /overflow: hidden/);
   assert.match(styles, /flex: 0 0 var\(--profile-avatar-size\)/);
   assert.match(icon, /gear/);
   assert.match(stats, /Measure what matters/);
@@ -249,7 +258,7 @@ test("keeps the documented Web and Supabase boundaries present", async () => {
   assert.match(readiness, /Explicit 3\.1 Collab contract/);
   assert.match(readiness, /Production integrations/);
   assert.doesNotMatch(legalShell, /Back to app/);
-  assert.match(legalShell, /Draft for internal review/);
+  assert.match(legalShell, /Last updated September 8, 2026/);
   assert.match(decisions, /Familiar to a toDō user\. Native to the platform\./);
   assert.match(decisions, /Web Push and calendar integration migration/);
   assert.match(migrations, /create policy "todos_select_accessible"/);

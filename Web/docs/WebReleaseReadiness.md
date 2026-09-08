@@ -9,7 +9,7 @@ instruction to claim unfinished work as complete.
 
 ## Verification evidence
 
-**Checked August 22, 2026**
+**Checked September 6, 2026**
 
 - Passed: Web TypeScript compilation, lint, production build, rendered-route
   and browser-boundary tests (6/6), and whitespace validation.
@@ -19,8 +19,9 @@ instruction to claim unfinished work as complete.
 - Added August 27, 2026: the shared Web link boundary disables Vinext RSC
   prefetching, which prevents the deployed mixed-chunk `ee is not a function`
   runtime error from firing before navigation. The local browser suite now
-  asserts that primary routes emit no console errors; the live hostname still
-  needs a later approved deployment before this gate can be marked complete.
+  asserts that primary routes emit no console errors. The corrected build is
+  deployed; the live browser console regression check remains part of the
+  authenticated browser/device matrix.
 - Added August 29, 2026: the Web primary-auth slice now includes verified-email
   code entry, email/password fallback, passkey sign-in and registration, and
   Account Security status/actions. The Supabase client is on the passkey-capable
@@ -50,6 +51,12 @@ instruction to claim unfinished work as complete.
 - Confirmed in source: the Web client contains only browser-safe Supabase and
   VAPID public-key configuration; no service-role, VAPID private key, or
   webhook secret is referenced by browser code.
+- Confirmed in source: the Android Digital Asset Links declaration is public
+  and uses the exact Google Play App Signing identity for
+  `dev.iamshift.toDo.android`. It includes both
+  `delegate_permission/common.handle_all_urls` for Android App Links and
+  `delegate_permission/common.get_login_creds` for Credential Manager/passkey
+  credential sharing.
 - Confirmed in source: the canonical Web Push/calendar migration and both
   related Edge Functions are present in the linked Supabase checkout.
 - Verified August 24, 2026 from the authenticated Supabase CLI: the linked
@@ -59,6 +66,12 @@ instruction to claim unfinished work as complete.
 - Verified August 24, 2026 over HTTPS: `https://do.yourtodo.today/` returned
   `200`, confirming that the intended custom hostname currently resolves to a
   live Web deployment.
+- Verified September 6, 2026 over production HTTPS:
+  `https://do.yourtodo.today/.well-known/assetlinks.json` returned `200` with
+  `application/json`, no redirect, package `dev.iamshift.toDo.android`, the
+  Google Play App Signing certificate fingerprint, and both Android App Links
+  and Credential Manager relations. Android device-level App Links and passkey
+  verification remain pending.
 
 ## Latest linked Supabase result
 
@@ -182,7 +195,8 @@ production matrix.
   third-party-service disclosures.
 - Remove the internal-review wording from the legal shell only after that
   review is complete.
-- Obtain the separate deployment approval before publishing the Worker.
+- Obtain separate public-release approval before publishing the currently
+  internal Worker beyond the development audience.
 
 ### Operator sequence for the remaining external checks
 
@@ -194,12 +208,9 @@ production matrix.
    the production VAPID and Web Push webhook secrets. Never place those private
    values in `Web/.env.local` or Cloudflare browser-exposed variables.
 
-3. In Cloudflare Workers & Pages, bind the intended Worker/Pages project to
-   `do.yourtodo.today` and verify DNS/SSL. The hostname currently responds over
-   HTTPS; the Cloudflare account still needs an authenticated configuration
-   audit because the local Wrangler CLI is not signed in. A pending
-   custom-domain record in a separate hosting surface is not evidence that the
-   Cloudflare route is complete.
+3. Completed September 6, 2026: the Cloudflare Worker is bound to
+   `do.yourtodo.today`; authenticated Wrangler deployment, the custom-domain
+   trigger, HTTPS response, and Digital Asset Links endpoint were verified.
 
 4. Execute the authenticated browser/device matrix for OAuth, toDō+ gating,
    RLS, Push, calendar feeds, deletion/export, responsive routes, session

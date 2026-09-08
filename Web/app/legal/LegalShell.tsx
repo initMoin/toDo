@@ -18,7 +18,7 @@ export function LegalShell({
       <article className="legal-card">
         <p className="eyebrow">{eyebrow}</p>
         <h1>{title}</h1>
-        <p className="legal-updated">Draft for internal review · Last reviewed August 19, 2026</p>
+        <p className="legal-updated">Last updated September 8, 2026</p>
         <div className="legal-copy">{children}</div>
       </article>
     </main>

@@ -180,12 +180,7 @@ export function ToDoWorkspace({
   }
 
   if (authLoading) {
-    return (
-      <div className="state-layout">
-        <LoadingCard />
-        <p className="loading-message" aria-live="polite">Checking your toDō account…</p>
-      </div>
-    );
+    return <div className="state-layout"><LoadingCard /></div>;
   }
 
   if (!user) {
@@ -200,33 +195,19 @@ export function ToDoWorkspace({
     return (
       <div className="auth-layout">
         <AccountSetupCard />
-        <p className="loading-message" aria-live="polite">
-          Sync and account data stay paused until this provider is resolved to a username.
-        </p>
         <span className="sr-only">Account state: {resolutionState}</span>
       </div>
     );
   }
 
   if (dataState.status === "loading" || dataState.status === "idle") {
-    return (
-      <div className="state-layout">
-        <LoadingCard />
-        <p className="loading-message" aria-live="polite">Loading your toDōs…</p>
-      </div>
-    );
+    return <div className="state-layout"><LoadingCard /></div>;
   }
 
   if (dataState.status === "blocked") {
     return (
       <div className="state-layout">
-        <StateCard eyebrow="toDō+" title="Web is part of toDō+" tone="warning">
-          <p>
-            Sign in with the resolved account that has your toDō+ access. If you
-            use both Apple and Google, connect them explicitly from Account Settings.
-          </p>
-          <p>Nothing has been changed or removed from your existing devices.</p>
-        </StateCard>
+        <StateCard title="toDō+ required" tone="warning" />
       </div>
     );
   }

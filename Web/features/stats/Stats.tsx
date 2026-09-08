@@ -69,17 +69,17 @@ export function Stats() {
     return <div className="state-layout"><StateCard eyebrow="Local setup" title="Connect Supabase to open Stats"><p>Add the browser-safe Supabase values to <code>Web/.env.local</code> and restart the local server.</p></StateCard></div>;
   }
   if (authLoading) {
-    return <div className="state-layout"><LoadingCard /><p className="loading-message" aria-live="polite">Checking your toDō account…</p></div>;
+    return <div className="state-layout"><LoadingCard /></div>;
   }
   if (!user) return <div className="auth-layout"><SignInCard /></div>;
   if (!isResolved) {
-    return <div className="auth-layout"><AccountSetupCard /><p className="loading-message" aria-live="polite">Stats stays paused until this provider is resolved to a username.</p></div>;
+    return <div className="auth-layout"><AccountSetupCard /></div>;
   }
   if (state.status === "idle" || state.status === "loading") {
-    return <div className="state-layout"><LoadingCard /><p className="loading-message" aria-live="polite">Loading your Stats…</p></div>;
+    return <div className="state-layout"><LoadingCard /></div>;
   }
   if (state.status === "blocked") {
-    return <div className="state-layout"><StateCard eyebrow="toDō+" title="Stats is part of toDō+" tone="warning"><p>Use the account with your active toDō+ entitlement to open Stats.</p></StateCard></div>;
+    return <div className="state-layout"><StateCard title="toDō+ required" tone="warning" /></div>;
   }
   if (state.status === "error") {
     return <div className="state-layout"><StateCard eyebrow="Sync" title="Stats could not be loaded" tone="error"><p>{state.message}</p><button className="primary-button" type="button" onClick={() => setRetryKey((value) => value + 1)}>Try again</button></StateCard></div>;

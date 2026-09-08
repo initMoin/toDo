@@ -21,6 +21,7 @@ import {
   isRecentVerification,
   latestSecondFactorTimestamp,
 } from "@/lib/authAssurance";
+import { hasWebPlusAccess, loadEntitlements } from "@/features/todos/data";
 
 type AuthContextValue = {
   user: User | null;
@@ -32,6 +33,7 @@ type AuthContextValue = {
   mfaAssuranceLevel: "aal1" | "aal2" | null;
   resolutionState: AccountResolutionState;
   isResolved: boolean;
+  webAccessState: WebAccessState;
   isLoading: boolean;
   isConfigured: boolean;
   error: string | null;
@@ -71,6 +73,7 @@ type AuthContextValue = {
 };
 
 export type AccountAuthenticationIntent = "createAccount" | "signIn" | "restoreSession";
+export type WebAccessState = "unknown" | "checking" | "granted" | "denied" | "error";
 export type AccountResolutionState =
   | "signedOut"
   | "resolving"
@@ -113,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [resolutionState, setResolutionState] = useState<AccountResolutionState>("signedOut");
   const [mfaFactors, setMfaFactors] = useState<WebMFAFactor[]>([]);
   const [mfaAssuranceLevel, setMfaAssuranceLevel] = useState<"aal1" | "aal2" | null>(null);
+  const [webAccessState, setWebAccessState] = useState<WebAccessState>("unknown");
   const [isLoading, setIsLoading] = useState(Boolean(supabase));
   const [error, setError] = useState<string | null>(null);
   const pendingIntent = useRef<AccountAuthenticationIntent>("restoreSession");
@@ -153,6 +157,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { factors, currentLevel, nextLevel, verifiedAt };
   }, []);
 
+  const refreshWebAccess = useCallback(async (): Promise<WebAccessState> => {
+    if (!supabase) {
+      setWebAccessState("error");
+      return "error";
+    }
+
+    setWebAccessState("checking");
+    try {
+      const entitlements = await loadEntitlements();
+      const nextState: WebAccessState = hasWebPlusAccess(entitlements) ? "granted" : "denied";
+      setWebAccessState(nextState);
+      return nextState;
+    } catch {
+      setWebAccessState("error");
+      return "error";
+    }
+  }, []);
+
   const resolveSession = useCallback(
     async (
       nextSession: WebSession | null,
@@ -164,6 +186,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
         setMfaFactors([]);
         setMfaAssuranceLevel(null);
+        setWebAccessState("unknown");
         setResolutionState("signedOut");
         setIsLoading(false);
         return;
@@ -238,6 +261,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (requestID !== resolutionRequestID.current) return;
 
       if (profileError) {
+        setWebAccessState("unknown");
         setResolutionState("needsUsername");
         setError(profileError.message);
         setIsLoading(false);
@@ -277,6 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (requestID !== resolutionRequestID.current) return;
 
       if (!resolvedProfile?.username) {
+        setWebAccessState("unknown");
         setResolutionState("needsUsername");
         setIsLoading(false);
         return;
@@ -284,6 +309,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setProfile(resolvedProfile);
       if ((resolvedProfile.account_setup_version ?? 1) < 2) {
+        setWebAccessState("unknown");
         setResolutionState("migrationRequired");
         setIsLoading(false);
         return;
@@ -300,11 +326,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         clearPendingAuthentication();
         pendingIntent.current = "restoreSession";
         pendingExpectedUsername.current = null;
+        setWebAccessState("unknown");
         setResolutionState("accountMismatch");
         setError("This provider is connected to a different toDō username. Nothing was linked or moved.");
         setIsLoading(false);
         return;
       }
+
+      await refreshWebAccess();
+      if (requestID !== resolutionRequestID.current) return;
 
       setResolutionState("resolved");
       setError(null);
@@ -313,7 +343,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       pendingExpectedUsername.current = null;
       setIsLoading(false);
     },
-    [refreshMFAState],
+    [refreshMFAState, refreshWebAccess],
   );
 
   useEffect(() => {
@@ -897,8 +927,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
     setProfile(null);
-    setMfaFactors([]);
-    setMfaAssuranceLevel(null);
+      setMfaFactors([]);
+      setMfaAssuranceLevel(null);
+      setWebAccessState("unknown");
     setResolutionState("signedOut");
     pendingIntent.current = "restoreSession";
     pendingExpectedUsername.current = null;
@@ -918,6 +949,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mfaAssuranceLevel,
       resolutionState,
       isResolved: resolutionState === "resolved",
+      webAccessState,
       isLoading,
       isConfigured: Boolean(supabase),
       error: error ?? supabaseConfigurationIssue,
@@ -951,6 +983,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resolutionState,
       saveProfileImage,
       session,
+      webAccessState,
       signIn,
       requestEmailCode,
       verifyEmailCode,

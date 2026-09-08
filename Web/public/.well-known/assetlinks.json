@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "dev.iamshift.toDo.android",
+      "sha256_cert_fingerprints": [
+        "1B:BB:2E:71:66:CE:BC:0A:C7:50:37:A0:B5:2C:3B:D3:E0:7D:0D:B7:2C:47:75:5B:03:4B:78:E3:0B:97:56:51"
+      ]
+    }
+  }
+]

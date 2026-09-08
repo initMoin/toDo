@@ -18,9 +18,11 @@ const localBindingConfig = {
   compatibility_flags: ["nodejs_compat"],
   assets: {
     binding: "ASSETS",
-    // The AASA file is extensionless, so its asset MIME type must be corrected
-    // by the Worker before Cloudflare returns this one response.
-    run_worker_first: ["/.well-known/apple-app-site-association"],
+    // These association files need an explicit JSON response from the Worker.
+    run_worker_first: [
+      "/.well-known/apple-app-site-association",
+      "/.well-known/assetlinks.json",
+    ],
   },
 };
 

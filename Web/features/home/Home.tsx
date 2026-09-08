@@ -86,12 +86,7 @@ export function Home() {
   }
 
   if (authLoading) {
-    return (
-      <div className="state-layout">
-        <LoadingCard />
-        <p className="loading-message" aria-live="polite">Checking your toDō account…</p>
-      </div>
-    );
+    return <div className="state-layout"><LoadingCard /></div>;
   }
 
   if (!user) {
@@ -99,31 +94,17 @@ export function Home() {
   }
 
   if (!isResolved) {
-    return (
-      <div className="auth-layout">
-        <AccountSetupCard />
-        <p className="loading-message" aria-live="polite">
-          Home stays paused until this provider is resolved to a username.
-        </p>
-      </div>
-    );
+    return <div className="auth-layout"><AccountSetupCard /></div>;
   }
 
   if (state.status === "idle" || state.status === "loading") {
-    return (
-      <div className="state-layout">
-        <LoadingCard />
-        <p className="loading-message" aria-live="polite">Loading your Home…</p>
-      </div>
-    );
+    return <div className="state-layout"><LoadingCard /></div>;
   }
 
   if (state.status === "blocked") {
     return (
       <div className="state-layout">
-        <StateCard eyebrow="toDō+" title="Home is part of toDō+" tone="warning">
-          <p>Use the account with your active toDō+ entitlement to open your synced Home.</p>
-        </StateCard>
+        <StateCard title="toDō+ required" tone="warning" />
       </div>
     );
   }

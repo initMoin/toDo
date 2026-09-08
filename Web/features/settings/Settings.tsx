@@ -7,6 +7,7 @@ import { Icon } from "@/components/Icon";
 import { AccountSetupCard } from "@/features/auth/AccountSetupCard";
 import { SignInCard } from "@/features/auth/SignInCard";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { LoadingCard } from "@/components/StateCard";
 import { clearOnboarding, readOnboardingStep, saveOnboardingStep, subscribeToOnboarding } from "@/lib/onboarding";
 
 export function Settings({ onboarding = false }: { onboarding?: boolean }) {
@@ -29,11 +30,11 @@ export function Settings({ onboarding = false }: { onboarding?: boolean }) {
     return <div className="state-layout"><div className="state-card"><div><p className="eyebrow">Local setup</p><h2>Connect Supabase to open Settings</h2><div className="state-card-copy"><p>Add the browser-safe Supabase values to <code>Web/.env.local</code> and restart the local server.</p></div></div></div></div>;
   }
   if (isLoading) {
-    return <div className="state-layout"><p className="loading-message" aria-live="polite">Checking your toDō account…</p></div>;
+    return <div className="state-layout"><LoadingCard /></div>;
   }
   if (!user) return <div className="auth-layout"><SignInCard /></div>;
   if (!isResolved) {
-    return <div className="auth-layout"><AccountSetupCard /><p className="loading-message" aria-live="polite">Settings stays paused until this provider is resolved to a username.</p></div>;
+    return <div className="auth-layout"><AccountSetupCard /></div>;
   }
 
   return (

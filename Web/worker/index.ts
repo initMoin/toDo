@@ -28,11 +28,13 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname === "/.well-known/apple-app-site-association") {
-      // The Worker serves this extensionless static asset, so set the MIME type
-      // here instead of relying on Cloudflare Pages' _headers support.
+    if (
+      url.pathname === "/.well-known/apple-app-site-association" ||
+      url.pathname === "/.well-known/assetlinks.json"
+    ) {
+      // Set the association-file MIME type explicitly instead of relying on
+      // Cloudflare Pages' static-asset inference.
       const assetURL = new URL(url);
-      assetURL.pathname = "/.well-known/apple-app-site-association";
       const assetResponse = await env.ASSETS.fetch(new Request(assetURL, request));
       const headers = new Headers(assetResponse.headers);
       headers.set("Content-Type", "application/json");

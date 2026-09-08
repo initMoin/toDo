@@ -10,7 +10,7 @@ export function StateCard({
 }: {
   eyebrow?: string;
   title: string;
-  children: ReactNode;
+  children?: ReactNode;
   tone?: "neutral" | "warning" | "error" | "success";
   action?: ReactNode;
 }) {
@@ -22,7 +22,7 @@ export function StateCard({
       <div>
         {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
         <h2>{title}</h2>
-        <div className="state-card-copy">{children}</div>
+        {children ? <div className="state-card-copy">{children}</div> : null}
         {action ? <div className="state-card-action">{action}</div> : null}
       </div>
     </section>

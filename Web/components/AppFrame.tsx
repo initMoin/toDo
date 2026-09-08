@@ -6,6 +6,7 @@ import { useSyncExternalStore } from "react";
 import { Icon } from "@/components/Icon";
 import { useAuth } from "@/features/auth/AuthProvider";
 import { ProfileAvatar } from "@/features/account/ProfileAvatar";
+import { LoadingCard } from "@/components/StateCard";
 
 type AppFrameMode =
   | "home"
@@ -21,7 +22,7 @@ type AppFrameMode =
   | "account-profile-settings";
 
 function SiteHeader({ mode, title }: { mode: AppFrameMode; title?: string }) {
-  const { user, profileUsername, profileAvatarURL } = useAuth();
+  const { user, profileUsername, profileAvatarURL, webAccessState } = useAuth();
   const username = profileUsername ?? "toDō account";
 
   if (mode === "home") {
@@ -33,7 +34,7 @@ function SiteHeader({ mode, title }: { mode: AppFrameMode; title?: string }) {
             <span>toD</span><span className="wordmark-o">ō</span><span className="wordmark-plus" aria-hidden="true">+</span>
           </Link>
         </div>
-        <HeaderAccountActions mode={mode} username={username} user={user} avatarURL={profileAvatarURL} />
+        <HeaderAccountActions mode={mode} username={username} user={user} avatarURL={profileAvatarURL} webAccessState={webAccessState} />
       </header>
     );
   }
@@ -68,7 +69,7 @@ function SiteHeader({ mode, title }: { mode: AppFrameMode; title?: string }) {
         <span className="site-header-title">{title ?? headerTitle(mode)}</span>
       </div>
 
-      <HeaderAccountActions mode={mode} username={username} user={user} avatarURL={profileAvatarURL} />
+      <HeaderAccountActions mode={mode} username={username} user={user} avatarURL={profileAvatarURL} webAccessState={webAccessState} />
     </header>
   );
 }
@@ -103,15 +104,17 @@ function HeaderAccountActions({
   username,
   user,
   avatarURL,
+  webAccessState,
 }: {
   mode: AppFrameMode;
   username: string;
   user: { user_metadata?: Record<string, unknown> } | null;
   avatarURL: string | null;
+  webAccessState: ReturnType<typeof useAuth>["webAccessState"];
 }) {
   return (
     <div className="site-header-side site-header-side-right">
-      {user && mode === "home" ? (
+      {user && mode === "home" && webAccessState === "granted" ? (
         <>
           <Link className="header-profile-link" href="/account" aria-label={`Open @${username} Account`} title={`Open @${username} Account`}>
             <ProfileAvatar username={username} avatarURL={avatarURL} size={46} />
@@ -150,6 +153,44 @@ export function AppFrame({
   mode?: AppFrameMode;
   title?: string;
 }) {
+  const { user, isResolved, webAccessState, signOut } = useAuth();
+
+  if (user && isResolved && webAccessState !== "granted") {
+    return (
+      <div className="app-background">
+        <header className="site-header site-header-restricted">
+          <span className="wordmark" aria-label="toDō">
+            <span>toD</span><span className="wordmark-o">ō</span><span className="wordmark-plus" aria-hidden="true">+</span>
+          </span>
+        </header>
+        <main className="app-main">
+          <div className="state-layout">
+            {webAccessState === "checking" ? <LoadingCard /> : (
+              <section
+                className={webAccessState === "denied" ? "restricted-access-card state-card-warning" : "restricted-access-card state-card-error"}
+                aria-live="polite"
+              >
+                <span className="restricted-access-icon" aria-hidden="true">
+                  <Icon name={webAccessState === "denied" ? "plus" : "alert"} size={28} />
+                </span>
+                <h2>{webAccessState === "denied" ? "toDō+ required" : "Web access unavailable"}</h2>
+                <button
+                  className="restricted-logout-button"
+                  type="button"
+                  aria-label="Log out"
+                  title="Log out"
+                  onClick={() => void signOut()}
+                >
+                  <Icon name="sign-out" size={22} />
+                </button>
+              </section>
+            )}
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app-background">
       <SiteHeader mode={mode} title={title} />

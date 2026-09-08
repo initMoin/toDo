@@ -5,6 +5,7 @@ import { Icon } from "@/components/Icon";
 import { AccountSetupCard } from "@/features/auth/AccountSetupCard";
 import { SignInCard } from "@/features/auth/SignInCard";
 import { useAuth } from "@/features/auth/AuthProvider";
+import { LoadingCard } from "@/components/StateCard";
 import { ProfileAvatar } from "./ProfileAvatar";
 
 export function ProfileView() {
@@ -18,13 +19,13 @@ export function ProfileView() {
     return <div className="state-layout"><ProfileState title="Connect Supabase to open My Profile"><p>Add the browser-safe Supabase values to <code>Web/.env.local</code> and restart the local server.</p></ProfileState></div>;
   }
   if (isLoading) {
-    return <div className="state-layout"><p className="loading-message" aria-live="polite">Checking your toDō account…</p></div>;
+    return <div className="state-layout"><LoadingCard /></div>;
   }
   if (!user) {
     return <div className="auth-layout"><SignInCard /></div>;
   }
   if (!isResolved) {
-    return <div className="auth-layout"><AccountSetupCard /><p className="loading-message" aria-live="polite">My Profile stays paused until this provider is resolved to a username.</p></div>;
+    return <div className="auth-layout"><AccountSetupCard /></div>;
   }
 
   const username = profileUsername ?? "todo-user";

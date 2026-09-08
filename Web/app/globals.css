@@ -189,6 +189,37 @@ code {
 .site-header-home-brand { display: grid; justify-items: start; gap: 7px; }
 .site-header-home .wordmark { font-size: clamp(3rem, 7vw, 4.9rem); }
 .site-header-home .site-header-side-right { flex-direction: column; gap: 8px; padding-top: 2px; }
+.site-header-restricted { grid-template-columns: 1fr; align-items: start; min-height: 132px; padding-top: 26px; }
+.site-header-restricted .wordmark { font-size: clamp(3rem, 7vw, 4.9rem); }
+.restricted-access-card {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr) 58px;
+  align-items: center;
+  gap: 28px;
+  width: min(680px, 100%);
+  padding: clamp(25px, 5vw, 44px);
+  border-radius: var(--radius-medium);
+}
+.restricted-access-card h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-view-title);
+  font-size: clamp(1.65rem, 4vw, 2.45rem);
+  font-weight: 700;
+  letter-spacing: -.025em;
+  line-height: 1.05;
+}
+.restricted-access-icon,
+.restricted-logout-button {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+}
+.restricted-access-icon { background: var(--action-primary); color: var(--on-action); }
+.restricted-logout-button { padding: 0; border: 0; background: var(--red); color: #fff; }
+.restricted-logout-button:hover { background: color-mix(in srgb, var(--red) 84%, var(--action-primary)); color: #fff; }
 .site-header-center { display: grid; justify-items: center; gap: 4px; }
 .site-header-title { color: var(--ink); font-family: var(--font-view-title); font-size: 1.35rem; font-weight: 700; letter-spacing: -.025em; }
 
@@ -280,6 +311,7 @@ code {
 .state-card {
   display: grid;
   grid-template-columns: 58px minmax(0, 1fr);
+  align-items: center;
   gap: 20px;
   width: min(680px, 100%);
   padding: clamp(25px, 5vw, 44px);
@@ -319,19 +351,17 @@ code {
 
 .state-card h2, .sign-in-card h1 {
   margin: 0;
-  font-family: var(--font-ui);
   font-weight: 700;
   font-size: clamp(1.65rem, 4vw, 2.45rem);
-  letter-spacing: -.06em;
   line-height: 1.05;
 }
+.state-card h2 { font-family: var(--font-view-title); letter-spacing: -.025em; }
+.sign-in-card h1 { font-family: var(--font-ui); letter-spacing: -.06em; }
 
 .state-card-copy { margin-top: 15px; color: var(--muted); font-size: 14px; }
 .state-card-copy p { margin: 0 0 11px; }
 .state-card-copy p:last-child { margin-bottom: 0; }
 .state-card-action { margin-top: 21px; }
-.loading-message { margin: 0; color: var(--muted); font-size: 13px; }
-
 .loading-card {
   display: grid;
   gap: 14px;
@@ -376,10 +406,10 @@ code {
   color: var(--on-action);
 }
 .sign-in-forward-button:hover:not(:disabled) { background: var(--blue); transform: translateX(2px); }
-.sign-in-provider-step { margin-top: 25px; animation: sign-in-provider-reveal .46s cubic-bezier(.22, .61, .36, 1) both; overflow: clip; }
+.sign-in-provider-step { margin-top: 25px; animation: sign-in-provider-reveal .46s cubic-bezier(.22, .61, .36, 1) both; }
 @keyframes sign-in-provider-reveal {
-  from { opacity: 0; clip-path: inset(100% 0 0 0); transform: translate3d(0, 26px, 0); }
-  to { opacity: 1; clip-path: inset(0); transform: translate3d(0, 0, 0); }
+  from { opacity: 0; transform: translate3d(0, 26px, 0); }
+  to { opacity: 1; transform: translate3d(0, 0, 0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -421,6 +451,7 @@ code {
 .mode-button-selected { border-color: var(--blue); background: var(--blue); color: var(--on-action); }
 .field-label { display: block; margin-top: 12px; color: var(--ink); font-weight: 700; }
 .text-input { width: 100%; min-height: 44px; margin-top: 7px; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--surface); color: var(--ink); padding: 10px 14px; font: inherit; box-sizing: border-box; }
+.text-input:focus { outline: none; box-shadow: 0 0 0 4px var(--blue-soft); }
 .account-methods-card {
   display: flex;
   align-items: center;
@@ -432,6 +463,8 @@ code {
 .account-methods-connected { color: var(--blue) !important; font-weight: 700; }
 .account-methods-card .inline-error { margin-top: .7rem; color: var(--red); }
 @media (max-width: 720px) {
+  .restricted-access-card { grid-template-columns: 47px minmax(0, 1fr) 47px; gap: 18px; padding: 22px; }
+  .restricted-access-icon, .restricted-logout-button { width: 47px; height: 47px; }
   .account-methods-card { align-items: flex-start; flex-direction: column; }
   .account-method-actions { justify-content: flex-start; }
 }
