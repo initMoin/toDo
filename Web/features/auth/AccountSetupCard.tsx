@@ -21,7 +21,6 @@ export function AccountSetupCard() {
     error,
     isLoading,
     completeAccountSetup,
-    connectProvider,
     mfaFactors,
     verifyMFA,
     signOut,
@@ -104,17 +103,6 @@ export function AccountSetupCard() {
           </button>
         </>
       )}
-
-      {resolutionState === "resolved" ? (
-        <div className="sign-in-actions">
-          <button className="provider-button" type="button" onClick={() => void connectProvider("apple")}>
-            <Icon name="apple" size={18} /> Connect Apple
-          </button>
-          <button className="provider-button" type="button" onClick={() => void connectProvider("google")}>
-            <Icon name="google" size={18} /> Connect Google
-          </button>
-        </div>
-      ) : null}
 
       {error && !error.includes("VITE_SUPABASE") ? (
         <p className="inline-error" role="alert">{error}</p>

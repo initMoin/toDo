@@ -56,22 +56,26 @@ Show status rows for:
 - Apple
 - Google
 
-Each row opens a focused setup, verification, or management flow. Never expose
-passwords, passkey private keys, TOTP secrets, or SMS credentials.
+Each row is a status-only record in Web. Enrollment, verification setup,
+removal, password changes, passkey management, provider linking, and SMS
+management are performed in the native Apple or Android apps. Never expose
+passwords, passkey private keys, TOTP secrets, or SMS credentials in Web.
 
 ## Security rules
 
 - Passwords use Supabase email/password authentication; username is not passed
   directly to `signInWithPassword`.
-- Passkeys use WebAuthn and are managed by the browser/OS authenticator. The
-  current Supabase passkey API is experimental, so the Web implementation must
-  pin and test the supported client version before enabling production use.
-- Apple and Google use Supabase OAuth as optional backup identities. Linking
-  begins from an authenticated account and must preserve its UUID.
+- Passkeys use WebAuthn and are managed by the browser/OS authenticator. Web
+  may use an existing passkey for sign-in, but passkey enrollment and
+  management are native-app responsibilities.
+- Apple and Google use Supabase OAuth as optional backup identities. Web shows
+  their connection status; linking and unlinking are native-app actions that
+  must preserve the canonical UUID.
 - Email codes verify email ownership and support recovery. They are never
   stored in local persistence or used as a substitute for TOTP MFA.
-- TOTP is the preferred MFA factor. SMS is optional fallback with rate limits,
-  abuse monitoring, cost controls, and explicit recovery language.
+- TOTP is the preferred MFA factor. Web may challenge an existing factor, but
+  enrollment and removal are native-app actions. SMS is optional fallback with
+  rate limits, abuse monitoring, cost controls, and explicit recovery language.
 - Require a recent `aal2` session for provider linking, credential changes,
   data export, account deletion, and MFA-management changes.
 - Before allowing mandatory MFA, require a second recovery factor. The current
@@ -121,13 +125,11 @@ data. If a verified TOTP factor is enrolled and the current session is `aal1`,
 the application remains in a blocking authenticator challenge until Supabase
 returns an `aal2` session.
 
-Account Security supports TOTP enrollment, QR/setup-key presentation,
-verification, and removal. It also lists registered passkeys and supports
-adding, renaming, and removing them. Password updates continue through the
-Supabase secure-change verification code when the session is no longer recent.
-
-Password changes, passkey changes, and provider linking require `aal2` when an
-MFA factor exists. Export, account-data reset, and account deletion require an
+Account Security is status-only in Web. It reports verified email, existing
+TOTP, passkeys, password, Apple, and Google state without exposing enrollment,
+removal, rename, linking, or credential-change controls. Existing TOTP factors
+can still challenge a Web sign-in. Native apps own credential and factor
+management. Export, account-data reset, and account deletion require an
 enrolled and currently verified factor. The account-deletion Edge Function
 also checks recent `aal2` independently; the browser check is not treated as a
 server authorization boundary.

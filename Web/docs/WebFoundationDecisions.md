@@ -53,12 +53,13 @@ backup identities that must be explicitly connected to the same canonical
 Supabase account UUID.
 
 The Web client never links identities by matching usernames, email addresses,
-or provider metadata, and never transfers data between UUIDs. Provider linking
-starts from an authenticated account and must verify that the canonical UUID
-does not change. TOTP is the preferred additional factor; SMS is an optional
-fallback. Email codes verify the private email or support recovery, but are not
-treated as the strongest MFA factor. The UI uses the required public username
-rather than a full name.
+or provider metadata, and never transfers data between UUIDs. Web displays
+provider and factor status but does not link providers, enroll/remove TOTP,
+change passwords, or manage passkeys; native apps own those actions. TOTP is
+the preferred additional factor; SMS is an optional fallback. Email codes
+verify the private email or support recovery, but are not treated as the
+strongest MFA factor. The UI uses the required public username rather than a
+full name.
 
 ### Browser credential and state storage
 

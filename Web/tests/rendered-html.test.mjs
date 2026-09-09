@@ -206,11 +206,10 @@ test("keeps the documented Web and Supabase boundaries present", async () => {
   assert.match(settings, /href="\/settings\/sync"/);
   assert.doesNotMatch(submenu, /coming later|not available yet|not enabled in this slice/);
   assert.match(account, /ProviderMethodsCard/);
-  assert.match(providerMethods, /connectProvider/);
-  assert.match(providerMethods, /Connect \$\{label\}/);
-  assert.match(security, /registerPasskey/);
-  assert.match(security, /setPassword/);
-  assert.match(security, /enrollTOTP/);
+  assert.doesNotMatch(providerMethods, /connectProvider/);
+  assert.doesNotMatch(providerMethods, /Connect \$\{label\}/);
+  assert.doesNotMatch(security, /registerPasskey|setPassword|enrollTOTP|unenrollMFA/);
+  assert.match(security, /aria-readonly/);
   assert.match(security, /Authenticator app/);
   assert.match(submenu, /requireAAL2/);
   assert.match(account, /signOut/);

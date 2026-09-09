@@ -22,17 +22,17 @@ instruction to claim unfinished work as complete.
   asserts that primary routes emit no console errors. The corrected build is
   deployed; the live browser console regression check remains part of the
   authenticated browser/device matrix.
-- Added August 29, 2026: the Web primary-auth slice now includes verified-email
-  code entry, email/password fallback, passkey sign-in and registration, and
-  Account Security status/actions. The Supabase client is on the passkey-capable
-  release; hosted Passkeys and MFA configuration remain external gates.
+- Added September 9, 2026: the Web primary-auth slice now includes verified-email
+  code entry, email/password fallback, passkey sign-in, existing MFA
+  challenges, and Account Security status-only reporting. Credential and factor
+  enrollment/management remain native-app responsibilities.
 - Added September 5, 2026: Web now blocks resolved account data behind the
   enrolled TOTP challenge, supports authenticator enrollment/removal in Account
   Security, and requires `aal2` for export, reset, deletion, provider linking,
   and credential changes according to the account security contract.
-- Added September 5, 2026: secure password changes now continue through the
-  Supabase reauthentication code when the session is no longer recent, and
-  Account Security can list, rename, add, and remove passkeys.
+- Added September 5, 2026: native-app credential changes continue through the
+  Supabase reauthentication code when the session is no longer recent; Web
+  Account Security reports passkey status without management controls.
 - Added September 5, 2026: the opt-in Playwright release layer can verify a
   disposable account's password-plus-TOTP sign-in, toDō+ entitlement, protected
   route access, and JSON export without storing credentials or mutating data.

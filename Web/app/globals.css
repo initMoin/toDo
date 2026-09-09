@@ -2427,25 +2427,11 @@ select { min-height: 50px; padding: 10px 42px 10px 16px; border: 0; border-radiu
 .account-security-card { display: grid; gap: 8px; }
 .account-security-row { grid-template-columns: 24px minmax(0, 1fr) auto; }
 .account-security-row > svg:last-child { color: var(--green); }
-.account-security-inline-action { min-height: 34px; padding: 5px 10px; border: 0; border-radius: 12px; background: var(--blue-soft); color: var(--blue); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
-.account-security-inline-action:hover { background: var(--blue); color: var(--on-action); }
-.account-security-password-form { display: grid; gap: 5px; margin: 6px 14px 12px; padding: 16px; border-radius: 18px; background: var(--surface-elevated); }
 .account-security-passkey-list { display: grid; gap: 7px; margin: 0 14px 8px 52px; padding: 0; list-style: none; }
 .account-security-passkey-list > li { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 8px 10px 8px 14px; border-radius: 15px; background: var(--surface-elevated); }
 .account-security-passkey-list > li > span:first-child { display: grid; min-width: 0; margin-right: auto; }
 .account-security-passkey-list strong { overflow: hidden; color: var(--ink); font-size: 14px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .account-security-passkey-list small { color: var(--muted); font-size: 13px; line-height: 1.35; }
-.account-security-confirmation { flex: 0 0 auto; color: var(--danger) !important; font-weight: 700; }
-.account-security-icon-action { display: inline-grid; flex: 0 0 auto; width: 34px; height: 34px; padding: 0; place-items: center; border: 0; border-radius: 11px; background: var(--surface-muted); color: var(--ink); cursor: pointer; }
-.account-security-icon-action:hover { background: var(--blue-soft); color: var(--blue); }
-.account-security-icon-danger:hover { background: var(--danger-soft); color: var(--danger); }
-.account-security-passkey-edit { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 7px; width: 100%; }
-.account-security-passkey-edit .text-input { min-height: 40px; }
-.account-security-totp-form { display: grid; gap: 8px; margin: 6px 14px 12px; padding: 18px; border-radius: 18px; background: var(--surface-elevated); }
-.account-security-totp-form p { margin: 0 0 4px; color: var(--muted); font-size: 14px; line-height: 1.45; }
-.account-security-totp-qr { width: 188px; height: 188px; padding: 8px; border-radius: 18px; background: #fff; }
-.account-security-secret { display: block; overflow-wrap: anywhere; padding: 12px 14px; border-radius: 14px; background: var(--surface-muted); color: var(--ink); font-size: 14px; line-height: 1.45; user-select: all; }
-.account-security-message { margin: 4px 14px 10px; color: var(--green); font-size: 14px; font-weight: 700; }
 
 @media (max-width: 520px) {
   .account-security-passkey-list { margin-left: 14px; }
